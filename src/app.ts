@@ -8,7 +8,7 @@ import {
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { groupWalls, type WallGroup } from './state/groups';
-import { Toolbar, type ActionId } from './ui/toolbar';
+import { SHORTCUTS, Toolbar, type ActionId } from './ui/toolbar';
 import {
   buildWorld, clampSettings, serializeScenario, scenarioToJson,
   type Scenario, type ScenarioCore, type SerializedAgent,
@@ -364,6 +364,31 @@ export class App {
         this.undo();
         return;
       }
+      // The bare keys: 1-7 for the tools, Space for start/pause. Held back from
+      // anything that is already listening -- a field being typed into, a
+      // focused button that Space would press itself, and the sheet, which is
+      // modal and whose sliders answer the arrow keys.
+      const bound = !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey && !ev.repeat
+        ? SHORTCUTS.get(ev.key)
+        : undefined;
+      if (bound) {
+        if (this.settingsSheet.visible) return;
+        const target = ev.target as HTMLElement | null;
+        if (target?.closest('input, textarea, [contenteditable]')) return;
+        // A focused button already answers Space by pressing itself, and
+        // clicking a tool leaves the focus on it -- so this clause is only
+        // about not toggling the simulation twice. The digits are let through,
+        // or picking a tool with the mouse would turn the numbers off until
+        // you clicked somewhere else.
+        if (ev.key === ' ' && target?.closest('button')) return;
+        // Space scrolls a page that has anywhere to scroll, and one that does
+        // not still answers it by paging the focused element.
+        ev.preventDefault();
+        if (bound.kind === 'tool') this.setTool(bound.key as ToolId);
+        else this.runAction(bound.key as ActionId);
+        return;
+      }
+
       if (ev.key !== 'Escape') return;
       // The sheet is modal and answers Escape itself; the tool in your hand is
       // not what you meant to put down. This handler used to be the only way

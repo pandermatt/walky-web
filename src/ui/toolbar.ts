@@ -13,6 +13,14 @@ interface ButtonSpec {
   title: string;
   /** 'toggle' actions show a pressed state, like a tool does. */
   kind: 'tool' | 'action' | 'toggle';
+  /** How the shortcut is written, in the tooltip and to a screen reader. */
+  shortcut?: string;
+  /**
+   * The `KeyboardEvent.key` that presses this button, unmodified. Left off
+   * where the shortcut takes a modifier and the app binds it itself: undo is
+   * Ctrl+Z, which is not one key and not one platform's spelling of it.
+   */
+  press?: string;
 }
 
 /**
@@ -31,11 +39,13 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
   {
     name: 'run',
     buttons: [
-      { key: 'start', icon: 'start.png', title: 'Start / pause', kind: 'action' },
+      { key: 'start', icon: 'start.png', title: 'Start / pause', kind: 'action', shortcut: 'Space', press: ' ' },
       { key: 'reset_pedestrians', icon: 'reset_pedestrians.png', title: 'Reset pedestrians', kind: 'action' },
       // Between resetting and clearing, which is where the actions that take
       // something back belong. The 2016 toolbar had no undo to place.
-      { key: 'undo', icon: 'undo.png', title: 'Undo (Ctrl+Z)', kind: 'action' },
+      // The shortcut moved out of the title so that every one of them is written
+      // by the same rule, rather than this one being spelt inside a label.
+      { key: 'undo', icon: 'undo.png', title: 'Undo', kind: 'action', shortcut: 'Ctrl+Z' },
       { key: 'clear', icon: 'clear.png', title: 'Clear map', kind: 'action' },
       { key: 'record', icon: 'record.png', title: 'Record', kind: 'action' },
     ],
@@ -43,13 +53,17 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
   {
     name: 'tools',
     buttons: [
-      { key: 'wall', icon: 'addWall.png', title: 'Wall tool', kind: 'tool' },
-      { key: 'rectangle', icon: 'addWallSquare.png', title: 'Rectangle wall tool', kind: 'tool' },
-      { key: 'border', icon: 'border.png', title: 'Border tool', kind: 'tool' },
-      { key: 'pedestrian', icon: 'pedestrian.png', title: 'Add pedestrians', kind: 'tool' },
-      { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool' },
-      { key: 'select', icon: 'select.png', title: 'Selection tool', kind: 'tool' },
-      { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool' },
+      // 1 to 7 down the capsule, in the order they are drawn: the number is
+      // "how far down the tools are you", which is a thing you can see, rather
+      // than an initial you have to have been told (w for wall, but which of
+      // rectangle, record and reset gets r?).
+      { key: 'wall', icon: 'addWall.png', title: 'Wall tool', kind: 'tool', shortcut: '1', press: '1' },
+      { key: 'rectangle', icon: 'addWallSquare.png', title: 'Rectangle wall tool', kind: 'tool', shortcut: '2', press: '2' },
+      { key: 'border', icon: 'border.png', title: 'Border tool', kind: 'tool', shortcut: '3', press: '3' },
+      { key: 'pedestrian', icon: 'pedestrian.png', title: 'Add pedestrians', kind: 'tool', shortcut: '4', press: '4' },
+      { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool', shortcut: '5', press: '5' },
+      { key: 'select', icon: 'select.png', title: 'Selection tool', kind: 'tool', shortcut: '6', press: '6' },
+      { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool', shortcut: '7', press: '7' },
     ],
   },
   {
@@ -62,6 +76,31 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
 ];
 
 const BUTTONS: ButtonSpec[] = GROUPS.flatMap((group) => group.buttons);
+
+export interface Shortcut {
+  key: ToolId | ActionId;
+  kind: ButtonSpec['kind'];
+}
+
+/**
+ * What a bare keypress arms, keyed by `KeyboardEvent.key`.
+ *
+ * Derived from the strip rather than written out again next to the key handler:
+ * the numbers mean the order the buttons are in, so a list of them kept
+ * somewhere else is a list that goes wrong the first time a tool is inserted.
+ * The app does the listening -- a shortcut is not the toolbar's to take from
+ * whatever else has the keyboard -- and this is what it looks up.
+ */
+export const SHORTCUTS: ReadonlyMap<string, Shortcut> = new Map(
+  BUTTONS.flatMap((spec) => (
+    spec.press ? [[spec.press, { key: spec.key, kind: spec.kind }] as const] : []
+  )),
+);
+
+/** ARIA spells its modifiers out in full; the tooltip writes them as people do. */
+function ariaKeyshortcuts(shortcut: string): string {
+  return shortcut.replace('Ctrl', 'Control');
+}
 
 export const TOOLBAR_CSS = `
 /*
@@ -209,10 +248,16 @@ export class Toolbar {
         btn.className = 'wk-btn wk-btn--cell';
         btn.dataset.key = spec.key;
         btn.setAttribute('aria-label', spec.title);
+        if (spec.shortcut) btn.setAttribute('aria-keyshortcuts', ariaKeyshortcuts(spec.shortcut));
         // Instead of `title`: the browser holds that back a second or two, which
         // for a strip of icon-only buttons is the same as not having it. The
         // aria-label above stays the accessible name; the tip is decoration.
-        attachTooltip(btn, spec.title);
+        //
+        // The tip is also where the shortcuts are published. There is no menu
+        // bar to list them in, so a key nobody is told about is a key nobody
+        // presses -- hovering the tool you were going to click anyway is the
+        // one moment you are already looking at the answer.
+        attachTooltip(btn, spec.shortcut ? `${spec.title} (${spec.shortcut})` : spec.title);
         // A tool starts pressed if it is the armed one; a toggle starts on its
         // own state, which is off. Comparing a toggle's key against the initial
         // *tool* used to give the right answer by accident, which is worse than
@@ -227,6 +272,12 @@ export class Toolbar {
         img.alt = '';
         btn.appendChild(img);
         btn.addEventListener('click', () => {
+          // A mouse press leaves the focus sitting on the button, and a focused
+          // button answers Space by pressing itself -- so picking a tool with
+          // the mouse would quietly turn the Space shortcut into "that tool
+          // again". Keyboard focus is kept: that one is someone's place in the
+          // strip, and :focus-visible is exactly the difference between the two.
+          if (!btn.matches(':focus-visible')) btn.blur();
           if (spec.kind === 'tool') this.selectTool(spec.key as ToolId);
           else this.onAction(spec.key as ActionId);
         });
