@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { monotoneChainHull } from '../sim/convexHull';
-import { orient, pointInPolygon, signedArea2, expandPolygon, pointSegmentDistance, type Point } from '../sim/geometry';
+import { orient, pointInPolygon, signedArea2, expandPolygon, pointSegmentDistance, MITER_LIMIT, type Point } from '../sim/geometry';
+import { isConvex } from '../sim/convexDecompose';
 
 function rngFactory(seed: number) {
   let s = seed >>> 0;
@@ -126,10 +127,53 @@ describe('expandPolygon', () => {
     for (const p of hull) expect(pointInPolygon(grown, p)).toBe(true);
   });
 
-  it('keeps winding and vertex count', () => {
+  it('keeps winding, and the vertex count too while no corner is cut', () => {
+    // Nothing here is sharper than 60 degrees, so every corner stays a plain miter.
     const hull = monotoneChainHull([[0, 0], [50, 5], [60, 60], [5, 55]]);
     const grown = expandPolygon(hull, 20);
     expect(grown).toHaveLength(hull.length);
     expect(Math.sign(signedArea2(grown))).toBe(Math.sign(signedArea2(hull)));
+  });
+
+  describe('on a needle, where an unbounded miter would spike', () => {
+    // Roughly 1.7 degrees at each end: the shape convexDecompose used to produce
+    // from a traced outline, and the one that sent the dashed hull off the map.
+    const needle = monotoneChainHull([[0, 0], [200, 0], [100, 3]] as Point[]);
+    const AMOUNT = 13;
+    const grown = expandPolygon(needle, AMOUNT);
+
+    it('cuts every corner back to the miter limit', () => {
+      // An unbounded miter reaches amount / sin(angle / 2), over 800 units here.
+      // The limit caps the cut's distance along the bisector; a cut vertex also
+      // sits up to `amount` off to the side of it, hence the hypotenuse.
+      const bound = AMOUNT * Math.hypot(MITER_LIMIT, 1);
+      for (const g of grown) {
+        const nearest = Math.min(...needle.map((v) => Math.hypot(g[0] - v[0], g[1] - v[1])));
+        expect(nearest).toBeLessThanOrEqual(bound + 1e-9);
+      }
+      // And it is a real cap, not a vacuous one: the raw miter is far past it.
+      expect(bound).toBeLessThan(100);
+    });
+
+    it('never cuts into the clearance the offset exists to provide', () => {
+      // The property a plain bevel loses: its chord runs straight past the tip and
+      // leaves a pedestrian standing on the wall.
+      for (let i = 0; i < grown.length; i++) {
+        const a = grown[i];
+        const b = grown[(i + 1) % grown.length];
+        for (let t = 0; t <= 1; t += 0.01) {
+          const p: Point = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+          const clearance = Math.min(...needle.map((v, j) =>
+            pointSegmentDistance(v, needle[(j + 1) % needle.length], p)));
+          expect(clearance).toBeGreaterThanOrEqual(AMOUNT - 1e-9);
+        }
+      }
+    });
+
+    it('stays convex and still contains the original', () => {
+      expect(isConvex(grown)).toBe(true);
+      expect(Math.sign(signedArea2(grown))).toBe(Math.sign(signedArea2(needle)));
+      for (const p of needle) expect(pointInPolygon(grown, p)).toBe(true);
+    });
   });
 });

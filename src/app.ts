@@ -1,6 +1,6 @@
 import { Scene, type SceneState } from './render/scene';
 import { Overlay } from './render/overlay';
-import { Viewport } from './render/viewport';
+import { Viewport, type Bounds } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
   DEFAULT_SETTINGS, makeWall, makeTree, wallContains,
@@ -404,10 +404,33 @@ export class App {
     this.scene.setCursor(cursor);
   }
 
+  /**
+   * Box around everything drawn -- walls, trees and pedestrians -- or null when
+   * the map is empty. What reset-zoom aims the camera at.
+   */
+  private contentBounds(): Bounds | null {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const add = (x: number, y: number) => {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    };
+    for (const wall of this.walls) {
+      for (const polygon of wall.polygons) for (const p of polygon) add(p[0], p[1]);
+    }
+    for (const tree of this.trees) {
+      add(tree.position[0] - tree.radius, tree.position[1] - tree.radius);
+      add(tree.position[0] + tree.radius, tree.position[1] + tree.radius);
+    }
+    for (let i = 0; i < this.agents.count; i++) add(this.agents.x[i], this.agents.y[i]);
+    return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+  }
+
   private runAction(id: ActionId): void {
     switch (id) {
       case 'reset_zoom':
-        this.viewport.reset();
+        this.viewport.reset(this.contentBounds());
         this.requestRender();
         break;
       case 'clear':

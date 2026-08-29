@@ -51,7 +51,7 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
   {
     name: 'view',
     buttons: [
-      { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom', kind: 'action' },
+      { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom and position', kind: 'action' },
       { key: 'settings', icon: 'settings.png', title: 'Settings', kind: 'toggle' },
     ],
   },
