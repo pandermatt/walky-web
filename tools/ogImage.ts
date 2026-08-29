@@ -1,41 +1,56 @@
 /**
- * Renders the Open Graph share image: public/images/og.png, 1200x630.
+ * Draws the Open Graph share image: public/images/og.png, 1200x630.
  *
- * Run with:  npx vite-node tools/ogImage.ts
+ * Run with:  npm run dev  ->  open /tools/ogImage.html  ->  Save
  *
  * The PNG is committed, not built -- regenerating it is a deliberate act, so this
- * is not wired into `npm run build`.
+ * is not wired into `npm run build`, and the page it draws on lives outside the
+ * bundle's only entry point (see rollupOptions.input) so it never ships.
  *
  * The picture is a real simulation frame. The scenario below is built from the
  * same model helpers the app uses, stepped with the same Agents.step, and drawn
- * from the same state the renderer reads (nav.shells, nav.obstacles,
- * nav.pathFromNode, agents.x/y/color). Nothing here mocks up the look: a wall is
- * the colour the palette rule allows, an arrived pedestrian is black because
- * Agents made it black, and the routes are whatever Dijkstra returned.
+ * from the same state the renderer reads (wall polygons, agents.x/y/color).
+ * Nothing here mocks up the look: a wall is the colour the palette rule allows,
+ * and an arrived pedestrian is black because Agents made it black.
  *
- * A re-run reproduces the frame byte for byte, so a diff on the PNG means the render
- * actually changed. That takes two things: the wall colours are named constants
- * rather than randomBrightColor() draws, and Math.random is seeded below, because
- * the behaviour leans on it for tie-breaks. Pedestrian colours need neither -- a
+ * WHY A CANVAS IN A BROWSER, and not a node script.
+ *
+ * This was an SVG handed to rsvg-convert, and the wordmark on it was a lie: the
+ * app's face is Google Sans Flex, which ships as woff2, which fontconfig cannot
+ * read -- so the rasteriser fell through to whatever the machine had, and the
+ * card went out set in the platform's font rather than Walky's. A browser loads
+ * the real file, and `fillText` on a 2D context draws with it. It is also the
+ * same primitive the app already sets its labels with (render/overlay.ts), so
+ * the text on the card and the text on the map come off one code path in one
+ * engine.
+ *
+ * The cost is that the render is now a browser's, not a library's, so the PNG is
+ * reproducible on a machine rather than byte for byte everywhere. What is still
+ * pinned is everything upstream of the pixels: the wall colours are named
+ * constants rather than randomBrightColor() draws, and Math.random is seeded
+ * below, because the behaviour leans on it for tie-breaks. So the crowd in the
+ * frame is the same crowd every time. Pedestrian colours need neither -- a
  * pedestrian takes the colour of the goal it is heading for.
+ *
+ * WHAT IS NOT DRAWN.
+ *
+ * Every diagnostic the app can switch on: the dashed hulls, the convex parts,
+ * the visibility rays, the personal-space rings, the routes to the goals and the
+ * readout. All of those are Settings a viewer turns on to understand a map they
+ * are working on. A link preview is nobody's working map -- it is glanced at,
+ * two inches wide, by someone who has not seen the app yet, and a mat of dashes
+ * and orange lines over it reads as clutter rather than as insight. So the card
+ * is what the app draws with the debug switches off: walls, goals, and a crowd.
  */
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { Agents, unpackRgb } from '../src/sim/agents.ts';
 import { Navigation } from '../src/sim/navigation.ts';
 import { SpatialHash } from '../src/sim/spatialHash.ts';
-import type { Point } from '../src/sim/geometry.ts';
 import { DEFAULT_SETTINGS, makeWall, rectanglePolygon, type Wall } from '../src/state/model.ts';
-import { DASH } from '../src/render/overlay.ts';
-import { BACKGROUND, ORANGE, WHITE, toCss, type RGB } from '../src/palette.ts';
+import { BACKGROUND, WHITE, toCss, withAlpha } from '../src/palette.ts';
 import { LIME, MAGENTA, RUST, SKY, TEAL } from './brand.ts';
 
 /**
- * Seeds Math.random for the whole script.
+ * Seeds Math.random for the whole page.
  *
  * Behaviour.escape and Behaviour.randomStep draw on it to break ties and to shake
  * a pinned pedestrian loose, so an unseeded run lands the crowd somewhere slightly
@@ -57,9 +72,6 @@ function seedRandom(seed: number): void {
 
 seedRandom(20160411);
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT_PNG = join(ROOT, 'public/images/og.png');
-
 const WIDTH = 1200;
 const HEIGHT = 630;
 
@@ -75,12 +87,9 @@ const SCALE = WIDTH / FRAME.w;
 
 /**
  * Hairlines that read on screen disappear in a link preview scaled down to a
- * thumbnail, so screen-space stroke widths are lifted by this much. Weight only:
- * the dash rhythm is converted straight from DASH and left alone, so the outlines
- * keep the 9-on-9-off cadence the original stroked them with.
- *
- * This and PATH_LIMIT are the only two places the image departs from what the app
- * draws, and both are about being looked at small rather than panned around.
+ * thumbnail, so the white ring around a pedestrian is lifted by this much. It is
+ * the one place the image departs from what the app draws, and it is about being
+ * looked at small rather than panned around.
  */
 const STROKE_BOOST = 1.6;
 
@@ -102,18 +111,6 @@ const SPEED = DEFAULT_SETTINGS.speed;
  */
 const TICKS = 700;
 
-/**
- * How many routes to draw.
- *
- * App.goalPaths caps at 1500 on the reasoning that past some number of routes the
- * picture is an unreadable mat of lines. The same judgement lands on a much lower
- * number here: a route is 2px wide whether it is on a canvas you can pan and zoom
- * or a share card someone glances at. The cap is applied by taking every nth
- * agent, so the routes that survive are spread through the crowd rather than
- * clustered at whichever end was added first.
- */
-const PATH_LIMIT = 22;
-
 /** Wall colours, from the shared brand palette so the card and the icons agree. */
 const GAP_TOP = RUST;
 const GAP_BOTTOM = SKY;
@@ -127,15 +124,15 @@ function buildWorld(): { walls: Wall[]; nav: Navigation; goals: Wall[] } {
   const gapTop = makeWall([rectanglePolygon([880, -60], [1000, 300])], { color: GAP_TOP });
   const gapBottom = makeWall([rectanglePolygon([880, 530], [1000, 1060])], { color: GAP_BOTTOM });
 
-  // An L, so the frame shows a wall that is not convex. Its whole-wall hull is
-  // drawn solid and its two convex parts faintly, which is the split the
-  // navigation actually works on.
+  // An L, so the frame shows a wall that is not convex -- which the crowd has to
+  // walk around, and now says so by the shape of the crowd rather than by an
+  // outline drawn over it.
   const detour = makeWall([[
     [1210, 280], [1500, 280], [1500, 370], [1300, 370], [1300, 610], [1210, 610],
   ]], { color: DETOUR });
 
-  // Two goals, so the crowd carries two colours instead of one and the routes
-  // fan out past the detour rather than converging on a single point.
+  // Two goals, so the crowd carries two colours instead of one and it fans out
+  // past the detour rather than converging on a single point.
   const goalUpper = makeWall([rectanglePolygon([1690, 70], [1850, 250])], { color: GOAL_UPPER });
   const goalLower = makeWall([rectanglePolygon([1690, 500], [1850, 680])], { color: GOAL_LOWER });
   goalUpper.isGoal = true;
@@ -175,142 +172,139 @@ function buildCrowd(nav: Navigation, goals: Wall[]): Agents {
   return agents;
 }
 
+/** A screen-space width, expressed in the world units the scaled context draws in. */
+const world = (px: number) => (px * STROKE_BOOST) / SCALE;
+
 /**
- * The routes the overlay would draw: mirrors App.goalPaths, under a tighter cap.
+ * The map: walls first, then the crowd over them.
  *
- * The image is a paused frame, so this takes App's not-running branch -- an agent
- * without a remembered waypoint gets its route predicted with routeFrom rather
- * than being skipped. That is what the app puts on screen the moment you hit
- * pause, which is the state this picture is in.
+ * Mirrors render/scene.ts with every diagnostic layer switched off, which leaves
+ * two of its five: the wall fills, and a pedestrian as a dot in its goal's colour
+ * inside a white ring.
  */
-function goalPaths(agents: Agents, nav: Navigation): Point[][] {
-  const out: Point[][] = [];
-  const stride = Math.max(1, Math.ceil(agents.count / PATH_LIMIT));
-  for (let i = 0; i < agents.count; i += stride) {
-    if (agents.arrived[i]) continue;
-    const goalId = agents.goal[i];
-    if (goalId < 0) continue;
-    const head: Point = [agents.x[i], agents.y[i]];
-    let path: Point[];
-    if (agents.hasWaypoint[i]) {
-      const rest = nav.pathFromNode(agents.waypointNode[i], goalId);
-      path = rest.length > 0
-        ? [head, ...rest]
-        : [head, [agents.waypointX[i], agents.waypointY[i]]];
-    } else {
-      path = nav.routeFrom(head, goalId);
+function drawMap(ctx: CanvasRenderingContext2D, walls: Wall[], agents: Agents): void {
+  ctx.save();
+  ctx.scale(SCALE, SCALE);
+  ctx.translate(-FRAME.x, -FRAME.y);
+
+  for (const wall of walls) {
+    ctx.fillStyle = toCss(wall.color);
+    for (const polygon of wall.polygons) {
+      ctx.beginPath();
+      polygon.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      ctx.closePath();
+      ctx.fill();
     }
-    if (path.length >= 2) out.push(path);
   }
-  return out;
-}
 
-/**
- * The hull outlines to draw: mirrors App.expandedHulls. Convex parts go first and
- * faintly, the whole-wall shells over them at full strength.
- */
-function expandedHulls(walls: Wall[], nav: Navigation): { points: Point[]; color: RGB; faint: boolean }[] {
-  const byId = new Map(walls.map((w) => [w.id, w.color]));
-  const parts = nav.obstacles.map((ob) => ({
-    points: ob.hull, color: byId.get(ob.wallId) ?? WHITE, faint: true,
-  }));
-  const shells = nav.shells.map((sh) => ({
-    points: sh.hull, color: byId.get(sh.wallId) ?? WHITE, faint: false,
-  }));
-  return [...parts, ...shells];
-}
-
-const round = (v: number) => Math.round(v * 10) / 10;
-const points = (pts: Point[]) => pts.map(([x, y]) => `${round(x)},${round(y)}`).join(' ');
-
-/** A screen-space width, expressed in the world units the scaled group draws in. */
-const world = (px: number) => round((px * STROKE_BOOST) / SCALE);
-
-function buildSvg(walls: Wall[], nav: Navigation, agents: Agents): string {
-  const hulls = expandedHulls(walls, nav);
-  const paths = goalPaths(agents, nav);
-  const dash = DASH.map((d) => round(d / SCALE)).join(' ');
-
-  const wallShapes = walls
-    .flatMap((w) => w.polygons.map((polygon) => ({ polygon, color: w.color })))
-    .map((piece) => `<polygon points="${points(piece.polygon)}" fill="${toCss(piece.color)}"/>`)
-    .join('\n      ');
-
-  const hullShapes = hulls
-    .map((h) => `<polygon points="${points(h.points)}" fill="none" stroke="${toCss(h.color)}"`
-      + ` stroke-opacity="${h.faint ? 0.35 : 1}" stroke-width="${world(1)}" stroke-dasharray="${dash}"/>`)
-    .join('\n      ');
-
-  const pathShapes = paths
-    .map((p) => `<polyline points="${points(p)}" fill="none" stroke="${toCss(ORANGE)}"`
-      + ` stroke-width="${world(2)}" stroke-linecap="round" stroke-linejoin="round"/>`)
-    .join('\n      ');
-
-  const dots: string[] = [];
+  ctx.strokeStyle = toCss(WHITE);
+  ctx.lineWidth = world(1);
   for (let i = 0; i < agents.count; i++) {
-    dots.push(`<circle cx="${round(agents.x[i])}" cy="${round(agents.y[i])}" r="${RADIUS}"`
-      + ` fill="${toCss(unpackRgb(agents.color[i]))}" stroke="${toCss(WHITE)}" stroke-width="${world(1)}"/>`);
+    ctx.fillStyle = toCss(unpackRgb(agents.color[i]));
+    ctx.beginPath();
+    ctx.arc(agents.x[i], agents.y[i], RADIUS, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="${toCss(BACKGROUND)}"/>
-  <g transform="scale(${SCALE}) translate(${-FRAME.x} ${-FRAME.y})">
-    <g>
-      ${wallShapes}
-    </g>
-    <g>
-      ${hullShapes}
-    </g>
-    <g>
-      ${pathShapes}
-    </g>
-    <g>
-      ${dots.join('\n      ')}
-    </g>
-  </g>
-${wordmark()}
-</svg>
-`;
+  ctx.restore();
 }
+
+/** The app's stack, from --wk-font-family in ui/theme.ts. */
+const FAMILY = "'Google Sans Flex', system-ui, -apple-system, sans-serif";
 
 /**
  * The wordmark, bottom-left over a scrim.
  *
  * The scrim exists because a wall can land anywhere: the crowd and the walls are
  * whatever the simulation produced, so the text cannot rely on what is behind it.
+ *
+ * The weights are the face's own axis -- it is variable from 100 to 1000 -- so
+ * 700 here is a real cut rather than a browser thickening 400 on its own.
  */
-function wordmark(): string {
-  // The app's stack, from --wk-font-family in theme.ts. Google Sans Flex ships as
-  // woff2, which fontconfig cannot read, so the rasteriser falls through to the
-  // platform's own face -- the same fallback the page uses before the font lands.
-  const font = "'Google Sans Flex', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif";
-  return `  <defs>
-    <linearGradient id="scrim" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="${toCss(BACKGROUND)}" stop-opacity="0.96"/>
-      <stop offset="1" stop-color="${toCss(BACKGROUND)}" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="${HEIGHT - 210}" width="${WIDTH}" height="210" fill="url(#scrim)"/>
-  <text x="64" y="${HEIGHT - 92}" font-family="${font}" font-size="78" font-weight="700"
-        fill="${toCss(WHITE)}" letter-spacing="-1.5">Walky</text>
-  <text x="64" y="${HEIGHT - 50}" font-family="${font}" font-size="27" font-weight="400"
-        fill="${toCss(WHITE)}" fill-opacity="0.72">A pedestrian simulator that runs entirely in the browser.</text>`;
+function drawWordmark(ctx: CanvasRenderingContext2D): void {
+  const scrim = ctx.createLinearGradient(0, HEIGHT, 0, HEIGHT - 210);
+  scrim.addColorStop(0, withAlpha(BACKGROUND, 0.96));
+  scrim.addColorStop(1, withAlpha(BACKGROUND, 0));
+  ctx.fillStyle = scrim;
+  ctx.fillRect(0, HEIGHT - 210, WIDTH, 210);
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  ctx.font = `700 78px ${FAMILY}`;
+  ctx.letterSpacing = '-1.5px';
+  ctx.fillStyle = toCss(WHITE);
+  ctx.fillText('Walky', 64, HEIGHT - 92);
+
+  ctx.font = `400 27px ${FAMILY}`;
+  ctx.letterSpacing = '0px';
+  ctx.fillStyle = withAlpha(WHITE, 0.72);
+  ctx.fillText('A pedestrian simulator that runs entirely in the browser.', 64, HEIGHT - 50);
 }
 
-const { walls, nav, goals } = buildWorld();
-const agents = buildCrowd(nav, goals);
-const svg = buildSvg(walls, nav, agents);
+/**
+ * Loads the app's own typeface into this page.
+ *
+ * ui/theme.ts declares the same @font-face, but with a URL relative to the
+ * document -- correct for the app at the root, and a 404 for a page under
+ * /tools/. This asks for the file by its path from the root instead.
+ *
+ * Awaited rather than fired off, and allowed to throw: a canvas whose font has
+ * not arrived draws in the fallback face without a word of complaint, which is
+ * the exact failure this whole page exists to end.
+ */
+async function loadFont(): Promise<void> {
+  const face = new FontFace(
+    'Google Sans Flex',
+    "url('/fonts/google-sans-flex-latin.woff2') format('woff2')",
+    { weight: '100 1000' },
+  );
+  await face.load();
+  document.fonts.add(face);
+}
 
-// The SVG is scratch, not an artifact: anything under public/ would be copied
-// into dist and shipped alongside the PNG for no reason.
-const svgPath = join(tmpdir(), 'walky-og.svg');
-mkdirSync(dirname(OUT_PNG), { recursive: true });
-writeFileSync(svgPath, svg);
+/** The path build/ogWriter.ts listens on. A mismatch shows up as a 404 on Save. */
+const ENDPOINT = '/__walky/og.png';
 
-// librsvg rasterises the SVG. It is a local tool, not a dependency: the PNG it
-// produces is what ships, so nothing at build or run time needs it.
-execFileSync('rsvg-convert', ['-w', String(WIDTH), '-h', String(HEIGHT), '-o', OUT_PNG, svgPath]);
+function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('no blob'))), 'image/png');
+  });
+}
 
-let arrived = 0;
-for (let i = 0; i < agents.count; i++) if (agents.arrived[i]) arrived++;
-console.log(`og.png  ${WIDTH}x${HEIGHT}  ${agents.count} pedestrians, ${arrived} arrived after ${TICKS} ticks`);
+const canvas = document.querySelector<HTMLCanvasElement>('#card')!;
+const saveButton = document.querySelector<HTMLButtonElement>('#save')!;
+const status = document.querySelector<HTMLParagraphElement>('#status')!;
+
+async function main(): Promise<void> {
+  await loadFont();
+
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = toCss(BACKGROUND);
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  const { walls, nav, goals } = buildWorld();
+  const agents = buildCrowd(nav, goals);
+  drawMap(ctx, walls, agents);
+  drawWordmark(ctx);
+
+  let arrived = 0;
+  for (let i = 0; i < agents.count; i++) if (agents.arrived[i]) arrived++;
+  status.textContent = `${WIDTH}x${HEIGHT} -- ${agents.count} pedestrians, `
+    + `${arrived} arrived after ${TICKS} ticks`;
+  saveButton.disabled = false;
+
+  saveButton.addEventListener('click', async () => {
+    saveButton.disabled = true;
+    const response = await fetch(ENDPOINT, { method: 'POST', body: await toBlob(canvas) });
+    status.textContent = response.ok
+      ? `Wrote ${await response.text()} bytes`
+      : `Save failed: ${response.status} ${await response.text()}`;
+    saveButton.disabled = false;
+  });
+}
+
+main().catch((error: unknown) => {
+  status.textContent = `${error}`;
+});

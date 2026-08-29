@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+import { ogWriter } from './build/ogWriter.ts';
 import { pwa } from './build/pwa.ts';
 
 // The version the settings sheet shows. Read from package.json rather than
@@ -9,7 +10,7 @@ const { version } = JSON.parse(readFileSync('./package.json', 'utf8')) as { vers
 
 export default defineConfig({
   base: './',
-  plugins: [pwa()],
+  plugins: [pwa(), ogWriter()],
   define: { __WALKY_APP_VERSION__: JSON.stringify(version) },
   test: {
     // Git worktrees live under .claude/worktrees and contain a full copy of this

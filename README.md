@@ -866,27 +866,45 @@ npm test
 The Open Graph image at `public/images/og.png` is a real simulation frame, not a
 mock-up. `tools/ogImage.ts` builds a scenario with the same model helpers the app
 uses, steps it with the same `Agents.step`, and draws it from the same state the
-renderer reads — `nav.shells`, `nav.obstacles`, `nav.pathFromNode`,
-`agents.x/y/color`. The walls are colours the palette rule allows, the black
-pedestrians are black because they arrived, and the routes are whatever Dijkstra
-returned. It takes the paused branch of `goalPaths`, because a still is a paused
-frame.
+renderer reads — the wall polygons and `agents.x/y/color`. The walls are colours
+the palette rule allows, and the black pedestrians are black because they
+arrived.
+
+It draws onto a `<canvas>` in a page rather than into an SVG, because the
+wordmark was a lie otherwise. Walky is set in Google Sans Flex, which ships as
+woff2, which fontconfig cannot read — so `rsvg-convert` fell through to whatever
+face the machine had, and the card went out in the platform's font rather than
+the app's. A browser loads the real file, and `fillText` draws with it. It is
+also the primitive the app already writes its map labels with
+(`render/overlay.ts`), so the text on the card and the text on the map come off
+one code path in one engine.
 
 ```bash
-npx vite-node tools/ogImage.ts
+npm run dev
+# then open http://localhost:5173/tools/ogImage.html and press Save
 ```
 
-It writes the PNG through `rsvg-convert` and is deliberately not part of
-`npm run build`: the image is committed, so regenerating it is a decision, and a
-diff on the PNG means the render changed. That only holds because the frame is
-reproducible — the wall colours are named constants rather than
-`randomBrightColor()` draws, and `Math.random` is seeded in the script, since
-`Behaviour` leans on it for tie-breaks.
+Save posts the PNG to a dev-only endpoint (`build/ogWriter.ts`) that writes it
+straight to `public/images/og.png` — a download would land it in `~/Downloads`
+and leave a manual move, which is the step where the wrong file gets committed.
+The page is not part of `npm run build`, and neither is the endpoint: the image
+is committed, so regenerating it is a decision. The frame it draws is pinned even
+though the pixels are a browser's — the wall colours are named constants rather
+than `randomBrightColor()` draws, and `Math.random` is seeded in the module,
+since `Behaviour` leans on it for tie-breaks — so the crowd is the same crowd
+every time.
 
-Two things in the image differ from what the app draws, both because a link
-preview is looked at small rather than panned around: strokes are 1.6× wider, and
-22 routes are drawn rather than the app's cap of 1500. Colours, geometry and the
-9-on-9-off dash rhythm are untouched.
+Every diagnostic is off: no dashed hulls, no convex parts, no visibility rays, no
+personal-space rings, no routes and no readout. Those are switches a viewer turns
+on to understand a map they are working on, and a link preview is nobody's
+working map — it is glanced at two inches wide by someone who has not seen the app
+yet. So the card is what the app draws with the debug settings off: walls, goals
+and a crowd, and the L-shaped wall says it is not convex by the shape the crowd
+takes around it rather than by an outline over it.
+
+One thing in the image differs from what the app draws, because a link preview is
+looked at small rather than panned around: the white ring around a pedestrian is
+1.6× wider. Colours and geometry are untouched.
 
 The crowd is painted the way the brush paints one — shoulder to shoulder, at
 `2 × radius` — and 700 ticks is long enough that it has opened out to the room it
