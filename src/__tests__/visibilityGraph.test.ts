@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { buildVisibilityGraph, isVisible, nodesOfWall, NODE_MARGIN } from '../sim/visibilityGraph';
 import { dijkstra } from '../sim/dijkstra';
 import { makeWall, rectanglePolygon } from '../state/model';
+import { Navigation } from '../sim/navigation';
+import { Agents } from '../sim/agents';
+import { SpatialHash } from '../sim/spatialHash';
 import { distance, pointInPolygon, type Point } from '../sim/geometry';
 
 const RADIUS = 13;
@@ -143,5 +146,61 @@ describe('navigation regression: walking along a wall', () => {
     const g = buildVisibilityGraph([wall], RADIUS);
     const hull = g.obstacles[0].hull;
     expect(isVisible(hull[0], hull[2], g)).toBe(false);
+  });
+});
+
+describe('a wall whose parts cross each other', () => {
+  // Reduced from a real map: a C-shape built by drawing three overlapping bars,
+  // so one wall owns three convex parts and the vertical bar lies across the
+  // underside of the top bar.
+  const TOP: Point[] = [[-395, -269], [99, -269], [99, -106], [-395, -106]];
+  const UPRIGHT: Point[] = [[-40, -118], [71, -118], [71, 297], [-40, 297]];
+  const BOTTOM: Point[] = [[-493, 256], [52, 256], [52, 392], [-493, 392]];
+
+  function build() {
+    const c = makeWall([BOTTOM, UPRIGHT, TOP]);
+    const goal = makeWall([rectanglePolygon([-387, 0], [-350, 135])]);
+    goal.isGoal = true;
+    return { c, goal, graph: buildVisibilityGraph([c, goal], RADIUS) };
+  }
+
+  it('never runs an edge through one of its own parts', () => {
+    // The failure was an edge along the top bar's underside, straight through the
+    // upright. It came from a shortcut that treated two corners of the same
+    // convex part as mutually visible without checking anything else.
+    const { graph } = build();
+    const { csr, nodes } = graph;
+    for (let u = 0; u < csr.nodeCount; u++) {
+      for (let e = csr.offsets[u]; e < csr.offsets[u + 1]; e++) {
+        const v = csr.targets[e];
+        const mid: Point = [
+          (nodes[u][0] + nodes[v][0]) / 2,
+          (nodes[u][1] + nodes[v][1]) / 2,
+        ];
+        for (const ob of graph.obstacles) {
+          expect(pointInPolygon(ob.hull, mid)).toBe(false);
+        }
+        expect(isVisible(nodes[u], nodes[v], graph)).toBe(true);
+      }
+    }
+  });
+
+  it('routes a crowd outside the C all the way into the cavity', () => {
+    const { c, goal } = build();
+    const nav = new Navigation();
+    nav.rebuild([c, goal], RADIUS);
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 4; j++) {
+        const k = agents.add([200 + i * 60, -200 + j * 90]);
+        agents.setGoal(k, goal.id, goal.color);
+      }
+    }
+    for (let t = 0; t < 3000; t++) agents.step(nav, hash, 4, RADIUS, 30);
+
+    let arrived = 0;
+    for (let i = 0; i < agents.count; i++) if (agents.arrived[i]) arrived++;
+    expect(arrived).toBe(agents.count);
   });
 });

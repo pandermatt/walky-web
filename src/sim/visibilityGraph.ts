@@ -206,18 +206,22 @@ export function buildVisibilityGraph(walls: Wall[], radius: number): VisibilityG
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      let visible: boolean;
-      if (nodePart[i] === nodePart[j]) {
-        // Same convex part: only the two ring neighbours, which is the walk
-        // around it. Keyed on the part rather than the wall, so two parts of one
-        // concave wall still get a real visibility test between them.
-        const ring = ringLength[i];
-        const d = Math.abs(nodeRingIndex[i] - nodeRingIndex[j]);
-        visible = d === 1 || d === ring - 1;
-      } else {
-        visible = isVisible(nodes[i], nodes[j], blockers);
-      }
-      if (!visible) continue;
+      // Every pair gets a real visibility test, including two corners of the same
+      // convex part.
+      //
+      // There used to be a shortcut here: corners of one part were taken as
+      // mutually visible if they were ring neighbours, on the reasoning that
+      // walking around your own convex hull is always safe. It is not. A wall
+      // made of several parts can have one part lying across another's edge --
+      // a vertical bar crossing the underside of a horizontal one -- and the
+      // shortcut let the graph run an edge straight through it, so pedestrians
+      // walked into a wall and jammed against it.
+      //
+      // The shortcut existed to dodge the boundary ambiguity of a segment running
+      // exactly along the hull it belongs to. That is no longer a concern: nodes
+      // sit on a ring NODE_MARGIN outside the blocking hull, so the segment
+      // between two of them is strictly outside and decides cleanly.
+      if (!isVisible(nodes[i], nodes[j], blockers)) continue;
       const w = distance(nodes[i], nodes[j]);
       neighbours[i].push(j); costs[i].push(w);
       neighbours[j].push(i); costs[j].push(w);
