@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { Agents } from '../sim/agents';
+import { Agents, packRgb } from '../sim/agents';
 import { SpatialHash } from '../sim/spatialHash';
 import { Navigation } from '../sim/navigation';
 import { makeWall, rectanglePolygon } from '../state/model';
-import type { RGB } from '../palette';
+import { BLACK, type RGB } from '../palette';
 
 /**
  * What the crowd looks like, rather than whether it arrives.
@@ -331,5 +331,23 @@ describe('crowd state stays sound', () => {
 
     agents.resetPositions();
     expect(Array.from(agents.trait.slice(0, agents.count))).toEqual(before);
+  });
+
+  it('gives a reset crowd fresh colours instead of the last run\'s', () => {
+    // Arriving turns a pedestrian black. Reset puts it back at the start, so it
+    // must stop looking like one that has already finished.
+    const { nav, goal } = corridor();
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 4, 4, 300, -60, 20);
+    for (let t = 0; t < 200; t++) agents.step(nav, hash, 4, R, 30);
+    expect(arrivedCount(agents)).toBe(agents.count);
+    const black = packRgb(BLACK);
+    expect(Array.from(agents.color.slice(0, agents.count))).toEqual(
+      new Array(agents.count).fill(black),
+    );
+
+    agents.resetPositions();
+    for (let i = 0; i < agents.count; i++) expect(agents.color[i]).not.toBe(black);
   });
 });

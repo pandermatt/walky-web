@@ -232,11 +232,20 @@ export class Agents {
     this.count = n;
   }
 
-  /** Back to origin, as controller Resetable / Map.resetPedestrianLocation did. */
+  /**
+   * Back to origin, as controller Resetable / Map.resetPedestrianLocation did.
+   *
+   * The colour is drawn again rather than kept. A run leaves it saying what
+   * happened -- black for everyone who arrived -- and a crowd put back on its
+   * starting line still wearing the last run's result reads as a crowd that has
+   * already finished. A fresh colour makes it a fresh crowd, the same one `add`
+   * gives a pedestrian that has never walked anywhere.
+   */
   resetPositions(): void {
     for (let i = 0; i < this.count; i++) {
       this.x[i] = this.originX[i];
       this.y[i] = this.originY[i];
+      this.color[i] = packRgb(randomBrightColor());
       this.arrived[i] = 0;
       this.hasWaypoint[i] = 0;
       this.speedCounter[i] = 0;
