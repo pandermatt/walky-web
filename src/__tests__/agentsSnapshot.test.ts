@@ -85,3 +85,49 @@ describe('Agents snapshot/restore', () => {
     expect(unpackRgb(agents.color[0])).toEqual([12, 34, 56]);
   });
 });
+
+/**
+ * What a recording watches for so it can stop itself: the moment there is
+ * nothing left in the crowd that is going anywhere.
+ */
+describe('Agents.allArrived', () => {
+  it('is false while anyone bound for a goal is still walking', () => {
+    const agents = new Agents(4);
+    agents.add([0, 0]);
+    agents.add([10, 10]);
+    agents.setGoal(0, 1, [0, 0, 255]);
+    agents.setGoal(1, 1, [0, 0, 255]);
+    agents.arrived[0] = 1;
+
+    expect(agents.allArrived).toBe(false);
+  });
+
+  it('is true once every one of them has got there', () => {
+    const agents = new Agents(4);
+    agents.add([0, 0]);
+    agents.add([10, 10]);
+    agents.setGoal(0, 1, [0, 0, 255]);
+    agents.setGoal(1, 1, [0, 0, 255]);
+    agents.arrived[0] = 1;
+    agents.arrived[1] = 1;
+
+    expect(agents.allArrived).toBe(true);
+  });
+
+  it('does not wait on a pedestrian that was never going anywhere', () => {
+    const agents = new Agents(4);
+    agents.add([0, 0]);
+    agents.add([10, 10]);
+    agents.setGoal(0, 1, [0, 0, 255]);
+    agents.arrived[0] = 1;
+
+    expect(agents.allArrived).toBe(true);
+  });
+
+  it('is false for a crowd with no goal between them, and for no crowd at all', () => {
+    const agents = new Agents(4);
+    expect(agents.allArrived).toBe(false);
+    agents.add([0, 0]);
+    expect(agents.allArrived).toBe(false);
+  });
+});

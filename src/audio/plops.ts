@@ -40,6 +40,8 @@ export class Plops {
   private blocked = false;
   /** When the most recent voice was scheduled, in context time. */
   private lastVoiceAt = 0;
+  /** A second destination for the plops, built the first time one is recorded. */
+  private tap: MediaStreamAudioDestinationNode | null = null;
 
   constructor(private create: () => AudioContext = defaultContext) {}
 
@@ -82,11 +84,36 @@ export class Plops {
     }
   }
 
+  /**
+   * The plops as a stream, so a recording can carry them.
+   *
+   * Wired on the first recording rather than up front: a destination node keeps
+   * the context awake whether or not anything is reading it, and most sessions
+   * never record. Once built it is kept, because the track it hands out is the
+   * one that would be ended by tearing it down, and a second recording needs a
+   * live one.
+   *
+   * Null where there is no context to tap or no such node to tap it with, which
+   * is the same answer the rest of this module gives to a browser that cannot do
+   * something: the picture is recorded, and it is silent.
+   */
+  captureStream(): MediaStream | null {
+    const ctx = this.context();
+    if (!ctx || !this.master) return null;
+    if (!this.tap) {
+      if (typeof ctx.createMediaStreamDestination !== 'function') return null;
+      this.tap = ctx.createMediaStreamDestination();
+      this.master.connect(this.tap);
+    }
+    return this.tap.stream;
+  }
+
   /** Releases the context. Nothing else here needs teardown. */
   dispose(): void {
     const ctx = this.ctx;
     this.ctx = null;
     this.master = null;
+    this.tap = null;
     if (ctx) void ctx.close();
   }
 

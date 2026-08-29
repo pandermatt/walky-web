@@ -70,6 +70,18 @@ function hideToast(): void {
 }
 
 /**
+ * Takes the chip down from outside.
+ *
+ * Exported for an action that finishes here on the page rather than by leaving
+ * it: the confirm button runs what it was given and nothing else, which is fine
+ * for an update that reloads out from under the chip and wrong for a Save, which
+ * would otherwise leave a chip over the map offering the same file again.
+ */
+export function dismissToast(): void {
+  hideToast();
+}
+
+/**
  * @param action shown as a button. Without one the chip retires by itself, since
  *   a message with nothing to do should not sit over the canvas; with one it
  *   waits, because it is asking a question -- but it can now be told no. It used

@@ -27,9 +27,25 @@ import { GoalTool } from './tools/goalTool';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
 import { Plops } from './audio/plops';
-import { showToast } from './pwa';
+import { MAX_MS, Recorder, canRecord, recordingFilename, saveBlob } from './render/recorder';
+import { RecordingChip } from './ui/recordingChip';
+import { dismissToast, showToast } from './pwa';
 import { SpatialHash } from './sim/spatialHash';
 import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolId } from './tools/types';
+
+/**
+ * How long a recording holds on the finished picture before it stops itself.
+ *
+ * Cutting on the frame the last pedestrian lands ends the video on the plop
+ * rather than after it, which reads as the recording having been interrupted.
+ */
+const RECORD_TAIL_MS = 1500;
+
+/**
+ * The window the frame rate is measured over. Short enough to show a stutter,
+ * long enough that the number is readable rather than flickering.
+ */
+const FPS_WINDOW_MS = 1000;
 
 /**
  * The map as it was, kept so an edit can be taken back.
@@ -92,6 +108,28 @@ export class App {
   /** Set once the pinch has taken the gesture, until the last finger lifts. */
   private gestureTaken = false;
   private frameRequested = false;
+  /**
+   * Set while the animation loop is turning, so that the two things that want it
+   * -- the crowd walking and a recording being taken -- start one between them.
+   * Two chains would step the simulation twice a frame for the rest of the
+   * session, which is quiet enough to ship without anyone noticing.
+   */
+  private looping = false;
+  private recorder: Recorder;
+  private recordingChip: RecordingChip;
+  /** Ticks the readout and enforces the limit while recording; 0 otherwise. */
+  private recordTicker = 0;
+  /** Held across the stop, so a second tap cannot start one while one is ending. */
+  private recordBusy = false;
+  /**
+   * When the crowd first had nowhere left to go, so a recording can hold on the
+   * finished picture rather than cutting on the last arrival. 0 while anyone is
+   * still walking.
+   */
+  private crowdFinishedAt = 0;
+  /** When the recent frames were painted, for the debug readout's rate. */
+  private frameTimes: number[] = [];
+
   /** Bumped on map edits only -- the walls. */
   private worldRevision = 0;
   /** Bumped every simulation tick -- agents, rays, paths. */
@@ -107,6 +145,8 @@ export class App {
 
   constructor(
     private stage: HTMLElement,
+    // Passed on rather than kept: the scene, the overlay and the recorder each
+    // hold the one they paint or read, and nothing here needs them again.
     deckCanvas: HTMLCanvasElement,
     overlayCanvas: HTMLCanvasElement,
   ) {
@@ -133,6 +173,12 @@ export class App {
 
     // Nothing drawn yet, so there is nothing to take back.
     this.toolbar.setEnabled('undo', false);
+
+    this.recorder = new Recorder(deckCanvas, overlayCanvas);
+    this.recordingChip = new RecordingChip(stage);
+    if (!canRecord()) {
+      this.toolbar.setEnabled('record', false, 'This browser cannot record video');
+    }
 
     // Input binds to the deck canvas, not the stage: the toolbar is a sibling
     // inside the stage, so binding higher up made every toolbar click also land
@@ -169,6 +215,16 @@ export class App {
     this.bindPointer(deckCanvas);
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // A hidden tab stops handing out animation frames while the recorder's own
+    // clock keeps running, so an alt-tab would become that many frozen seconds in
+    // the middle of the file -- and on iOS a backgrounded page can have its
+    // recorder taken away outright, which would lose the lot. Better to stop with
+    // what there is and say why.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.recorder.active) {
+        void this.endRecording('Recording stopped when Walky went to the background');
+      }
+    });
     this.applyCursor();
     this.requestRender();
   }
@@ -515,9 +571,7 @@ export class App {
   private resetWorld(): void {
     this.walls = [];
     this.agents.clear();
-    this.running = false;
-    this.toolbar.setRunning(false);
-    this.updateContextPanel();
+    this.play(false);
     this.navDirty = true;
     this.tool?.cancel?.();
     this.touch();
@@ -536,14 +590,10 @@ export class App {
         void this.clearMap();
         break;
       case 'start':
-        this.running = !this.running;
-        // Here rather than at the first arrival: an audio context only starts
-        // unsuspended when it is created inside a user gesture, and this click is
-        // the one gesture guaranteed to precede every plop.
-        if (this.running) this.plops.arm();
-        this.toolbar.setRunning(this.running);
-        this.updateContextPanel();
-        if (this.running) this.tick();
+        this.play(!this.running);
+        break;
+      case 'record':
+        void this.toggleRecording();
         break;
       case 'reset_pedestrians':
         this.agents.resetPositions();
@@ -552,9 +602,156 @@ export class App {
       case 'settings':
         this.settingsSheet.open();
         break;
-      default:
-        // record arrives with the MediaRecorder step
-        break;
+    }
+  }
+
+  /**
+   * Runs or pauses the crowd.
+   *
+   * One place, because Record starts it too -- a video of a map standing still is
+   * not what anybody pressed it for -- and because the guard has to be here. The
+   * loop is started from both, and starting a second chain would step the
+   * simulation twice a frame from then on.
+   */
+  private play(on: boolean): void {
+    if (on === this.running) return;
+    this.running = on;
+    // Here rather than at the first arrival: an audio context only starts
+    // unsuspended when it is created inside a user gesture, and the click that
+    // reaches this is the one gesture guaranteed to precede every plop.
+    if (on) this.plops.arm();
+    this.toolbar.setRunning(on);
+    this.updateContextPanel();
+    if (on) this.startLoop();
+  }
+
+  /**
+   * Starts a recording, or ends the one that is running.
+   *
+   * The 2016 button opened a window asking for a resolution and a folder, and
+   * then wrote a numbered image per map change until it was stopped. This is the
+   * same button meaning the same thing, with the two answers the original had to
+   * ask for -- how big, and where -- already known: the size of what is on
+   * screen, and wherever the browser puts a download.
+   */
+  private async toggleRecording(): Promise<void> {
+    if (this.recordBusy) return;
+    if (this.recorder.active) {
+      await this.endRecording('Recording ready');
+    } else {
+      this.beginRecording();
+    }
+  }
+
+  private beginRecording(): void {
+    // Refused rather than started: a hidden tab is handed no animation frames, so
+    // this would record one motionless frame for as long as it was left. The
+    // visibilitychange handler only catches going away, not being away already.
+    if (document.hidden) {
+      showToast(this.stage, 'Cannot record -- Walky is in the background.');
+      return;
+    }
+
+    try {
+      // Armed before the recorder rather than by play() after it, so there is a
+      // context for the plops to be tapped from -- and this is the click, which
+      // is the only moment a context starts unsuspended.
+      this.plops.arm();
+      this.recorder.start(this.settings.sound ? this.plops.captureStream() : null);
+    } catch (err: unknown) {
+      const why = err instanceof Error ? err.message : 'this browser cannot record video';
+      showToast(this.stage, `Cannot record -- ${why}.`);
+      return;
+    }
+
+    this.toolbar.setPressed('record', true);
+    this.crowdFinishedAt = 0;
+    // Which also starts the loop -- and if the crowd was already walking, the
+    // loop is already turning and now has a second reason to keep doing so.
+    this.play(true);
+    this.recordingChip.update(0);
+
+    // One interval for both jobs. The limit lives here rather than inside the
+    // recorder so that class keeps no clock, no callback and nothing to mock; a
+    // second either side of two minutes is not a difference anybody can see.
+    this.recordTicker = window.setInterval(() => {
+      const elapsed = this.recorder.elapsedMs;
+      if (elapsed >= MAX_MS) {
+        void this.endRecording('Recording stopped at the two-minute limit');
+        return;
+      }
+      this.recordingChip.update(elapsed);
+    }, 1000);
+  }
+
+  /**
+   * Ends a recording once the crowd has nowhere left to go.
+   *
+   * A recording of a simulation is a recording of a thing that finishes, and
+   * sitting on the finished picture until somebody notices is neither what they
+   * meant nor what they would keep. Held for a moment first, so the video ends
+   * after the last plop rather than on it, and only from inside the loop -- the
+   * question is only worth asking on a tick that moved somebody.
+   */
+  private stopWhenCrowdArrives(): void {
+    if (!this.agents.allArrived) {
+      this.crowdFinishedAt = 0;
+      return;
+    }
+    const now = performance.now();
+    if (this.crowdFinishedAt === 0) {
+      this.crowdFinishedAt = now;
+      return;
+    }
+    if (now - this.crowdFinishedAt < RECORD_TAIL_MS) return;
+    void this.endRecording('Recording stopped when the crowd arrived');
+  }
+
+  /**
+   * Stops, and offers what was recorded.
+   *
+   * The crowd is deliberately left walking. Record started it, but stopping the
+   * recording is not a reason to stop the simulation -- you were watching it
+   * before the button was pressed and are presumably still watching it now.
+   */
+  private async endRecording(why: string): Promise<void> {
+    if (this.recordBusy) return;
+    this.recordBusy = true;
+    this.toolbar.setEnabled('record', false);
+
+    window.clearInterval(this.recordTicker);
+    this.recordTicker = 0;
+    this.recordingChip.hide();
+    this.toolbar.setPressed('record', false);
+
+    const seconds = Math.round(this.recorder.elapsedMs / 1000);
+    const mime = this.recorder.mimeType;
+
+    try {
+      const blob = await this.recorder.stop();
+      if (blob.size === 0) {
+        // Some browsers hand back nothing at all rather than failing. A Save
+        // button over an empty file is worse than being told.
+        showToast(this.stage, 'Nothing was recorded.');
+        return;
+      }
+
+      const filename = recordingFilename(mime, new Date());
+      showToast(this.stage, `${why} -- ${seconds}s, ${fileSize(blob.size)}`, {
+        label: 'Save',
+        run: () => {
+          saveBlob(blob, filename);
+          // The chip has to be taken down by whoever put it up: showToast only
+          // retires by itself when it has nothing to offer.
+          dismissToast();
+        },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'the recording was lost';
+      showToast(this.stage, `Recording failed -- ${message}.`);
+    } finally {
+      this.recordBusy = false;
+      this.toolbar.setEnabled('record', true);
     }
   }
 
@@ -809,18 +1006,39 @@ export class App {
     this.navDirty = false;
   }
 
+  /**
+   * The animation loop, which two things can want turning.
+   *
+   * The crowd walking is the obvious one. A recording is the other: it keeps the
+   * loop going while the simulation is paused, so pausing halfway through gives
+   * a still picture on a running clock rather than a video that stops dead and
+   * resumes minutes later on the same frame.
+   */
   private tick = (): void => {
-    if (!this.running) return;
-    this.rebuildNavIfNeeded();
-    this.agents.step(
-      this.nav, this.hash,
-      this.settings.speed, this.settings.pedestrianRadius, this.settings.preferredSpace,
-    );
-    this.playArrivals();
-    this.agentRevision++;
+    if (!this.running && !this.recorder.active) {
+      this.looping = false;
+      return;
+    }
+    if (this.running) {
+      this.rebuildNavIfNeeded();
+      this.agents.step(
+        this.nav, this.hash,
+        this.settings.speed, this.settings.pedestrianRadius, this.settings.preferredSpace,
+      );
+      this.playArrivals();
+      this.agentRevision++;
+      if (this.recorder.active) this.stopWhenCrowdArrives();
+    }
     this.render();
     requestAnimationFrame(this.tick);
   };
+
+  /** Starts the loop if it is not already turning. The guard is the whole point. */
+  private startLoop(): void {
+    if (this.looping) return;
+    this.looping = true;
+    this.tick();
+  }
 
   /**
    * One plop per pedestrian that reached its goal this tick, panned by where it
@@ -864,6 +1082,34 @@ export class App {
     // Also paint directly, for changes that only touch the overlay (a rubber-band
     // line tracking the cursor) where deck.gl has nothing to redraw.
     this.drawOverlay();
+    // Last, and only here: the redraw above is synchronous (see render/scene.ts),
+    // so this is the one moment both canvases certainly show the frame that was
+    // just built. A no-op unless a recording is running.
+    this.recorder.capture();
+    this.markFrame();
+  }
+
+  /**
+   * Notes that a frame was painted, and forgets the ones now too old to count.
+   *
+   * Kept here rather than in the loop because a frame is a frame however it came
+   * to be drawn: while the crowd walks the rate is the loop's, and while it is
+   * paused it is whatever the repaints after a pan or a mouse move came to.
+   */
+  private markFrame(): void {
+    const now = performance.now();
+    this.frameTimes.push(now);
+    while (this.frameTimes.length > 0 && now - this.frameTimes[0] > FPS_WINDOW_MS) {
+      this.frameTimes.shift();
+    }
+  }
+
+  /** Frames a second over the last second, or 0 before there are two to divide. */
+  private get fps(): number {
+    const n = this.frameTimes.length;
+    if (n < 2) return 0;
+    const span = this.frameTimes[n - 1] - this.frameTimes[0];
+    return span > 0 ? Math.round(((n - 1) / span) * 1000) : 0;
   }
 
   private renderScene(): void {
@@ -1133,6 +1379,10 @@ export class App {
       `Walls: ${this.walls.length}`,
       `Zoom level: ${this.viewport.zoomLevel} (scale ${this.viewport.scale.toFixed(3)})`,
       m ? `X: ${Math.round(m[0])} / Y: ${Math.round(m[1])}` : 'X: - / Y: -',
+      // Below the ported lines rather than among them: drawInformationString had
+      // no frame rate to report, because Swing repainted on a timer and the
+      // number would have been the timer's.
+      `FPS: ${this.fps}`,
     ];
   }
 
@@ -1142,4 +1392,16 @@ export class App {
   }
 
   get toolbarRef(): Toolbar { return this.toolbar; }
+}
+
+/**
+ * How big a recording came out, in the unit that says something.
+ *
+ * A short clip in megabytes is "0.0 MB", which reads as nothing having been
+ * recorded at the exact moment somebody is deciding whether it is worth keeping.
+ */
+function fileSize(bytes: number): string {
+  return bytes < 1_000_000
+    ? `${Math.max(1, Math.round(bytes / 1000))} KB`
+    : `${(bytes / 1_000_000).toFixed(1)} MB`;
 }

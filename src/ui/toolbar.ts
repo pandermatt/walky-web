@@ -47,7 +47,9 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
       // by the same rule, rather than this one being spelt inside a label.
       { key: 'undo', icon: 'undo.png', title: 'Undo', kind: 'action', shortcut: 'Ctrl+Z' },
       { key: 'clear', icon: 'clear.png', title: 'Clear map', kind: 'action' },
-      { key: 'record', icon: 'record.png', title: 'Record', kind: 'action' },
+      // A toggle rather than a one-shot: a recording is a state you are in, and
+      // the pressed cell is the only thing on the strip that says you are in it.
+      { key: 'record', icon: 'record.png', title: 'Record', kind: 'toggle' },
     ],
   },
   {
@@ -327,10 +329,22 @@ export class Toolbar {
    * Greys out an action there is nothing to do with -- undo with an empty
    * stack. A disabled button is the honest answer to "can I?", where one that
    * looks live and does nothing is not; `.wk-btn:disabled` carries the look.
+   *
+   * @param reason renames the cell while it is out, for something a browser
+   *   simply cannot do -- recording, on the ones that cannot -- where "not now"
+   *   is a dead end rather than an answer. The accessible name and not the tip,
+   *   because a tip is not shown over a disabled control at all (see
+   *   ui/tooltip.ts), so a name is the only place the sentence can go. Omitted,
+   *   the button goes back to naming itself.
    */
-  setEnabled(key: ActionId, enabled: boolean): void {
+  setEnabled(key: ActionId, enabled: boolean, reason?: string): void {
     const btn = this.buttons.get(key);
-    if (btn) btn.disabled = !enabled;
+    if (!btn) return;
+    btn.disabled = !enabled;
+    const name = !enabled && reason
+      ? reason
+      : BUTTONS.find((spec) => spec.key === key)?.title;
+    if (name) btn.setAttribute('aria-label', name);
   }
 
   /** Marks a toggle action as on or off, e.g. the settings button while open. */

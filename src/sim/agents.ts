@@ -148,6 +148,26 @@ export class Agents {
     return n;
   }
 
+  /**
+   * Whether every pedestrian with somewhere to be has got there: what "the run is
+   * over" means, and what a recording watches for so it can stop itself.
+   *
+   * Pedestrians with no goal are not counted, in either direction. One standing
+   * where it was painted is not waiting to arrive -- it was never going anywhere
+   * -- and holding the answer back for it would mean a map with a single stray
+   * dot never finishing. False with nobody bound for anywhere at all, since
+   * "everyone has arrived" is not a thing an empty crowd has done.
+   */
+  get allArrived(): boolean {
+    let bound = 0;
+    for (let i = 0; i < this.count; i++) {
+      if (this.goal[i] < 0) continue;
+      if (!this.arrived[i]) return false;
+      bound++;
+    }
+    return bound > 0;
+  }
+
   /** The pedestrian under a point, or -1. Topmost wins, as clicking expects. */
   indexAt(p: Point, radius: number): number {
     for (let i = this.count - 1; i >= 0; i--) {

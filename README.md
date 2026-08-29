@@ -366,6 +366,56 @@ behaviour it describes, which is why the second file exists.
   dropped rather than delayed. The result is popcorn instead of noise. The audio
   context is started from the Start click, since a context created anywhere but a
   user gesture begins suspended and plays nothing. Toggle it off in Settings.
+- **Record.** The button was in the 2016 toolbar and it is the same button here,
+  meaning the same thing. Behind it, though, was a window: pick a resolution from
+  a combo box, pick a folder, press Start — and `PedestrianPanel` then wrote
+  `frame0.jpg`, `frame1.jpg` and on, one image per map change, forever, with no
+  frame rate anywhere in it. They were PNGs despite the extension. The dialog
+  carried three warnings in red admitting most of this: that the zoom you had
+  chosen was ignored, and that what you got was an image sequence and not a movie
+  file. Neither is true now. One tap records what is on screen, at the size and
+  zoom you are looking at; a second tap stops, and offers a single video file to
+  save. It starts the crowd walking, because a video of a map standing still is
+  not what anybody presses Record for, and it stops itself once every pedestrian
+  bound for a goal has reached one — a simulation is a thing that finishes, and a
+  recording that sits on the finished picture until somebody notices is not what
+  anyone would keep. It holds a second and a half on the end first, so the video
+  finishes after the last plop rather than on it. Pedestrians with no goal are not
+  waited for; they were never going anywhere.
+
+  The picture is composited rather than captured. Walky paints on two canvases —
+  deck.gl's for the walls and the crowd, a 2D one over it for the dashed hulls and
+  the rubber band — and neither of them paints the ground, which is a CSS
+  background. So a third canvas offscreen is filled with `#1E1E1E`, has the two
+  drawn onto it, and is what the video is made of. It is repainted on every frame
+  even when nothing has moved, because a canvas only hands the recorder a frame
+  when it has been painted since the last one, and a still map would otherwise
+  become one frame of enormous duration rather than a video. The frames are pushed
+  from the render loop rather than pulled by a loop of the recorder's own, since
+  the redraw there is synchronous and that is the one moment both canvases are
+  certainly showing the frame just built.
+
+  The plops are in it. `audio/plops.ts` hands over a stream of its own, built on
+  the first recording rather than up front — a destination node keeps the audio
+  context awake whether or not anything is reading it, and most sessions never
+  record — and its track joins the picture's in one file. With the sound setting
+  off the recording is video only, rather than a track of silence: that is a meter
+  that never moves and bitrate spent on nothing.
+
+  Two things are deliberately not in it. **The chrome**: the bar, the panels and
+  the chips are DOM and the settings sheet is a `<dialog>` in the top layer, so
+  none of them can appear in a canvas capture — the recording is the map and only
+  the map, which is exactly what `PedestrianPanel` drew. **Anything past two
+  minutes**: a recorder holds its bytes in memory, and an unattended recording is a
+  tab that eventually falls over, so it stops itself and says so. It also stops if
+  the tab goes to the background, where the browser hands out no animation frames
+  and iOS may take the recorder away outright, and it refuses to start there at
+  all — the visibility handler catches going away, not being away already.
+- **The debug readout reports the frame rate.** `drawInformationString` had no
+  such line, because Swing repainted on a timer and the number would have been the
+  timer's. Here it is measured where a frame is actually painted, over the last
+  second, so it is the loop's rate while the crowd walks and whatever the repaints
+  came to while it is paused. Turn it on with **Debug info** in Settings.
 
 ### Overlapping walls are no longer merged
 

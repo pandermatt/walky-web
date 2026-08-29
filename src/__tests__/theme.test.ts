@@ -6,6 +6,7 @@ import { SHEET_CSS } from '../ui/settingsSheet';
 import { TOOLBAR_CSS } from '../ui/toolbar';
 import { CONTEXT_CSS } from '../ui/contextPanel';
 import { TOOLTIP_CSS } from '../ui/tooltip';
+import { RECORDING_CSS } from '../ui/recordingChip';
 import { TOAST_CSS } from '../pwa';
 
 /**
@@ -16,7 +17,7 @@ import { TOAST_CSS } from '../pwa';
 
 const ALL_CSS = [
   THEME_CSS, BUTTON_CSS, CONTROLS_CSS, SHEET_CSS, TOOLBAR_CSS, CONTEXT_CSS, TOAST_CSS,
-  TOOLTIP_CSS,
+  TOOLTIP_CSS, RECORDING_CSS,
 ].join('\n');
 
 describe('the accent', () => {
