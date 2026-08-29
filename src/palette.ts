@@ -62,3 +62,30 @@ export function toCss(c: RGB): string {
 export function toHex(c: RGB): string {
   return '#' + c.map((v) => v.toString(16).padStart(2, '0').toUpperCase()).join('');
 }
+
+/** The same colour, at an alpha -- for a tint or a track. */
+export function withAlpha(c: RGB, alpha: number): string {
+  return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+}
+
+/** WCAG relative luminance. */
+export function relativeLuminance(c: RGB): number {
+  const channel = (v: number) => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(c[0]) + 0.7152 * channel(c[1]) + 0.0722 * channel(c[2]);
+}
+
+/**
+ * WCAG contrast ratio, 1 to 21.
+ *
+ * Here so that the claim "the accent is readable" is a thing the tests check
+ * rather than a thing a comment asserts: the accent is derived by an operation
+ * (see shadowOf), and an operation's output has to be measured, not trusted.
+ */
+export function contrastRatio(a: RGB, b: RGB): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
