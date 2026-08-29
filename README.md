@@ -252,13 +252,58 @@ Two things the manifest does not cover:
 
 - **iOS reads almost none of it.** The home-screen icon, the app name and
   standalone display each need their own tag in `index.html`.
-- **Installed, the page runs edge to edge**, so the toolbar and the panels are
-  offset by `env(safe-area-inset-*)` instead of sitting under a notch.
+- **The status bar is not somewhere to draw.** `viewport-fit=cover`, and
+  equally the translucent status-bar style, put the page *underneath* iOS's
+  status bar — which then frosts whatever sits below it, and the top of the map
+  wears a blurred band belonging to nothing. Left alone iOS insets the web view
+  instead and the top of the map is the top of the map. The
+  `env(safe-area-inset-*)` offsets stay in the layout anyway, where they resolve
+  to 0, so nothing lands under a notch if cover is ever turned on.
 
 The app icons are derived from `images/icon.png` — the original's own pedestrian
 glyph — painted white on `#1E1E1E`, since a black glyph on transparency
 disappears against a dark home screen. The maskable variant keeps the figure
 inside the inner 80% so that a circular crop cannot take its head off.
+
+### Installed on a phone, the toolbar moves to the thumb
+
+Installed there is no browser chrome, which makes the top-left corner the far
+end of the screen from the hand holding the phone — every tool switch a reach
+across the whole map. In that one case the strip becomes a row of glass capsules
+floating over the bottom of it, in the shape and for the reason iOS puts
+navigation there. The pattern, the glass recipe included, is lifted from the tab
+bar in [pandermatt/bern-hackt-2026](https://github.com/pandermatt/bern-hackt-2026).
+
+The condition is `pointer: coarse` and not a width breakpoint, because this is a
+fact about the hand rather than the viewport: a phone in landscape is 844px wide
+and still a phone. An installed desktop window keeps the strip, which is where a
+pointer wants it. Whether the app is installed is decided once, before anything
+draws, and written to `<html>` as `data-standalone`; every rule that cares reads
+that, so "the installed app" is defined in one place.
+
+The glass is `blur(20px) saturate(180%)` over a 72%-opaque pane. The saturation
+is the half that does the work — blur alone gives frosted plastic, greyed and
+flat, and pushing the colour back up is what makes a wall passing underneath
+bloom through. Where `backdrop-filter` is unsupported the capsule goes fully
+opaque instead, since without the filter that pane is a 72%-opaque sheet with
+the map legible through it.
+
+One capsule per group, and the groups are the three separators ToolboxPanel
+already had: run, tools, view. They wrap, so the layout follows the screen
+instead of being told about it — portrait puts the seven tools on their own row
+nearest the thumb with the six others above, landscape fits all three side by
+side, and no breakpoint decides it. The bar's height *is* measured, and
+published as a custom property, because the panels and the update chip have to
+clear whatever it came out to. Between the capsules the bar is not there at all:
+only they take a tap, or the map would go dead across a band it is still visible
+through.
+
+Two deliberate differences from the bar this borrows from. The cells carry icons
+and no labels — Walky's toolbar has never had words in it, and the original 2016
+icons are the vocabulary the desktop strip already teaches. And the panels
+scroll: settings and a contextual panel open together are taller than a phone,
+which is the same problem the toolbar's own `max-height` was already solving one
+panel over.
 
 ## Performance
 

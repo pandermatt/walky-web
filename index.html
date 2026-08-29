@@ -2,13 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="A pedestrian simulator that runs entirely in the browser. Draw walls, mark a goal, paint a crowd, and watch it find its way." />
     <meta name="theme-color" content="#1E1E1E" />
     <link rel="icon" href="./images/icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <!-- iOS reads none of the manifest: the home-screen icon, the app name and
-         the standalone display mode each need their own tag. -->
+         the standalone display mode each need their own tag.
+
+         Deliberately no viewport-fit=cover, and deliberately not the
+         black-translucent status bar: either one draws the page underneath
+         iOS's status bar, which then frosts whatever passes below it. Left
+         alone, iOS insets the web view under the status bar instead and the
+         top of the map is simply the top of the map. "black" keeps the bar's
+         text light over the #1E1E1E ground. -->
     <link rel="apple-touch-icon" href="./images/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />

@@ -9,8 +9,8 @@
 const CSS = `
 #wk-toast {
   position: absolute; z-index: 20;
-  right: calc(12px + env(safe-area-inset-right));
-  bottom: calc(12px + env(safe-area-inset-bottom));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px 8px 12px; border-radius: 8px;
   background: #ECECEC; border: 1px solid #9A9A9A;
@@ -25,6 +25,15 @@ const CSS = `
   background: #F7F7F7; border: 1px solid #B4B4B4; border-radius: 5px;
 }
 #wk-toast button:hover { background: #FFFFFF; }
+/* The installed app's toolbar is a bar across the bottom, so the chip keeps its
+   corner and sits above it -- --wk-toolbar-h is the bar's measured height (see
+   ui/toolbar.ts) and 20px is the gap it floats at. */
+@media (pointer: coarse) {
+  html[data-standalone] #wk-toast {
+    bottom: calc(28px + var(--wk-toolbar-h, 0px) + env(safe-area-inset-bottom, 0px));
+    max-width: calc(100vw - 24px);
+  }
+}
 `;
 
 let toast: HTMLDivElement | null = null;

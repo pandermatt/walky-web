@@ -52,13 +52,40 @@ export const PANEL_CSS = `
 .wk-panel button:hover { background: #FFFFFF; }
 .wk-panel .note { margin: 6px 0 0; font-size: 12px; color: #4A4A4A; min-height: 15px; }
 #panels {
-  position: absolute; z-index: 11;
-  top: calc(12px + env(safe-area-inset-top));
-  left: calc(84px + env(safe-area-inset-left));
+  position: absolute; z-index: 11; box-sizing: border-box;
+  top: env(safe-area-inset-top, 0px);
+  /* The 12px inset is the padding below; 84px is what clears the toolbar. */
+  left: calc(72px + env(safe-area-inset-left, 0px));
+  /* Scrolling a box clips it at its padding edge, and a panel's drop shadow
+     falls outside its own border. The padding is the room that shadow needs;
+     the offsets take it back off, so the panels sit where they always did. */
+  padding: 12px;
   display: flex; flex-direction: column; gap: 8px;
   align-items: flex-start; pointer-events: none;
+  /* The problem the toolbar's own max-height solves, one panel over: settings
+     and a contextual panel open together are taller than a phone, and the
+     controls at the bottom are otherwise simply unreachable. */
+  max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  /* #stage turns touch panning off so a drag draws instead of scrolling the
+     map; this column has to opt back in or it cannot be scrolled by touch. */
+  touch-action: pan-y;
 }
 #panels > * { pointer-events: auto; }
+/* Installed on a touch device the strip is a bar across the bottom: the corner
+   it was being kept out of is free, and the room it leaves is what is above it.
+   --wk-toolbar-h is the bar's measured height (see ui/toolbar.ts) and 20px is
+   the gap it floats at. */
+@media (pointer: coarse) {
+  html[data-standalone] #panels {
+    left: env(safe-area-inset-left, 0px);
+    max-height: calc(
+      100vh - 16px - var(--wk-toolbar-h, 0px)
+      - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+    );
+  }
+}
 `;
 
 /** A labelled range input bound to one setting. Returns the element and a refresher. */
