@@ -37,14 +37,18 @@ const BUTTONS: ButtonSpec[] = [
 
 const CSS = `
 #toolbar {
-  position: absolute; top: 12px; left: 12px; z-index: 10;
+  position: absolute; z-index: 10;
+  /* Installed on a phone the page runs edge to edge, so the strip has to clear
+     the notch and the rounded corners rather than sit under them. */
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
   display: flex; flex-direction: column; gap: 4px;
   padding: 6px; border-radius: 8px;
   background: #ECECEC; border: 1px solid #9A9A9A;
   box-shadow: 0 2px 10px rgba(0,0,0,.5);
   /* Thirteen buttons do not fit a short window; without this the lower tools,
      settings among them, are simply unreachable. */
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   overflow-y: auto;
   scrollbar-width: thin;
 }

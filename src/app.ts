@@ -56,6 +56,14 @@ export class App {
   private worldRevision = 0;
   /** Bumped every simulation tick -- agents, rays, paths. */
   private agentRevision = 0;
+  /**
+   * Last result of goalPaths(), keyed by the revisions it was built from. While
+   * paused the overlay is redrawn on every mouse move, and the predicted routes
+   * behind it are a graph scan per pedestrian -- worth doing once per edit, not
+   * once per frame.
+   */
+  private goalPathCache: Point[][] = [];
+  private goalPathCacheKey = '';
 
   constructor(
     private stage: HTMLElement,
@@ -567,24 +575,47 @@ export class App {
    * drawFastestPath(). Each path is its current position, the waypoint it is
    * walking to, then the rest of the route read off the Dijkstra predecessors --
    * so this costs a short array walk per agent, not a search.
+   *
+   * A pedestrian only gets a waypoint on its first step, so before the run
+   * starts there is nothing to read. Marking a goal is exactly when the route is
+   * worth seeing -- it is the answer to "where will they go?" -- so while paused
+   * the first waypoint is picked here instead, and the rest follows the same
+   * predecessors. That is one graph scan per pedestrian, hence the cache below:
+   * paused, the picture only changes when the map, the crowd or the goal does.
    */
   private goalPaths(): Point[][] {
+    const key = `${this.worldRevision}:${this.agentRevision}:${this.running ? 1 : 0}`;
+    if (this.goalPathCacheKey === key) return this.goalPathCache;
+
     const out: Point[][] = [];
     // A debug overlay, so it is capped: past this many routes the picture is an
     // unreadable mat of lines anyway, and building one array per agent per frame
     // starts to cost more than the simulation does.
     const limit = 1500;
     for (let i = 0; i < this.agents.count && out.length < limit; i++) {
-      if (this.agents.arrived[i] || !this.agents.hasWaypoint[i]) continue;
+      if (this.agents.arrived[i]) continue;
       const goalId = this.agents.goal[i];
       if (goalId < 0) continue;
       const head: Point = [this.agents.x[i], this.agents.y[i]];
-      const rest = this.nav.pathFromNode(this.agents.waypointNode[i], goalId);
-      const path: Point[] = rest.length > 0
-        ? [head, ...rest]
-        : [head, [this.agents.waypointX[i], this.agents.waypointY[i]]];
+      let path: Point[];
+      if (this.agents.hasWaypoint[i]) {
+        const rest = this.nav.pathFromNode(this.agents.waypointNode[i], goalId);
+        path = rest.length > 0
+          ? [head, ...rest]
+          : [head, [this.agents.waypointX[i], this.agents.waypointY[i]]];
+      } else {
+        // Predicted, not remembered. Skipped while running: an agent without a
+        // waypoint mid-run is one whose route just failed, and re-searching it
+        // every frame would put the per-agent search back into the loop the
+        // whole navigation rewrite took it out of.
+        if (this.running) continue;
+        path = this.nav.routeFrom(head, goalId);
+      }
       if (path.length >= 2) out.push(path);
     }
+
+    this.goalPathCacheKey = key;
+    this.goalPathCache = out;
     return out;
   }
 
