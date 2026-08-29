@@ -33,19 +33,35 @@ describe('isVisible', () => {
   });
 });
 
-describe('walls left out of the convex hull calculation', () => {
+describe('walls kept out of a group\'s shared outline', () => {
   const U: Point[] = [[0, 0], [200, 0], [200, 60], [60, 60], [60, 200], [200, 200], [200, 260], [0, 260]];
 
-  it('get no shell, but the same obstacles, nodes and blocking as a hulled wall', () => {
-    const hulled = buildVisibilityGraph([makeWall([U])], RADIUS);
-    const freehand = buildVisibilityGraph([makeWall([U], { hulled: false })], RADIUS);
+  it('navigate exactly like any other wall: shell, obstacles, nodes and blocking', () => {
+    const shared = buildVisibilityGraph([makeWall([U])], RADIUS);
+    const freehand = buildVisibilityGraph([makeWall([U], { sharesOutline: false })], RADIUS);
 
-    expect(hulled.shells).toHaveLength(1);
-    expect(freehand.shells).toHaveLength(0);
-    // The broad phase is all that is lost: the parts come from the polygon.
-    expect(freehand.obstacles.map((o) => o.hull)).toEqual(hulled.obstacles.map((o) => o.hull));
-    expect(freehand.nodes).toEqual(hulled.nodes);
+    // Whether a wall joins a *drawn* group outline says nothing about navigation.
+    expect(shared.shells).toHaveLength(1);
+    expect(freehand.shells).toHaveLength(1);
+    expect(freehand.shells[0].hull).toEqual(shared.shells[0].hull);
+    expect(freehand.obstacles.map((o) => o.hull)).toEqual(shared.obstacles.map((o) => o.hull));
+    expect(freehand.nodes).toEqual(shared.nodes);
     expect(isVisible([-40, 130], [240, 130], freehand)).toBe(false);
+  });
+
+  it('are blocked by every convex part, not only by what the shell rejects', () => {
+    // A needle: its convex parts have far sharper corners than the whole-wall
+    // hull does, so an expanded part reaches outside a shell expanded by the
+    // radius alone. The shell is only a broad-phase reject, so it has to contain
+    // every part or a segment through one is wrongly waved through.
+    const needle: Point[] = [[0, 0], [400, 6], [400, 12], [0, 30], [200, 15]];
+    const g = buildVisibilityGraph([makeWall([needle], { sharesOutline: false })], RADIUS);
+    const shell = g.shells[0].hull;
+    for (const ob of g.obstacles) {
+      for (const p of ob.hull) {
+        expect(pointInPolygon(shell, p)).toBe(true);
+      }
+    }
   });
 });
 

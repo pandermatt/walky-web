@@ -1,4 +1,4 @@
-import { expandPolygon, pointInPolygon, pointSegmentDistance, segmentsCross, distance, type Point } from './geometry';
+import { expandPolygon, MITER_LIMIT, pointInPolygon, pointSegmentDistance, segmentsCross, distance, type Point } from './geometry';
 
 /** Tolerance for "this point sits on the hull outline rather than inside it". */
 const BOUNDARY_EPSILON = 1e-6;
@@ -17,6 +17,29 @@ import type { Wall } from '../state/model';
  */
 export const NODE_MARGIN = 2;
 
+/**
+ * How much wider than the pedestrian radius a wall's shell is expanded.
+ *
+ * The shell is only a reject -- a segment or point that misses it is known to
+ * miss every convex part of the wall -- so it is only sound while it contains all
+ * of them. Offsetting the whole-wall hull by the radius does not guarantee that:
+ * expandPolygon cuts a corner sharper than the miter limit, and a needle part
+ * inside the hull can have a much sharper corner than the hull does, so its own
+ * cut corner may reach further out than the hull's.
+ *
+ * A part vertex lies inside the hull, and expanding by `amount` moves a vertex at
+ * most `amount * hypot(MITER_LIMIT, 1)` (the note on expandPolygon derives that
+ * bound), so every expanded part lies within that distance of the hull. Expanding
+ * the hull by the same distance covers all of it: the miter cut for a hull corner
+ * sits `MITER_LIMIT` times further out still, tangent to a circle that already
+ * contains everything within the offset distance of that corner.
+ *
+ * Offsetting by 2.2 radii instead of one rejects a little less, which costs
+ * nothing measurable: the bounding-box test in front of it does most of the work,
+ * and a shell that wrongly rejects costs correctness.
+ */
+const SHELL_SLACK = Math.hypot(MITER_LIMIT, 1);
+
 export interface Obstacle {
   wallId: number;
   /** Index of this convex part among all obstacles, used for ring adjacency. */
@@ -27,14 +50,12 @@ export interface Obstacle {
 }
 
 /**
- * A whole wall's convex hull, expanded by the radius: the shape the original drew
- * dashed. Kept as a broad phase -- anything that misses the shell cannot touch any
- * of the wall's convex parts, so the per-part work is skipped entirely.
+ * A whole wall's convex hull, expanded: the broad phase for that wall. Anything
+ * that misses the shell cannot touch any of the wall's convex parts, so the
+ * per-part work is skipped entirely.
  *
- * Not every wall has one: a wall that opts out of the convex hull calculation
- * (Wall.hulled false, i.e. anything the freehand tool drew) contributes no shell,
- * and its group is simply tested part by part. That is the same answer, only
- * without the early reject.
+ * Expanded by SHELL_SLACK rather than by the radius alone, so that it really does
+ * contain every part -- see the constant.
  */
 export interface WallShell {
   wallId: number;
@@ -165,10 +186,11 @@ export function buildVisibilityGraph(walls: Wall[], radius: number): VisibilityG
   const nodeRings: Point[][] = [];
 
   for (const wall of walls) {
-    // No hull means no broad phase for this wall, never a missing obstacle: the
-    // parts below come from the polygons themselves.
+    // A wall of fewer than three distinct points has no hull to reject against;
+    // that costs the broad phase, never an obstacle, since the parts below come
+    // from the polygons themselves.
     if (wall.hull.length >= 3) {
-      const shellHull = expandPolygon(wall.hull, radius);
+      const shellHull = expandPolygon(wall.hull, radius * SHELL_SLACK);
       shells.push({ wallId: wall.id, hull: shellHull, bbox: bboxOf(shellHull) });
     }
     for (const poly of wall.polygons) {

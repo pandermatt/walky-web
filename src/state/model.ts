@@ -12,28 +12,26 @@ export interface Wall {
   polygons: Point[][];
   /**
    * Convex hull over every point of every polygon -- drawn dashed, and the broad
-   * phase for navigation. Recomputed whenever the polygons change, so merging two
-   * overlapping shapes yields one hull wrapping both. Empty when `hulled` is
-   * false, which is the freehand wall tool's case.
+   * phase for navigation. Every wall has one; it is recomputed whenever the
+   * polygons change.
    */
   hull: Point[];
   /**
-   * Whether this wall takes part in the convex hull calculation at all.
+   * Whether this wall's points may be merged into the outline drawn over a group
+   * of touching shapes.
    *
-   * A hull is a summary, and it only reads as one when the shape it summarises is
-   * roughly convex to begin with: a rectangle, a frame, a blocky building. A
-   * freehand trace is the opposite -- an S, a spiral, a coastline -- and hulling
-   * it draws a dashed outline that has nothing to do with what was drawn, and
-   * pulls every wall it touches into the same misleading blob.
+   * The dashed outline is drawn per connected group, so shapes drawn against each
+   * other read as one object. That works for shapes a hull describes -- a
+   * rectangle, a frame, a blocky building -- but a freehand trace is the opposite,
+   * an S, a spiral, a coastline, and letting one into a group stretches the
+   * group's outline over everything the trace wanders past.
    *
-   * It still groups with the shapes it touches, and still joins two of them under
-   * one outline; it just adds no points to that outline. See groupWalls.
-   *
-   * Opting out costs nothing but the broad phase: navigation is built from the
-   * convex *decomposition* of each polygon, never from this hull, so the wall
-   * blocks and is walked around exactly as before.
+   * False keeps the wall out of that shared outline. It still has a hull of its
+   * own, and that hull is still drawn -- so the convex-hull view shows something
+   * for every shape on the map -- it is simply drawn for that wall alone. See
+   * groupWalls.
    */
-  hulled: boolean;
+  sharesOutline: boolean;
   color: RGB;
   isGoal: boolean;
   selected: boolean;
@@ -127,17 +125,17 @@ export function allPoints(wall: Wall): Point[] {
 
 export interface WallOptions {
   color?: RGB;
-  /** False to leave this wall out of the convex hull calculation; see Wall.hulled. */
-  hulled?: boolean;
+  /** False to keep this wall out of a group's shared outline; see Wall.sharesOutline. */
+  sharesOutline?: boolean;
 }
 
 export function makeWall(polygons: Point[][], options: WallOptions = {}): Wall {
-  const { color = randomBrightColor(), hulled = true } = options;
+  const { color = randomBrightColor(), sharesOutline = true } = options;
   return {
     id: nextId++,
     polygons,
-    hull: hulled ? monotoneChainHull(polygons.flat()) : [],
-    hulled,
+    hull: monotoneChainHull(polygons.flat()),
+    sharesOutline,
     color,
     isGoal: false,
     selected: false,

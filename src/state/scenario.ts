@@ -28,8 +28,8 @@ export interface SerializedWall {
   polygons: Point[][];
   color: RGB;
   isGoal: boolean;
-  /** False for shapes left out of the convex hull calculation; see Wall.hulled. */
-  hulled: boolean;
+  /** False for shapes kept out of a group's shared outline; see Wall.sharesOutline. */
+  sharesOutline: boolean;
 }
 
 export interface Scenario {
@@ -72,7 +72,7 @@ export function serializeScenario(input: {
       polygons: w.polygons.map((poly) => poly.map(([x, y]) => [round(x), round(y)] as Point)),
       color: w.color,
       isGoal: w.isGoal,
-      hulled: w.hulled,
+      sharesOutline: w.sharesOutline,
     })),
     trees: input.trees.map((t) => ({ x: round(t.position[0]), y: round(t.position[1]), radius: t.radius })),
     agents: input.agents.map((a) => ({
