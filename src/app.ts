@@ -375,7 +375,9 @@ export class App {
     // its own per-wall shells, which are tighter and so a better broad phase.
     const shells = this.groups().map((g) => ({
       points: expandPolygon(g.hull, this.settings.pedestrianRadius),
-      color: byId.get(g.wallIds[0]) ?? WHITE,
+      // From the first wall the hull was actually built from: a member that opts
+      // out of hulling contributes no outline, so it should not colour one.
+      color: byId.get(g.hullWallIds[0]) ?? WHITE,
       faint: false,
     }));
     const parts = this.nav.obstacles.map((ob) => ({

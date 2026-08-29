@@ -65,16 +65,37 @@ describe('groupWalls', () => {
   it('leaves a wall that opts out of hulling with no outline of its own', () => {
     const freehand = makeWall([rectanglePolygon([0, 0], [100, 100])], { hulled: false });
     expect(freehand.hull).toEqual([]);
+    // Nothing in the group to hull, so there is no outline to return.
     expect(groupWalls([freehand])).toEqual([]);
   });
 
-  it('does not let a wall that opts out drag a neighbour into its outline', () => {
+  it('groups a wall that opts out, but keeps it out of the hull', () => {
     const solid = makeWall([rectanglePolygon([0, 0], [100, 100])]);
     const freehand = makeWall([rectanglePolygon([90, 90], [400, 400])], { hulled: false });
     const groups = groupWalls([solid, freehand]);
-    // The two touch, so grouping them would stretch one outline over both.
     expect(groups).toHaveLength(1);
-    expect(groups[0].wallIds).toEqual([solid.id]);
+    // Both are members -- they touch -- but the outline is the rectangle's alone.
+    expect(groups[0].wallIds).toEqual([solid.id, freehand.id].sort((a, b) => a - b));
+    expect(groups[0].hullWallIds).toEqual([solid.id]);
     expect(groups[0].hull).toEqual(monotoneChainHull(solid.polygons.flat()));
+  });
+
+  it('lets a wall that opts out join two shapes under one outline', () => {
+    const left = makeWall([rectanglePolygon([0, 0], [100, 100])]);
+    const right = makeWall([rectanglePolygon([300, 0], [400, 100])]);
+    // A traced shape bridging the gap, reaching well below both rectangles.
+    const bridge = makeWall([[[90, 40], [310, 40], [310, 400], [90, 400]] as Point[]],
+      { hulled: false });
+
+    expect(groupWalls([left, right])).toHaveLength(2);
+    const [group] = groupWalls([left, right, bridge]);
+    expect(group.wallIds).toHaveLength(3);
+    expect(group.hullWallIds).toEqual([left.id, right.id].sort((a, b) => a - b));
+    // One hull over both rectangles, and it stops where they do: the bridge's
+    // own reach down to y = 400 is not part of it.
+    expect(group.hull).toEqual(monotoneChainHull([
+      ...left.polygons.flat(), ...right.polygons.flat(),
+    ]));
+    expect(Math.max(...group.hull.map((p) => p[1]))).toBe(100);
   });
 });
