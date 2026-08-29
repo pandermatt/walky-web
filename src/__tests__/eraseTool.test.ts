@@ -47,9 +47,12 @@ function stubContext(): { ctx: ToolContext; rec: Recorded } {
     colorAt: () => null,
     agentPositions: () => [],
     worldPerPixel: () => 1,
-    eraseTargetAt: (at: Point): EraseTarget | null => (
-      here(at) ? { kind: 'wall', outlines: [[[0, 0], [1, 0], [1, 1]]] } : null
-    ),
+    eraseTargetAt: (at: Point): EraseTarget | null => {
+      const id = here(at);
+      // 'a' is wall 1 and 'b' is wall 2, so the preview can be checked against
+      // which of the two the pointer is actually over.
+      return id ? { kind: 'wall', id: id === 'a' ? 1 : 2, outlines: [[[0, 0], [1, 0], [1, 1]]] } : null;
+    },
     eraseAt: (at: Point, sameStroke: boolean) => {
       rec.rubs.push({ at, sameStroke });
       const id = here(at);
@@ -125,11 +128,15 @@ describe('EraseTool', () => {
     expect(over.pendingPolygons).toHaveLength(1);
     expect(over.pendingPolygonsInvalid).toBe(true);
     expect(over.cursorGhost?.kind).toBe('eraser');
+    // Named as well as outlined, so the layer underneath can fade the body of
+    // the shape and not just its edge.
+    expect(over.erasing).toEqual({ kind: 'wall', id: 1, outlines: [[[0, 0], [1, 0], [1, 1]]] });
 
     // Over open ground the badge stays -- the tool is still in hand -- but there
     // is nothing outlined, because nothing is about to go.
     tool.onPointerMove(at([150, 50], 0), ctx);
     expect(tool.preview().pendingPolygons).toEqual([]);
+    expect(tool.preview().erasing).toBeNull();
     expect(tool.preview().cursorGhost?.kind).toBe('eraser');
   });
 
@@ -139,6 +146,7 @@ describe('EraseTool', () => {
     tool.onPointerMove(at([50, 50], 0), ctx);
     tool.cancel();
     expect(tool.preview().pendingPolygons).toEqual([]);
+    expect(tool.preview().erasing).toBeNull();
     expect(tool.preview().cursorGhost).toBeNull();
   });
 });

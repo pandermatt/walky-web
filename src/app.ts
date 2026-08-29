@@ -958,12 +958,16 @@ export class App {
       // edge, where the dashes would land on the ring it already wears and read
       // as nothing at all.
       const halo = reach + 5 / this.viewport.scale;
-      return { kind: 'pedestrian', outlines: [ring([this.agents.x[i], this.agents.y[i]], halo)] };
+      return {
+        kind: 'pedestrian',
+        id: i,
+        outlines: [ring([this.agents.x[i], this.agents.y[i]], halo)],
+      };
     }
     const wall = this.pickWall(at);
     // A wall's own polygons: for a border frame that is its four bars, which
     // outlines exactly the frame that is about to go.
-    return wall ? { kind: 'wall', outlines: wall.polygons } : null;
+    return wall ? { kind: 'wall', id: wall.id, outlines: wall.polygons } : null;
   }
 
   /**
@@ -1237,6 +1241,10 @@ export class App {
   }
 
   private renderScene(): void {
+    // Under the same rule the overlay's pointer chrome follows: a recording is a
+    // picture of the crowd, and a shape dimming as the mouse crosses it is a
+    // picture of the mouse.
+    const erasing = this.recorder.active ? null : this.tool?.preview().erasing ?? null;
     const sceneState: SceneState = {
       worldRevision: this.worldRevision,
       agentRevision: this.agentRevision,
@@ -1245,6 +1253,7 @@ export class App {
       rays: [],
       paths: this.settings.showLineToTarget ? this.goalPaths() : [],
       showPersonalSpace: this.settings.showPersonalSpace,
+      erasing,
     };
     this.scene.setViewState(this.viewport.toViewState());
     this.scene.render(sceneState);

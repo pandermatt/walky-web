@@ -85,6 +85,9 @@ export class EraseTool implements Tool {
       // is about to go, and the badge alone says the eraser is the tool in hand.
       pendingPolygons: this.target ? this.target.outlines : [],
       pendingPolygonsInvalid: true,
+      // The same target said twice, because it is drawn on two canvases: the
+      // outline on the overlay above, the faded fill by the layer underneath.
+      erasing: this.target,
       cursorGhost: { kind: 'eraser', at: this.mouse, size: 0 },
     };
   }

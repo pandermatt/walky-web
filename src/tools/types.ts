@@ -15,6 +15,8 @@ export type ToolId =
  */
 export interface EraseTarget {
   kind: 'wall' | 'pedestrian';
+  /** The wall's id, or the pedestrian's index -- whichever `kind` says. */
+  id: number;
   /** Outlines of what would go, for the preview. A border frame is four bars. */
   outlines: Point[][];
 }
@@ -115,6 +117,14 @@ export interface ToolPreview {
   pendingPedestrians: Point[];
   cursorGhost: CursorGhost | null;
   targetLines: TargetLines | null;
+  /**
+   * What a click would rub out, drawn faded as well as outlined.
+   *
+   * The outline alone sits on the edge of a shape, which on a map of shapes
+   * drawn against each other is the one place it is hardest to read. Taking the
+   * fill down says which *body* is going, at a glance and from anywhere in it.
+   */
+  erasing: EraseTarget | null;
 }
 
 export const EMPTY_PREVIEW: ToolPreview = {
@@ -127,6 +137,7 @@ export const EMPTY_PREVIEW: ToolPreview = {
   pendingPedestrians: [],
   cursorGhost: null,
   targetLines: null,
+  erasing: null,
 };
 
 export interface PointerInfo {

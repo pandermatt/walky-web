@@ -1,6 +1,7 @@
 import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
 import { SolidPolygonLayer, ScatterplotLayer, LineLayer, PathLayer } from '@deck.gl/layers';
 import { BLUE, ORANGE, RED, WHITE, YELLOW, type RGB } from '../palette';
+import type { EraseTarget } from '../tools/types';
 
 export type Point = [number, number];
 
@@ -13,8 +14,25 @@ export interface Wall {
 
 /** One drawable piece: a wall contributes one entry per polygon it owns. */
 interface WallPiece {
+  /** The wall it belongs to, so all of a border frame's bars fade together. */
+  wallId: number;
   polygon: Point[];
   color: RGB;
+}
+
+/**
+ * How opaque a shape the eraser is over is drawn.
+ *
+ * Enough that it is plainly still there and still its own colour -- this says
+ * "about to go", not "gone" -- and little enough that the dark map reads
+ * through it from across the shape rather than only at the outlined edge.
+ */
+const ERASING_ALPHA = 90;
+const SOLID_ALPHA = 255;
+
+/** RGB plus the alpha this piece should be drawn at. */
+function withAlpha(color: RGB, alpha: number): [number, number, number, number] {
+  return [color[0], color[1], color[2], alpha];
 }
 
 export interface Ray {
@@ -47,6 +65,11 @@ export interface SceneState {
   rays: Ray[];
   paths: Point[][];
   showPersonalSpace: boolean;
+  /**
+   * What the eraser is hovering, drawn faded. Null whenever that is not the
+   * tool in hand -- which is nearly always.
+   */
+  erasing: EraseTarget | null;
 }
 
 export class Scene {
@@ -105,18 +128,33 @@ export class Scene {
   }
 
   private buildLayers(state: SceneState) {
-    const { worldRevision, agentRevision, walls, agents, rays, paths, showPersonalSpace } = state;
+    const {
+      worldRevision, agentRevision, walls, agents, rays, paths, showPersonalSpace, erasing,
+    } = state;
+    const fadedWall = erasing?.kind === 'wall' ? erasing.id : -1;
+    const fadedAgent = erasing?.kind === 'pedestrian' ? erasing.id : -1;
 
     return [
       // Walls are flat 2D fills -- no shadow copy, no extrusion. A merged wall
       // owns several polygons, so it is flattened to one piece per polygon.
       new SolidPolygonLayer<WallPiece>({
         id: 'walls',
-        data: walls.flatMap((w) => w.polygons.map((polygon) => ({ polygon, color: w.color }))),
+        data: walls.flatMap((w) => (
+          w.polygons.map((polygon) => ({ wallId: w.id, polygon, color: w.color }))
+        )),
         getPolygon: (piece) => piece.polygon,
-        getFillColor: (piece) => piece.color as unknown as [number, number, number],
+        getFillColor: (piece) => withAlpha(
+          piece.color, piece.wallId === fadedWall ? ERASING_ALPHA : SOLID_ALPHA,
+        ),
         filled: true,
-        updateTriggers: { getPolygon: worldRevision, getFillColor: worldRevision },
+        // The hover is in the trigger as well as the revision: it changes what
+        // the colours are without changing the map, and a trigger that only
+        // watched the map would keep the buffers it built before the pointer
+        // arrived.
+        updateTriggers: {
+          getPolygon: worldRevision,
+          getFillColor: `${worldRevision}:${fadedWall}`,
+        },
       }),
 
       new LineLayer<Ray>({
@@ -164,7 +202,9 @@ export class Scene {
         getRadius: (a) => a.radius,
         radiusUnits: 'common',
         filled: true,
-        getFillColor: (a) => a.color as unknown as [number, number, number],
+        getFillColor: (a, { index }) => withAlpha(
+          a.color, index === fadedAgent ? ERASING_ALPHA : SOLID_ALPHA,
+        ),
         stroked: true,
         // Selected pedestrians wear a thicker yellow ring instead of the white
         // one, which is the original's selection colour.
@@ -173,7 +213,7 @@ export class Scene {
         getLineWidth: (a) => (a.selected ? 3 : 1),
         updateTriggers: {
           getPosition: agentRevision,
-          getFillColor: agentRevision,
+          getFillColor: `${agentRevision}:${fadedAgent}`,
           getRadius: agentRevision,
           getLineColor: agentRevision,
           getLineWidth: agentRevision,
