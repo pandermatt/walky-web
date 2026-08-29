@@ -61,13 +61,14 @@ export const CONTROLS_CSS = `
 .wk-panel input[type=checkbox] {
   appearance: none; -webkit-appearance: none;
   flex: 0 0 auto; width: 51px; height: 31px; margin: 0;
-  border-radius: 999px; background: rgba(120, 120, 128, .16);
+  border-radius: 999px; background: var(--wk-track);
   cursor: pointer; transition: background-color .2s ease;
 }
 .wk-panel input[type=checkbox]::after {
   content: ''; display: block; width: 27px; height: 27px; margin: 2px;
   border-radius: 50%; background: #FFF;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, .15), 0 1px 1px rgba(0, 0, 0, .16);
+  /* Enough to read as a knob and no more; the sheet it sits in is flat. */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
   transition: transform .2s ease;
 }
 .wk-panel input[type=checkbox]:checked {
@@ -97,7 +98,7 @@ export const CONTROLS_CSS = `
   background: linear-gradient(
     to right,
     var(--wk-accent) 0 var(--fill, 0%),
-    rgba(120, 120, 128, .16) var(--fill, 0%) 100%
+    var(--wk-track) var(--fill, 0%) 100%
   );
   /* Same reason as the switch: the lead-in has to have an edge on white. */
   box-shadow: inset 0 0 0 .5px var(--wk-fill-edge);
@@ -106,11 +107,10 @@ export const CONTROLS_CSS = `
   appearance: none; -webkit-appearance: none;
   width: 28px; height: 28px; margin-top: -12px;
   border-radius: 50%; background: #FFF;
-  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .04), 0 6px 13px rgba(0, 0, 0, .12),
-    0 .5px 4px rgba(0, 0, 0, .12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
 }
 .wk-panel input[type=range]::-moz-range-track {
-  height: 4px; border-radius: 2px; background: rgba(120, 120, 128, .16);
+  height: 4px; border-radius: 2px; background: var(--wk-track);
 }
 .wk-panel input[type=range]::-moz-range-progress {
   height: 4px; border-radius: 2px; background: var(--wk-accent);
@@ -118,7 +118,7 @@ export const CONTROLS_CSS = `
 }
 .wk-panel input[type=range]::-moz-range-thumb {
   width: 28px; height: 28px; border: 0; border-radius: 50%; background: #FFF;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
 }
 
 @media (prefers-reduced-motion: reduce) {

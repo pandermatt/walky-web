@@ -86,14 +86,20 @@ export const THEME_CSS = `
   /* The edge a bright fill needs to have on white; see controls.ts. */
   --wk-fill-edge: rgba(0, 0, 0, .22);
 
-  /* The three grounds: the bar's pane, a grouped cell, and the sheet behind it. */
+  /* The three grounds: the bar's pane, a card, and a group sitting on one. */
   --wk-bar: #ECECEC;
   --wk-card: #FFFFFF;
   --wk-group: #F2F2F7;
 
+  /* The trough behind a switch that is off and a slider not yet filled. It has
+     to hold against a group's grey as well as a card's white, which the iOS
+     value at .16 does not -- on grey it all but disappears. */
+  --wk-track: rgba(120, 120, 128, .28);
+
   --wk-r-cell: 999px;
-  --wk-r-card: 14px;
-  --wk-r-group: 10px;
+  --wk-r-card: 18px;
+  --wk-r-sheet: 28px;
+  --wk-r-group: 20px;
 
   /* One press feedback and one focus ring, everywhere. */
   --wk-press: .3;

@@ -57,11 +57,13 @@ export const SHEET_CSS = `
   max-width: none;
   height: fit-content;
   max-height: min(680px, 82vh);
-  border-radius: var(--wk-r-card);
+  border-radius: var(--wk-r-sheet);
   overflow: hidden;
-  background: var(--wk-group); color: var(--wk-ink);
+  background: var(--wk-card); color: var(--wk-ink);
   font: 17px/1.35 var(--wk-font-family);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+  /* No shadow. The backdrop is already dimming everything behind it, so a drop
+     shadow would be depth drawn twice -- and the sheet is flat now: one white
+     ground, grey groups on it, and nothing pretending to float above anything. */
 }
 .wk-sheet, .wk-sheet * { box-sizing: border-box; }
 /* The UA already hides a closed dialog; this only says what an open one is. */
@@ -107,34 +109,33 @@ export const SHEET_CSS = `
 }
 
 /*
- * A sheet's title bar: the title centred, the way out on the right. The outer
- * 1fr columns are equal, so the middle one is the middle of the sheet however
- * wide "Done" turns out to be. Done is no longer hidden anywhere -- it is the
- * way out on every device now, which is the point of making this a modal.
+ * The title, said properly: large, bold and hard against the left edge, with
+ * the way out opposite it.
+ *
+ * It was a 17px label centred in a 44px bar, which is what iOS does to a title
+ * when it has a navigation stack to fit around it. This sheet has no stack --
+ * there is one screen here and Done is the only control -- so the bar was
+ * borrowed furniture. A large left-aligned title reads as the name of the place
+ * you are in rather than as a label above it, and it gives the sheet a top-left
+ * anchor to hang the rest of the layout from.
+ *
+ * No rule under it and no blur behind it: the head and the body are the same
+ * white ground, and the groups below are what the eye lands on.
  */
 .wk-sheet .head {
   flex: 0 0 auto;
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  /* A bar is 44px tall whatever is in it, plus whatever the status bar takes. */
-  min-height: calc(44px + env(safe-area-inset-top, 0px));
-  padding: 5px calc(12px + env(safe-area-inset-right, 0px))
-           5px calc(12px + env(safe-area-inset-left, 0px));
-  padding-top: calc(5px + env(safe-area-inset-top, 0px));
-  background: rgba(249, 249, 249, .94);
-  border-bottom: .5px solid var(--wk-hairline);
-}
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .wk-sheet .head {
-    background: rgba(249, 249, 249, .8);
-    -webkit-backdrop-filter: var(--wk-glass-blur);
-    backdrop-filter: var(--wk-glass-blur);
-  }
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  gap: 12px;
+  padding: calc(22px + env(safe-area-inset-top, 0px))
+           calc(20px + env(safe-area-inset-right, 0px)) 14px
+           calc(20px + env(safe-area-inset-left, 0px));
+  background: var(--wk-card);
 }
 .wk-sheet .head h2 {
-  grid-column: 2; margin: 0; font-size: 17px; font-weight: 600;
-  letter-spacing: -.02em;
+  margin: 0; font-size: 34px; font-weight: 700; line-height: 1.05;
+  letter-spacing: -.03em;
 }
-.wk-sheet .head .wk-btn { grid-column: 3; justify-self: end; }
+.wk-sheet .head .wk-btn { justify-self: end; }
 
 .wk-sheet .body {
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
@@ -142,32 +143,44 @@ export const SHEET_CSS = `
      map; the sheet has to opt back in to be scrollable at all, and contain stops
      a flick at the end of the list bouncing the app behind it. */
   touch-action: pan-y; overscroll-behavior: contain;
-  padding: 20px calc(16px + env(safe-area-inset-right, 0px))
+  padding: 2px calc(20px + env(safe-area-inset-right, 0px))
            calc(24px + env(safe-area-inset-bottom, 0px))
-           calc(16px + env(safe-area-inset-left, 0px));
+           calc(20px + env(safe-area-inset-left, 0px));
 }
 
-/* A grouped card. 10px and 35px are iOS's own corner and the gap it leaves
-   between groups. */
+/*
+ * A group: grey, generously rounded, sitting on the sheet's white.
+ *
+ * The inversion is the point. White cells on a grey ground is iOS's grouped
+ * list, and it makes the ground the subject -- the cells float on it. Grey
+ * blocks on white makes the groups the subject and the sheet merely the paper
+ * they are printed on, which is what they are. The corner is 20px rather than
+ * iOS's 10 because at that radius a block stops reading as a rectangle with the
+ * corners taken off and starts reading as one shape.
+ *
+ * They sit 12px apart rather than 35. The old gap had to carry the separation
+ * on its own, since two white cards on grey are told apart by the space between
+ * them; two grey blocks on white are told apart by being grey.
+ */
 .wk-sheet .group {
-  background: var(--wk-card); border-radius: var(--wk-r-group);
-  margin-bottom: 35px; overflow: hidden;
+  background: var(--wk-group); border-radius: var(--wk-r-group);
+  margin-bottom: 12px; overflow: hidden;
 }
 
-/* Cells. The separator starts at the text rather than the card's edge, which is
-   the detail that makes a list read as iOS rather than as a table. */
-.wk-sheet .group > * { position: relative; margin: 0; padding: 11px 16px; }
+/* Cells. The separator starts at the text rather than the block's edge, which
+   is the detail that makes a list read as a list rather than as a table. */
+.wk-sheet .group > * { position: relative; margin: 0; padding: 13px 18px; }
 .wk-sheet .group > * + *::before {
-  content: ''; position: absolute; left: 16px; right: 0; top: 0;
-  height: .5px; background: var(--wk-hairline);
+  content: ''; position: absolute; left: 18px; right: 0; top: 0;
+  height: 1px; background: rgba(60, 60, 67, .1);
 }
 .wk-sheet .row { min-height: var(--wk-tap); }
 
 /* The sentence under a group, in iOS's footnote place and colour: close under
    the card it belongs to, and carrying the gap to the next thing itself. */
-.wk-sheet .group:has(+ .note) { margin-bottom: 8px; }
+.wk-sheet .group:has(+ .note) { margin-bottom: 6px; }
 .wk-sheet .note {
-  margin: 0 0 35px; padding: 0 16px;
+  margin: 0 0 12px; padding: 0 18px;
   font-size: 13px; color: var(--wk-ink-dim); min-height: 16px;
 }
 
@@ -180,7 +193,7 @@ export const SHEET_CSS = `
  * build time so that it cannot drift away from what is actually running.
  */
 .wk-sheet .about {
-  padding: 8px 16px 0; text-align: center; color: var(--wk-ink-dim);
+  padding: 24px 18px 0; text-align: center; color: var(--wk-ink-dim);
 }
 .wk-sheet .about .name {
   margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em;
@@ -199,7 +212,7 @@ export const SHEET_CSS = `
   html[data-standalone] .wk-sheet {
     inset: 0; margin: 0;
     width: 100%; height: 100%; max-height: none;
-    border-radius: 0; box-shadow: none;
+    border-radius: 0;
     opacity: 1; transform: translateY(100%);
     transition:
       transform .32s cubic-bezier(.32, .72, 0, 1),

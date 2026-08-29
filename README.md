@@ -372,13 +372,33 @@ icons are the vocabulary the desktop strip already teaches.
 
 ### And settings is one sheet
 
-Settings is a modal, in the shape iOS gives a settings screen: a title bar with
-the title centred and a tinted **Done** on the right, groups of white cells on
-`#F2F2F7`, separators that start at the text rather than the card's edge,
-switches instead of checkboxes, and sliders with a knob big enough to catch. The
-sizes are the real ones — 51×31 for a switch, 10px corners, 35px between groups —
-because the shape is only convincing at the values it actually uses. The colours
-are Walky's; see the accent above.
+Settings is a modal: a large **Settings** hard against the left edge with a
+tinted **Done** opposite it, then grey groups on white, separators that start at
+the text rather than the block's edge, switches instead of checkboxes, and
+sliders with a knob big enough to catch.
+
+Three deliberate departures from the iOS grouped list it started as. The title
+is large and left-aligned rather than 17px and centred in a 44px bar — that bar
+is what iOS does to a title when it has a navigation stack to fit around it, and
+this sheet has no stack, so it was borrowed furniture; a large left-aligned
+title reads as the name of the place you are in rather than as a label above it.
+The grouping is inverted: white cells on a grey ground make the *ground* the
+subject and the cells float on it, whereas grey blocks on white make the groups
+the subject and the sheet merely the paper they are printed on, which is what it
+is. And the corner is 20px rather than 10, because at that radius a block stops
+reading as a rectangle with its corners taken off and starts reading as one
+shape.
+
+The groups sit 12px apart rather than 35. The old gap had to carry the
+separation by itself — two white cards on grey are told apart by the space
+between them — while two grey blocks on white are told apart by being grey.
+
+It is flat, and that is a decision rather than an absence. No shadow under the
+sheet, since the backdrop is already dimming everything behind it and a drop
+shadow would be depth drawn twice; no rule under the title and no blur behind
+it, since the head and the body are the same white ground; and the knob on a
+switch or a slider carries just enough shadow to read as a knob. The colours are
+Walky's; see the accent above.
 
 The shape follows the device, and nothing else does: a centred card where there
 is room around it, the screen itself where there is not. There used to be two
