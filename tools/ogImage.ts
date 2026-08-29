@@ -29,7 +29,7 @@ import { Agents, unpackRgb } from '../src/sim/agents.ts';
 import { Navigation } from '../src/sim/navigation.ts';
 import { SpatialHash } from '../src/sim/spatialHash.ts';
 import type { Point } from '../src/sim/geometry.ts';
-import { makeWall, rectanglePolygon, type Wall } from '../src/state/model.ts';
+import { DEFAULT_SETTINGS, makeWall, rectanglePolygon, type Wall } from '../src/state/model.ts';
 import { DASH } from '../src/render/overlay.ts';
 import { BACKGROUND, ORANGE, WHITE, toCss, type RGB } from '../src/palette.ts';
 import { LIME, MAGENTA, RUST, SKY, TEAL } from './brand.ts';
@@ -84,17 +84,23 @@ const SCALE = WIDTH / FRAME.w;
  */
 const STROKE_BOOST = 1.6;
 
-/** Simulation settings: the app's defaults, from DEFAULT_SETTINGS. */
-const RADIUS = 13;
-const PREFERRED = 30;
-const SPEED = 4;
+/**
+ * Read from DEFAULT_SETTINGS rather than copied out of it. Copies drift: these
+ * were transcribed once, and then personalSpace was renamed and its default moved
+ * from 30 to 40 while the copy sat here looking correct.
+ */
+const RADIUS = DEFAULT_SETTINGS.pedestrianRadius;
+const PERSONAL = DEFAULT_SETTINGS.personalSpace;
+const SPEED = DEFAULT_SETTINGS.speed;
 
 /**
- * Far enough in that the crowd has cleared its starting block and is streaming
- * through the gap, with the leaders already blackened at the goals -- and not so
- * far that everyone has arrived and the picture is a field of black dots.
+ * Far enough in that the crowd has opened out of its painted block and is packed
+ * against the bottleneck, with the leaders already blackened at the goals -- and
+ * not so far that everyone has arrived and the picture is a field of black dots.
+ * A queue this long is what keeps a tail of the crowd in frame at the left while
+ * the front is already arriving on the right.
  */
-const TICKS = 320;
+const TICKS = 700;
 
 /**
  * How many routes to draw.
@@ -143,25 +149,20 @@ function buildWorld(): { walls: Wall[]; nav: Navigation; goals: Wall[] } {
 
 function buildCrowd(nav: Navigation, goals: Wall[]): Agents {
   const agents = new Agents();
-  // The pitch the pedestrian brush uses: a full interaction diameter, so the
-  // block starts outside its own preferred spacing.
-  const pitch = 2 * (RADIUS + PREFERRED);
-  const cols = 24;
-  const rows = 8;
-  // Started off the left edge: by the time the frame is taken the block has walked
-  // into view and packed against the gap, which is the picture worth showing --
-  // a crowd still sitting in its painted lattice is just a grid of dots.
-  //
-  // The jitter matters more than it looks. A block that starts on an exact lattice
-  // and walks unobstructed keeps that lattice perfectly, so the tail of the queue
-  // arrives at the bottleneck still in machine-straight rows -- which reads as a
-  // rendering artefact rather than as a crowd. Nudging each start breaks the grid
-  // up front, and a crowd painted in several brush passes would not have been on
-  // one lattice to begin with.
-  const jitter = () => (Math.random() - 0.5) * pitch * 0.6;
+  // The pitch the pedestrian brush uses: shoulder to shoulder, and left to sort
+  // itself out. A crowd opens out to the room it wants within a second of being
+  // let go, so painting it packed is what the app actually does now -- and a
+  // packed block breaks its own formation as it breathes, which is why nothing
+  // here has to jitter the start to stop it marching in lockstep rows.
+  const pitch = 2 * RADIUS;
+  const cols = 34;
+  const rows = 16;
+  // Started left of the gap: by the time the frame is taken the block has opened
+  // out and packed against the bottleneck, which is the picture worth showing --
+  // a crowd still sitting in its painted square is just a block of dots.
   for (let i = 0; i < cols; i++) {
     for (let j = 0; j < rows; j++) {
-      const k = agents.add([-1080 + i * pitch + jitter(), 105 + j * pitch + jitter()]);
+      const k = agents.add([-900 + i * pitch, 210 + j * pitch]);
       // Split by row so both goals pull from the full height of the block and
       // the two colours interleave on the way to the gap.
       const goal = goals[j % 2];
@@ -170,7 +171,7 @@ function buildCrowd(nav: Navigation, goals: Wall[]): Agents {
   }
 
   const hash = new SpatialHash();
-  for (let t = 0; t < TICKS; t++) agents.step(nav, hash, SPEED, RADIUS, PREFERRED);
+  for (let t = 0; t < TICKS; t++) agents.step(nav, hash, SPEED, RADIUS, PERSONAL);
   return agents;
 }
 

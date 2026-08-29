@@ -823,10 +823,15 @@ preview is looked at small rather than panned around: strokes are 1.6× wider, a
 22 routes are drawn rather than the app's cap of 1500. Colours, geometry and the
 9-on-9-off dash rhythm are untouched.
 
-The starting crowd is jittered off its lattice. A block placed on an exact grid
-and walked unobstructed keeps that grid exactly, so the tail of the queue reaches
-the bottleneck in machine-straight rows and the picture reads as a rendering
-artefact rather than as a crowd.
+The crowd is painted the way the brush paints one — shoulder to shoulder, at
+`2 × radius` — and 700 ticks is long enough that it has opened out to the room it
+wants and queued against the bottleneck, with the leaders arriving while a tail
+of it is still in frame on the left.
+
+The simulation settings are read from `DEFAULT_SETTINGS` rather than copied out
+of it. They were copied once, and then `preferredSpace` became `personalSpace`
+and its default moved 30 → 40 while the copy sat here looking perfectly
+plausible.
 
 `tools/` and `bench/` are type-checked with `src` rather than left out of it. The
 image script broke silently once when `makeWall` grew an options argument — it
