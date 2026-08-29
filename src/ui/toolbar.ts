@@ -5,6 +5,7 @@ export type ActionId =
 
 interface ButtonSpec {
   key: ToolId | ActionId;
+  /** Filename inside public/icons, including the extension. */
   icon: string;
   title: string;
   kind: 'tool' | 'action';
@@ -16,21 +17,25 @@ interface ButtonSpec {
  * The strip is light because the original icons were drawn for Swing's light
  * toolbar -- border.png in particular is a black outline that would vanish on a
  * dark strip. Keeping the strip light is what makes the original art read as drawn.
+ *
+ * All icons are the original PNGs except the rectangle tool, which is an SVG. The
+ * original addWallSquare.png was a house-with-a-plus nearly identical to the
+ * freehand wall icon beside it, so the two were hard to tell apart in the strip.
  */
 const BUTTONS: ButtonSpec[] = [
-  { key: 'start', icon: 'start', title: 'Start / pause', kind: 'action' },
-  { key: 'reset_pedestrians', icon: 'reset_pedestrians', title: 'Reset pedestrians', kind: 'action' },
-  { key: 'clear', icon: 'clear', title: 'Clear map', kind: 'action' },
-  { key: 'record', icon: 'record', title: 'Record', kind: 'action' },
-  { key: 'wall', icon: 'addWall', title: 'Wall tool', kind: 'tool' },
-  { key: 'rectangle', icon: 'addWallSquare', title: 'Rectangle wall tool', kind: 'tool' },
-  { key: 'border', icon: 'border', title: 'Border tool', kind: 'tool' },
-  { key: 'pedestrian', icon: 'pedestrian', title: 'Add pedestrians', kind: 'tool' },
-  { key: 'goal', icon: 'goal', title: 'Mark goal', kind: 'tool' },
-  { key: 'select', icon: 'select', title: 'Selection tool', kind: 'tool' },
-  { key: 'shift', icon: 'shift', title: 'Pan', kind: 'tool' },
-  { key: 'reset_zoom', icon: 'reset_zoom', title: 'Reset zoom', kind: 'action' },
-  { key: 'settings', icon: 'settings', title: 'Settings', kind: 'action' },
+  { key: 'start', icon: 'start.png', title: 'Start / pause', kind: 'action' },
+  { key: 'reset_pedestrians', icon: 'reset_pedestrians.png', title: 'Reset pedestrians', kind: 'action' },
+  { key: 'clear', icon: 'clear.png', title: 'Clear map', kind: 'action' },
+  { key: 'record', icon: 'record.png', title: 'Record', kind: 'action' },
+  { key: 'wall', icon: 'addWall.png', title: 'Wall tool', kind: 'tool' },
+  { key: 'rectangle', icon: 'rectangle.svg', title: 'Rectangle wall tool', kind: 'tool' },
+  { key: 'border', icon: 'border.png', title: 'Border tool', kind: 'tool' },
+  { key: 'pedestrian', icon: 'pedestrian.png', title: 'Add pedestrians', kind: 'tool' },
+  { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool' },
+  { key: 'select', icon: 'select.png', title: 'Selection tool', kind: 'tool' },
+  { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool' },
+  { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom', kind: 'action' },
+  { key: 'settings', icon: 'settings.png', title: 'Settings', kind: 'action' },
 ];
 
 const CSS = `
@@ -87,7 +92,7 @@ export class Toolbar {
         btn.setAttribute('aria-pressed', String(spec.key === initialTool));
       }
       const img = document.createElement('img');
-      img.src = `./icons/${spec.icon}.png`;
+      img.src = `./icons/${spec.icon}`;
       img.alt = '';
       btn.appendChild(img);
       btn.addEventListener('click', () => {
