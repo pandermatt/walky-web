@@ -456,6 +456,23 @@ either — `showModal()` inerts the whole document outside the sheet, so while
 settings is up the panel is untabbable and untouchable without containing a
 single line that knows sheets exist.
 
+Where it *sits* follows the device, though, for the same reason the strip does.
+In a browser it is the corner beside the toolbar. Installed on a phone the
+toolbar is a bar across the bottom, and a panel holding the settings that belong
+to the button you have just pressed is no use at the far end of the screen from
+the hand that pressed it — that reach is exactly what moving the bar was for, and
+leaving the panel behind would have put a tool at one end of the phone and its
+controls at the other. So it moves with it and sits directly above the capsules,
+centred on them. As with the strip, what moves is the placement and only that:
+the same 232px capsule with the same sliders in it.
+
+The update chip keeps its corner and stacks above whichever of the two is there,
+which is why the panel column now publishes a measured height alongside the
+bar's. Neither is a number that can be written down — the bar's depends on how
+its capsules wrapped and the panel's on how many sliders the tool in hand asks
+for — and with no panel showing the column is not there at all, so the chip sits
+where it always did.
+
 ### One button, four places
 
 Every button in the app is one of four roles — an icon cell in a bar, a tinted

@@ -68,19 +68,40 @@ export const CONTEXT_CSS = `
 .wk-context h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
 .wk-context .slider + .slider { margin-top: 10px; }
 
-/* The strip is a bar across the bottom of an installed phone, so the corner the
-   panel was being kept out of is free, and the room it has is what is above the
-   bar. --wk-toolbar-h is the bar's measured height (see ui/toolbar.ts) and 16px
-   is the gap it floats at. */
+/*
+ * Installed on a phone the panel moves to the bottom with the bar.
+ *
+ * It holds the settings belonging to the button that was just pressed, and the
+ * far corner of the screen is no place for them: that reach is exactly what
+ * moving the strip to the thumb was for, and leaving the panel behind would
+ * have put the tool at one end of the phone and its controls at the other. So
+ * it sits directly above the capsules, centred on them. What moves is the
+ * placement and only that -- the same 232px capsule, the same sliders in it,
+ * as on a laptop.
+ *
+ * --wk-toolbar-h is the bar's measured height (see ui/toolbar.ts), so the
+ * column's bottom edge is the bar's top edge whether it wrapped to one row or
+ * two, and the 12px padding above is the gap the panel floats at.
+ */
 @media ${TOUCH} {
   html[data-standalone] #panels {
+    top: auto;
+    bottom: calc(20px + var(--wk-toolbar-h, 0px) + env(safe-area-inset-bottom, 0px));
     left: env(safe-area-inset-left, 0px);
+    right: env(safe-area-inset-right, 0px);
+    align-items: center;
     max-height: calc(
-      100vh - 16px - var(--wk-toolbar-h, 0px)
+      100vh - 20px - var(--wk-toolbar-h, 0px)
       - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
     );
   }
 }
+
+/* With nothing to show the column is not there at all, so that the height it
+   publishes is 0 and the update chip keeps its own corner. Padding on an empty
+   box is still a band of screen, and a chip clearing 24px of nothing would be a
+   chip floating for no reason. */
+#panels:not(:has(> :not([hidden]))) { padding: 0; }
 `;
 
 export class ContextPanel {
@@ -114,6 +135,27 @@ export class ContextPanel {
 
     swallowPointerEvents(this.root);
     parent.appendChild(this.root);
+    this.publishHeight(parent);
+  }
+
+  /**
+   * Publishes the column's height as --wk-context-h.
+   *
+   * Installed, the panel and the update chip both live over the bottom of the
+   * screen, and the chip has to clear whichever of them is there. The bar
+   * already publishes its own height for exactly that reason; this is the other
+   * half of the same sum, and it has to be measured because how tall the panel
+   * is depends on how many sliders the tool in hand asks for. The column
+   * collapses to nothing while the panel is hidden, so the value is 0 whenever
+   * there is no panel to clear.
+   */
+  private publishHeight(column: HTMLElement): void {
+    const write = () => {
+      const height = Math.round(column.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--wk-context-h', `${height}px`);
+    };
+    write();
+    new ResizeObserver(write).observe(column);
   }
 
   /** Show the named sliders, or hide the panel when given none. */

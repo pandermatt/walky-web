@@ -120,6 +120,11 @@ export const THEME_CSS = `
      wrapped to. Declared here at zero so the property always exists. */
   --wk-toolbar-h: 0px;
 
+  /* The panel column's measured height, republished by ui/contextPanel.ts for
+     the same reason: installed, the panel sits between the bar and the chip, so
+     clearing the bar is no longer enough. Zero while no panel is showing. */
+  --wk-context-h: 0px;
+
   /*
    * Liquid glass, as one recipe. saturate(180%) is the half that does the work:
    * blur alone gives frosted plastic, greyed and flat, and pushing the colour

@@ -40,12 +40,19 @@ export const TOAST_CSS = `
 #wk-toast .wk-btn--quiet { color: var(--wk-ink-dim); font-weight: 400; }
 @media (prefers-reduced-motion: reduce) { #wk-toast { transition: none; } }
 
-/* Installed, the toolbar is a bar across the bottom, so the chip keeps its
-   corner and sits above it -- --wk-toolbar-h is the bar's measured height (see
-   ui/toolbar.ts) and 28px is the gap it floats at. */
+/* Installed, the bar and the contextual panel are both across the bottom, so
+   the chip keeps its corner and stacks above whichever of them is there. Both
+   heights are measured and republished (see ui/toolbar.ts and
+   ui/contextPanel.ts) because both depend on what is showing -- the bar on how
+   its capsules wrapped, the panel on how many sliders the tool in hand asks
+   for; --wk-context-h is 0 with no panel up, and the chip then sits where it
+   always did. 28px is the gap it floats at. */
 @media ${TOUCH} {
   html[data-standalone] #wk-toast {
-    bottom: calc(28px + var(--wk-toolbar-h, 0px) + env(safe-area-inset-bottom, 0px));
+    bottom: calc(
+      28px + var(--wk-toolbar-h, 0px) + var(--wk-context-h, 0px)
+      + env(safe-area-inset-bottom, 0px)
+    );
   }
 }
 `;
