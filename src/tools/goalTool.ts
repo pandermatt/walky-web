@@ -13,6 +13,9 @@ import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type Tool
  * If a selection exists the goal applies to it alone (Map.setGoalForSelected
  * Pedestrians); with nothing selected it applies to everyone, which is what the
  * original did when no elements were selected.
+ *
+ * A click that lands on no wall says so and changes nothing, selection and tool
+ * included: there is a goal still to be marked.
  */
 export class GoalTool implements Tool {
   readonly id = 'goal' as const;
@@ -22,7 +25,14 @@ export class GoalTool implements Tool {
 
   onPointerDown(e: PointerInfo, ctx: ToolContext): void {
     if (e.buttons !== 1) return;
-    ctx.setGoalAt(e.world);
+    if (!ctx.setGoalAt(e.world)) {
+      // A goal is a wall, so a click on empty ground assigned nothing. Say so,
+      // and leave both the tool and the selection it was aimed at alone -- the
+      // click was a miss, and clearing up after a miss would mean lassoing the
+      // same group again to have another go.
+      ctx.notify('No wall there — click a wall to make it the goal.');
+      return;
+    }
     // Assigning a goal completes the gesture: drop the selection it applied to,
     // and step off the tool so the next click cannot reassign by accident.
     ctx.clearSelection();

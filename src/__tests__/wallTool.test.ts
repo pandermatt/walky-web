@@ -25,7 +25,7 @@ function stubContext(): { ctx: ToolContext; walls: Committed[] } {
     settings: () => DEFAULT_SETTINGS,
     pedestrianBlock: () => [],
     addPedestrians: () => {},
-    setGoalAt: () => {},
+    setGoalAt: () => false,
     selectPedestrianAt: () => {},
     selectPedestriansIn: () => {},
     clearSelection: () => {},

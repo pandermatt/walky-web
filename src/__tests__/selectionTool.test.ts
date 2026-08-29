@@ -26,7 +26,7 @@ function stubContext(crowd: Point[]): Recorded {
     settings: () => DEFAULT_SETTINGS,
     pedestrianBlock: () => [],
     addPedestrians: () => {},
-    setGoalAt: () => {},
+    setGoalAt: () => false,
     selectPedestrianAt: (at: Point, extend: boolean) => {
       if (!extend) selected.clear();
       const hit = crowd.findIndex((p) => Math.hypot(p[0] - at[0], p[1] - at[1]) <= 13);

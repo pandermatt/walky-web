@@ -15,7 +15,8 @@ export interface ToolContext {
   /** Legal positions in the brush block centred on `at`, for placement and preview. */
   pedestrianBlock(at: Point): Point[];
   addPedestrians(at: Point): void;
-  setGoalAt(at: Point): void;
+  /** Marks the wall under a point as a goal; false when there is no wall there. */
+  setGoalAt(at: Point): boolean;
   /** Select the pedestrian under a point (or clear, if there is none). */
   selectPedestrianAt(at: Point, extend: boolean): void;
   /** Select every pedestrian inside a lasso outline. */

@@ -247,7 +247,7 @@ export class App {
     },
     setGoalAt: (at) => {
       const hit = [...this.walls].reverse().find((w) => wallContains(w, at));
-      if (!hit) return;
+      if (!hit) return false;
       this.checkpoint();
       hit.isGoal = true;
       // With a selection, the goal applies to it alone; with nothing selected it
@@ -263,6 +263,7 @@ export class App {
       // which reads the field this rebuild produces.
       this.rebuildNavIfNeeded();
       this.touch();
+      return true;
     },
     selectPedestrianAt: (at, extend) => {
       if (!extend) this.agents.clearSelection();
