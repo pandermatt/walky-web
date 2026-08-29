@@ -37,14 +37,14 @@ function bigCrowd(): ScenarioCore {
       color: [255, 190, 0],
     });
   }
-  return core({ walls: [{ id: 1, polygons: [box(0, 0)], color: [255, 190, 0], isGoal: true, outlinedAlone: true }], agents });
+  return core({ walls: [{ id: 1, polygons: [box(0, 0)], color: [255, 190, 0], isGoal: true }], agents });
 }
 
 describe('a map as a link', () => {
   it('round trips through the whole link path', async () => {
     const before = core({
       view: { targetX: 120.5, targetY: -80.25, zoomLevel: -2 },
-      walls: [{ id: 4, polygons: [box(0, 0)], color: [1, 2, 3], isGoal: true, outlinedAlone: false }],
+      walls: [{ id: 4, polygons: [box(0, 0)], color: [1, 2, 3], isGoal: true }],
       agents: [{ x: 10, y: 10, originX: 10, originY: 10, goal: 4, arrived: false, color: [1, 2, 3] }],
     });
     expect(await decodeLink(await encodeLink(before))).toEqual(before);
@@ -75,7 +75,7 @@ describe('a map as a link', () => {
   });
 
   it('reads a raw payload as happily as a deflated one', async () => {
-    const scenario = core({ walls: [{ id: 1, polygons: [box(5, 5)], color: [9, 9, 9], isGoal: false, outlinedAlone: true }] });
+    const scenario = core({ walls: [{ id: 1, polygons: [box(5, 5)], color: [9, 9, 9], isGoal: false }] });
     const raw = bytesToBase64Url(encodeScenario(scenario));
     expect(await decodeLink(raw)).toEqual(scenario);
   });

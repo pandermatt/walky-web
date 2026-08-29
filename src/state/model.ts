@@ -16,21 +16,6 @@ export interface Wall {
    * polygons change.
    */
   hull: Point[];
-  /**
-   * Whether this wall is worth a dashed outline while it stands alone.
-   *
-   * The outline is drawn per connected group of touching shapes, and it is a
-   * summary: it says "these shapes are one object, and this is the space they
-   * take up". Around a single shape a hull describes -- a rectangle, a frame, a
-   * blocky building -- that reads. Around a single freehand trace it does not: an
-   * S or a spiral hulls to a blob with no resemblance to what was drawn, and
-   * summarising one shape as one shape says nothing anyway.
-   *
-   * False leaves such a wall unoutlined until it touches something. From then on
-   * the outline is about the group rather than the trace, and the trace's points
-   * shape it like any other member's. See groupWalls.
-   */
-  outlinedAlone: boolean;
   color: RGB;
   isGoal: boolean;
   selected: boolean;
@@ -147,17 +132,14 @@ export function allPoints(wall: Wall): Point[] {
 
 export interface WallOptions {
   color?: RGB;
-  /** False to leave this wall unoutlined until it touches something; see Wall.outlinedAlone. */
-  outlinedAlone?: boolean;
 }
 
 export function makeWall(polygons: Point[][], options: WallOptions = {}): Wall {
-  const { color = randomBrightColor(), outlinedAlone = true } = options;
+  const { color = randomBrightColor() } = options;
   return {
     id: nextId++,
     polygons,
     hull: monotoneChainHull(polygons.flat()),
-    outlinedAlone,
     color,
     isGoal: false,
     selected: false,

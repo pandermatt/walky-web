@@ -15,6 +15,7 @@ import {
 } from './state/scenario';
 import { LINK_MAX_CHARS, LINK_SAFE_CHARS, shareUrl } from './state/shareLink';
 import { SettingsSheet } from './ui/settingsSheet';
+import { confirmAction } from './ui/confirmDialog';
 import { ContextPanel } from './ui/contextPanel';
 import { BorderTool } from './tools/borderTool';
 import { SelectionTool } from './tools/selectionTool';
@@ -24,10 +25,32 @@ import { ShiftTool } from './tools/shiftTool';
 import { PedestrianTool } from './tools/pedestrianTool';
 import { GoalTool } from './tools/goalTool';
 import { Navigation } from './sim/navigation';
-import { Agents, unpackRgb } from './sim/agents';
+import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
 import { Plops } from './audio/plops';
 import { SpatialHash } from './sim/spatialHash';
 import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolId } from './tools/types';
+
+/**
+ * The map as it was, kept so an edit can be taken back.
+ *
+ * Walls are cloned one level deep because `isGoal` and `selected` are written
+ * in place; the polygons under them never are, so the geometry is shared rather
+ * than copied and a snapshot costs a handful of objects. The crowd is the same
+ * story -- see Agents.snapshot for what it keeps.
+ */
+interface MapSnapshot {
+  walls: Wall[];
+  agents: AgentsSnapshot;
+}
+
+/**
+ * How many edits back you can go.
+ *
+ * Deep enough to cover a stretch of drawing, shallow enough that the snapshots
+ * cannot quietly become the largest thing in memory: a snapshot's cost is the
+ * crowd it holds, and a full one is around 100KB.
+ */
+const UNDO_DEPTH = 40;
 
 export class App {
   private viewport = new Viewport();
@@ -47,6 +70,9 @@ export class App {
   private navDirty = true;
   private groupCache: WallGroup[] | null = null;
   private groupCacheRevision = -1;
+
+  /** Map states before each edit, oldest first; the top is the last edit. */
+  private undoStack: MapSnapshot[] = [];
 
   private tools = new Map<ToolId, Tool>();
   /** No tool active is a real state: after a one-shot action, nothing is armed. */
@@ -104,6 +130,9 @@ export class App {
       (id) => this.runAction(id),
     );
 
+    // Nothing drawn yet, so there is nothing to take back.
+    this.toolbar.setEnabled('undo', false);
+
     // Input binds to the deck canvas, not the stage: the toolbar is a sibling
     // inside the stage, so binding higher up made every toolbar click also land
     // on the canvas as a tool click.
@@ -152,13 +181,17 @@ export class App {
     pedestrianBlock: (at) => this.pedestrianBlock(at),
     addPedestrians: (at) => {
       const spots = this.pedestrianBlock(at);
+      // Nothing landed -- the brush was over a wall or a crowd -- so nothing
+      // happened, and an undo step for it would be a step that undoes nothing.
       if (spots.length === 0) return;
+      this.checkpoint();
       for (const p of spots) this.agents.add(p);
       this.touch();
     },
     setGoalAt: (at) => {
       const hit = [...this.walls].reverse().find((w) => wallContains(w, at));
       if (!hit) return;
+      this.checkpoint();
       for (const w of this.walls) w.isGoal = w.id === hit.id;
       this.navDirty = true;
       this.rebuildNavIfNeeded();
@@ -315,6 +348,16 @@ export class App {
     el.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
     window.addEventListener('keydown', (ev) => {
+      // Ctrl+Z, and Cmd+Z on a Mac. Shift+Ctrl+Z is redo everywhere else, so it
+      // is left alone rather than quietly undoing instead.
+      if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === 'z') {
+        if (this.settingsSheet.visible) return;
+        const field = (ev.target as HTMLElement | null)?.closest('input, textarea, [contenteditable]');
+        if (field) return;
+        ev.preventDefault();
+        this.undo();
+        return;
+      }
       if (ev.key !== 'Escape') return;
       // The sheet is modal and answers Escape itself; the tool in your hand is
       // not what you meant to put down. This handler used to be the only way
@@ -381,7 +424,8 @@ export class App {
 
   /**
    * Shows the handful of settings that matter to whatever is active: the brush
-   * controls while placing pedestrians, speed while the simulation runs.
+   * controls while placing pedestrians, speed and preferred space while the
+   * simulation runs.
    *
    * Both, when both are true. Painting a crowd into a running simulation is a
    * thing people do, and asking about the run first meant the brush controls
@@ -391,7 +435,14 @@ export class App {
     const brush = this.tool?.id === 'pedestrian';
     const keys: (keyof Settings)[] = [];
     if (brush) keys.push('brushSize', 'preferredSpace');
-    if (this.running) keys.push('speed');
+    if (this.running) {
+      keys.push('speed');
+      // Preferred space is not only the pitch a brushed block is painted at: it
+      // is the room agents keep from each other on every tick, so watching a
+      // crowd loosen or tighten as you drag it is exactly the case this panel
+      // exists for. The brush already put it up when both are active.
+      if (!brush) keys.push('preferredSpace');
+    }
     if (keys.length === 0) {
       this.contextPanel.hide();
       return;
@@ -426,9 +477,9 @@ export class App {
   }
 
   /**
-   * Back to an empty map, stopped. What Clear does, and what loading a shared
-   * map does first -- there is one place that knows everything a map is made of,
-   * so the two cannot drift apart.
+   * Back to an empty map, stopped. What Clear does once it has asked, and what
+   * loading a shared map does first -- there is one place that knows everything
+   * a map is made of, so the two cannot drift apart.
    */
   private resetWorld(): void {
     this.walls = [];
@@ -447,8 +498,11 @@ export class App {
         this.viewport.reset(this.contentBounds());
         this.requestRender();
         break;
+      case 'undo':
+        this.undo();
+        break;
       case 'clear':
-        this.resetWorld();
+        void this.clearMap();
         break;
       case 'start':
         this.running = !this.running;
@@ -471,6 +525,82 @@ export class App {
         // record arrives with the MediaRecorder step
         break;
     }
+  }
+
+  /**
+   * Throws the map away, having asked first.
+   *
+   * The question is the whole point of the method: clear is one cell in a strip
+   * of them, and a mis-tap that lands here takes every wall someone has drawn.
+   * Undo can bring it all back -- and the alert says so, since that is the fact
+   * that makes the answer easy -- but finding that out after the map has gone is
+   * a worse moment than being asked. Asked only when there is something to lose,
+   * though: an alert over an empty map is a question with one answer, and
+   * confirming nothing teaches people to confirm without reading.
+   */
+  private async clearMap(): Promise<void> {
+    if (!this.isEmpty()) {
+      const confirmed = await confirmAction({
+        title: 'Clear the map?',
+        message: 'Every wall and pedestrian goes. Undo brings them back.',
+        confirmLabel: 'Clear',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+
+    this.checkpoint();
+    this.resetWorld();
+  }
+
+  /** Nothing drawn and nobody standing: what makes a question about losing it moot. */
+  private isEmpty(): boolean {
+    return this.walls.length === 0 && this.agents.count === 0;
+  }
+
+  /**
+   * Remembers the map as it stands, before the edit about to change it.
+   *
+   * Taken by the edits themselves rather than by the input layer, and only once
+   * something is definitely going to happen: a brush stroke that lands no
+   * pedestrian and a goal click that hits no wall change nothing, and an undo
+   * step that undoes nothing is worse than none -- it is a press that appears
+   * to do nothing at all.
+   *
+   * What is not checkpointed: the selection, which is a way of looking at the
+   * map rather than part of it, the camera, and reset-pedestrians, which puts
+   * everyone back on an origin it never throws away and so undoes itself.
+   */
+  private checkpoint(): void {
+    this.undoStack.push({
+      walls: this.walls.map((w) => ({ ...w })),
+      agents: this.agents.snapshot(),
+    });
+    // Oldest goes first once the stack is full, so the depth is a window on the
+    // recent past rather than a limit on how long you may keep drawing.
+    if (this.undoStack.length > UNDO_DEPTH) this.undoStack.shift();
+    this.toolbar.setEnabled('undo', true);
+  }
+
+  /**
+   * Puts the last edit back.
+   *
+   * The map only -- the run is left alone, since undoing a wall is not a
+   * reason to stop the simulation. Pedestrians do go back to where they stood
+   * when the edit was made, which is the whole point while paused and, mid-run,
+   * is the honest reading of "as it was before".
+   */
+  private undo(): void {
+    const previous = this.undoStack.pop();
+    if (!previous) return;
+    this.walls = previous.walls;
+    this.agents.restore(previous.agents);
+    this.navDirty = true;
+    // Whatever is half-drawn was drawn on a map that no longer exists.
+    this.tool?.cancel?.();
+    this.toolbar.setEnabled('undo', this.undoStack.length > 0);
+    this.updateContextPanel();
+    this.touch();
   }
 
   // ---- rendering ----------------------------------------------------------
@@ -509,6 +639,7 @@ export class App {
     const usable = polygons.filter((p) => p.length >= 3);
     if (usable.length === 0) return false;
 
+    this.checkpoint();
     const wall = makeWall(usable, options);
     this.walls = [...this.walls, wall];
     this.removeAgentsUnder(wall);
@@ -916,13 +1047,18 @@ export class App {
    * object nothing reads any more.
    */
   loadScenario(core: ScenarioCore): void {
+    // Opening a link over a map somebody has drawn takes it away as surely as
+    // Clear does, so it is an edit like any other and undo can bring it back.
+    // Only when there is something to lose: at startup, which is the usual way
+    // in, the map is empty and an undo step there would undo nothing.
+    if (!this.isEmpty()) this.checkpoint();
     this.resetWorld();
 
     Object.assign(this.settings, clampSettings(core.settings));
 
     const { walls, agents } = buildWorld(core);
     this.walls = walls;
-    for (const agent of agents) this.agents.restore(agent);
+    for (const agent of agents) this.agents.addRestored(agent);
 
     this.viewport.targetX = core.view.targetX;
     this.viewport.targetY = core.view.targetY;

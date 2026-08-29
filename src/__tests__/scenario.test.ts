@@ -117,8 +117,8 @@ describe('settings out of an untrusted map', () => {
 describe('building a world out of a snapshot', () => {
   const snapshot = () => core({
     walls: [
-      { id: 100, polygons: [rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false, outlinedAlone: false },
-      { id: 101, polygons: [rectanglePolygon([20, 0], [30, 10])], color: [255, 190, 0], isGoal: true, outlinedAlone: true },
+      { id: 100, polygons: [rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false },
+      { id: 101, polygons: [rectanglePolygon([20, 0], [30, 10])], color: [255, 190, 0], isGoal: true },
     ],
     agents: [
       agent({ x: 1, y: 1, goal: 101, color: [255, 190, 0] }),
@@ -146,7 +146,6 @@ describe('building a world out of a snapshot', () => {
     const { walls } = buildWorld(snapshot());
     expect(walls.map((w) => w.isGoal)).toEqual([false, true]);
     expect(walls.map((w) => w.color)).toEqual([[1, 2, 3], [255, 190, 0]]);
-    expect(walls.map((w) => w.outlinedAlone)).toEqual([false, true]);
   });
 
   it('recomputes the hull rather than trusting a stored one', () => {
@@ -163,8 +162,8 @@ describe('building a world out of a snapshot', () => {
   it('drops a shape too thin to be one, and a wall left with none', () => {
     const world = buildWorld(core({
       walls: [
-        { id: 1, polygons: [[[0, 0], [1, 1]]], color: [1, 2, 3], isGoal: false, outlinedAlone: true },
-        { id: 2, polygons: [[[0, 0]], rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false, outlinedAlone: true },
+        { id: 1, polygons: [[[0, 0], [1, 1]]], color: [1, 2, 3], isGoal: false },
+        { id: 2, polygons: [[[0, 0]], rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false },
       ],
       agents: [agent({ goal: 1 })],
     }));

@@ -6,7 +6,7 @@ import { injectStyle } from './theme';
 /**
  * A small panel of the settings that matter to whatever is active right now:
  * brush size and preferred space while the pedestrian tool is selected, speed
- * while the simulation runs.
+ * and preferred space while the simulation runs.
  *
  * The settings sheet already holds all of these, but reaching for it means
  * leaving the tool you are using. These are the cases where you adjust a value

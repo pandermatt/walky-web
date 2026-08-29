@@ -22,7 +22,7 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
 }
 
 function wall(id: number, polygons: Point[][], over: Partial<SerializedWall> = {}): SerializedWall {
-  return { id, polygons, color: [200, 30, 90], isGoal: false, outlinedAlone: true, ...over };
+  return { id, polygons, color: [200, 30, 90], isGoal: false, ...over };
 }
 
 function box(x: number, y: number, w = 40, h = 30): Point[] {
@@ -55,7 +55,7 @@ function richScenario(): ScenarioCore {
       wall(7, [box(0, 0, 400, 12), box(0, 300, 400, 12), box(0, 0, 12, 312), box(388, 0, 12, 312)]),
       // A traced shape, which is the kind that is not outlined on its own.
       wall(8, [Array.from({ length: 24 }, (_, i): Point => [500 + i * 7, 100 + (i % 5) * 11])],
-        { outlinedAlone: false, color: [12, 240, 60] }),
+        { color: [12, 240, 60] }),
       wall(9, [box(900, 400)], { isGoal: true, color: [255, 200, 0] }),
     ],
     agents: [
@@ -75,7 +75,7 @@ function realisticScenario(): ScenarioCore {
     wall(2, [box(180, 120, 60, 160)]),
     wall(3, [box(340, 120, 60, 160)]),
     wall(4, [Array.from({ length: 24 }, (_, i): Point => [200 + i * 9, 320 + (i % 6) * 7])],
-      { outlinedAlone: false }),
+      {}),
     wall(5, [box(430, 320, 40, 40)]),
     wall(6, [box(520, 40, 50, 50)], { isGoal: true, color: [255, 190, 0] }),
   ];
@@ -133,14 +133,6 @@ describe('the scenario codec', () => {
     const after = decodeScenario(encodeScenario(before));
     expect(after.agents.map((a) => a.goal)).toEqual([13, 11, -1]);
     expect(after.walls.map((w) => w.isGoal)).toEqual([false, false, true]);
-  });
-
-  it('keeps outlinedAlone, which decides whether a traced shape wears a hull', () => {
-    const before = core({
-      walls: [wall(1, [box(0, 0)], { outlinedAlone: false }), wall(2, [box(60, 0)])],
-    });
-    expect(decodeScenario(encodeScenario(before)).walls.map((w) => w.outlinedAlone))
-      .toEqual([false, true]);
   });
 
   it('survives coordinates at the edges of what a varint changes shape at', () => {

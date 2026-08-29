@@ -33,35 +33,30 @@ describe('isVisible', () => {
   });
 });
 
-describe('walls that are not outlined on their own', () => {
-  const U: Point[] = [[0, 0], [200, 0], [200, 60], [60, 60], [60, 200], [200, 200], [200, 260], [0, 260]];
-
-  it('navigate exactly like any other wall: shell, obstacles, nodes and blocking', () => {
-    const shared = buildVisibilityGraph([makeWall([U])], RADIUS);
-    const freehand = buildVisibilityGraph([makeWall([U], { outlinedAlone: false })], RADIUS);
-
-    // Whether a wall is *drawn* with an outline says nothing about navigation.
-    expect(shared.shells).toHaveLength(1);
-    expect(freehand.shells).toHaveLength(1);
-    expect(freehand.shells[0].hull).toEqual(shared.shells[0].hull);
-    expect(freehand.obstacles.map((o) => o.hull)).toEqual(shared.obstacles.map((o) => o.hull));
-    expect(freehand.nodes).toEqual(shared.nodes);
-    expect(isVisible([-40, 130], [240, 130], freehand)).toBe(false);
-  });
-
-  it('are blocked by every convex part, not only by what the shell rejects', () => {
+describe('a wall shell', () => {
+  it('contains every convex part of its wall, needles included', () => {
     // A needle: its convex parts have far sharper corners than the whole-wall
     // hull does, so an expanded part reaches outside a shell expanded by the
     // radius alone. The shell is only a broad-phase reject, so it has to contain
     // every part or a segment through one is wrongly waved through.
     const needle: Point[] = [[0, 0], [400, 6], [400, 12], [0, 30], [200, 15]];
-    const g = buildVisibilityGraph([makeWall([needle], { outlinedAlone: false })], RADIUS);
+    const g = buildVisibilityGraph([makeWall([needle])], RADIUS);
     const shell = g.shells[0].hull;
     for (const ob of g.obstacles) {
       for (const p of ob.hull) {
         expect(pointInPolygon(shell, p)).toBe(true);
       }
     }
+  });
+
+  it('is built for every wall, and blocks nothing by itself', () => {
+    const U: Point[] = [[0, 0], [200, 0], [200, 60], [60, 60], [60, 200], [200, 200], [200, 260], [0, 260]];
+    const g = buildVisibilityGraph([makeWall([U])], RADIUS);
+
+    expect(g.shells).toHaveLength(1);
+    // The cavity of the U stays walkable -- the shell covers it, the parts do not.
+    expect(isVisible([100, 130], [180, 130], g)).toBe(true);
+    expect(isVisible([-40, 130], [240, 130], g)).toBe(false);
   });
 });
 

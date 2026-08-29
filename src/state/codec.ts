@@ -55,9 +55,10 @@ const MAGIC = 0x57;
  * additive changes go in the flags byte instead, where a bit announces a block an
  * older build can refuse by name.
  *
- * Version 2 dropped the tree block along with trees themselves.
+ * Version 2 dropped the tree block along with trees themselves; version 3
+ * dropped the per-wall outlinedAlone bit, since every shape is hulled now.
  */
-export const CODEC_VERSION = 2;
+export const CODEC_VERSION = 3;
 
 /** The body is deflate-raw rather than the bytes written here. Set by shareLink.ts. */
 export const FLAG_DEFLATED = 1;
@@ -221,7 +222,6 @@ const AGENT_ORIGIN_DIFFERS = 2;
 const AGENT_COLOR_REPEATS = 4;
 
 const WALL_IS_GOAL = 1;
-const WALL_OUTLINED_ALONE = 2;
 
 // ---- header ----------------------------------------------------------------
 
@@ -274,7 +274,9 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
   let cy = 0;
   let previousId = 0;
   core.walls.forEach((wall, index) => {
-    w.byte((wall.isGoal ? WALL_IS_GOAL : 0) | (wall.outlinedAlone ? WALL_OUTLINED_ALONE : 0));
+    // One flag so far, and a whole byte for it: the room is what lets a wall
+    // gain a boolean without the format needing a new version.
+    w.byte(wall.isGoal ? WALL_IS_GOAL : 0);
     w.rgb(wall.color);
     // Ids run upward from a counter that never resets, so after the first one a
     // delta is almost always a single byte.
@@ -396,7 +398,6 @@ export function decodeScenarioBody(bytes: Uint8Array): ScenarioCore {
       polygons,
       color,
       isGoal: (bits & WALL_IS_GOAL) !== 0,
-      outlinedAlone: (bits & WALL_OUTLINED_ALONE) !== 0,
     });
   }
 

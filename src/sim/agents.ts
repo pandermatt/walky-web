@@ -5,6 +5,19 @@ import type { Navigation } from './navigation';
 import type { SpatialHash } from './spatialHash';
 import type { RestoredAgent } from '../state/scenario';
 
+/** Everything about the crowd that an undo has to put back; see Agents.snapshot. */
+export interface AgentsSnapshot {
+  count: number;
+  x: Float32Array;
+  y: Float32Array;
+  originX: Float32Array;
+  originY: Float32Array;
+  goal: Int32Array;
+  color: Uint32Array;
+  arrived: Uint8Array;
+  selected: Uint8Array;
+}
+
 /**
  * Agent state, kept as a structure of arrays so it can move to a worker and into
  * deck.gl's attribute buffers without a per-agent object walk.
@@ -133,6 +146,52 @@ export class Agents {
     this.selected[i] = this.selected[last];
   }
 
+  /**
+   * The crowd as it stands, copied out for undo.
+   *
+   * Only what a map edit can change is kept: where each pedestrian is, where it
+   * started, what it is walking to and how it looks. The per-tick working state
+   * -- waypoints, step budgets, the cost to goal -- is derived, so restoring it
+   * would be storing a cache; `restore` clears it instead and the next tick
+   * builds it again.
+   */
+  snapshot(): AgentsSnapshot {
+    const n = this.count;
+    return {
+      count: n,
+      x: this.x.slice(0, n),
+      y: this.y.slice(0, n),
+      originX: this.originX.slice(0, n),
+      originY: this.originY.slice(0, n),
+      goal: this.goal.slice(0, n),
+      color: this.color.slice(0, n),
+      arrived: this.arrived.slice(0, n),
+      selected: this.selected.slice(0, n),
+    };
+  }
+
+  /** Puts a snapshot back, whatever the crowd has become since. */
+  restore(snap: AgentsSnapshot): void {
+    while (this.capacity < snap.count) this.grow();
+    const n = snap.count;
+    this.x.set(snap.x); this.y.set(snap.y);
+    this.originX.set(snap.originX); this.originY.set(snap.originY);
+    this.goal.set(snap.goal);
+    this.color.set(snap.color);
+    this.arrived.set(snap.arrived);
+    this.selected.set(snap.selected);
+    // Derived state, cleared rather than restored: a waypoint belongs to a map
+    // that may no longer exist, and a stale one would be walked to.
+    this.hasWaypoint.fill(0, 0, n);
+    this.waypointNode.fill(-1, 0, n);
+    this.speedCounter.fill(0, 0, n);
+    this.stepsTaken.fill(0, 0, n);
+    this.stepsUntil.fill(0, 0, n);
+    this.costToGoal.fill(Infinity, 0, n);
+    this.justArrived.length = 0;
+    this.count = n;
+  }
+
   /** Back to origin, as controller Resetable / Map.resetPedestrianLocation did. */
   resetPositions(): void {
     for (let i = 0; i < this.count; i++) {
@@ -146,17 +205,18 @@ export class Agents {
   }
 
   /**
-   * Puts back a pedestrian read off a saved scenario -- the inverse of what the
-   * snapshot writes out, and the only writer of goal and arrived outside a run.
+   * Adds a pedestrian read off a saved scenario -- the inverse of what the JSON
+   * and the link write out, and the only writer of goal and arrived outside a run.
    *
-   * It goes through `add` rather than filling the arrays itself. `add` is the one
-   * place that knows the whole field list, and `grow` and `removeAt` already
-   * repeat it twice; a third copy is the one that would go stale. What `add`
-   * leaves alone is right to leave alone: the waypoint, the step budget and the
-   * cost to goal are all recomputed on the first tick, and a selection is not
-   * something a shared map carries.
+   * Not `restore`, which is undo's and puts a whole crowd back at once; this adds
+   * one to whatever is already there. It goes through `add` rather than filling
+   * the arrays itself, because `add` is the one place that knows the whole field
+   * list -- `grow` and `restore` already repeat it, and a third copy is the one
+   * that would go stale. What `add` leaves alone is right to leave alone: the
+   * waypoint, the step budget and the cost to goal are all recomputed on the
+   * first tick, and a selection is not something a shared map carries.
    */
-  restore(a: RestoredAgent): number {
+  addRestored(a: RestoredAgent): number {
     const i = this.add([a.x, a.y], a.color);
     this.originX[i] = a.originX;
     this.originY[i] = a.originY;

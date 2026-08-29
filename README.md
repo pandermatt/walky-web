@@ -121,9 +121,7 @@ Supporting changes:
   anything that misses it cannot touch any of that wall's parts — which holds only
   while the shell really contains them, so it is expanded by `hypot(2, 1)` radii
   rather than one: a needle part can have a far sharper corner than the hull does,
-  and its miter-limited corner then reaches further out than the hull's. Every wall
-  has a hull; what a freehand trace goes without is the *drawn* outline, and only
-  while it touches nothing — see below.
+  and its miter-limited corner then reaches further out than the hull's.
 
 ### Crowd behaviour
 
@@ -156,9 +154,10 @@ Bugs found while porting, all with regression tests:
 
 - **Copy link to this map** (in Settings). The whole scenario — walls, goals,
   the crowd with its origins and colours, the camera and the settings — packed
-  into the URL itself, so a map can be handed to someone by pasting a link. There is no backend to upload it to and no account to save it under: the
-  map travels inside the fragment, which is never sent to a server, so nothing
-  about it leaves the device it was drawn on.
+  into the URL itself, so a map can be handed to someone by pasting a link.
+  There is no backend to upload it to and no account to save it under: the map
+  travels inside the fragment, which is never sent to a server, so nothing about
+  it leaves the device it was drawn on.
 
   Getting a map into a URL takes some squeezing. As JSON a six-wall map with a
   hundred and fifty pedestrians is about 37 kB; the same map comes to 817 bytes
@@ -219,7 +218,9 @@ Bugs found while porting, all with regression tests:
   thing to select, colour and delete. Thickness is a setting; a frame too small to
   hold anyone is refused and previewed in red rather than silently made.
 - **Contextual panels.** Selecting the pedestrian tool brings up brush size and
-  preferred space; running the simulation brings up speed. Both live in the full
+  preferred space; running the simulation brings up speed and preferred space,
+  since the room agents keep from each other is as much a live dial as the clock
+  they run on. Both live in the full
   settings panel too, but these are the cases where you change a value and want to
   see the effect immediately, without leaving the tool you are holding. Picking any
   tool closes the settings panel, which otherwise sits over the canvas you are
@@ -280,24 +281,11 @@ Shapes now keep their own identity, and the dashed outline is drawn once per
 merging gave, without fusing anything. Grouping is recomputed from the current
 walls whenever the map changes, so unlike merging it can never accumulate.
 
-### Freehand walls are outlined only once they touch something
-
-The dashed outline is a summary of a *connected group* of touching shapes: these
-are one object, and this is the space they take up. That reads for the shapes a
-hull describes — a rectangle, a frame, a blocky building — and it reads for any
-group of them. It does not read around a single freehand trace: an S, a spiral, a
-room drawn by hand hulls to a blob with no resemblance to what was drawn, and
-summarising one shape as one shape says nothing anyway.
-
-So the wall tool's shapes carry `outlinedAlone: false`. Touching nothing, they get
-no outline. Touching something they are ordinary members of the group, and their
-points shape its hull like anyone else's — the outline is then about the group
-rather than the trace.
-
-Nothing about navigation changes, and none of this is what navigation runs on.
-Obstacles come from the convex *decomposition* of each polygon; the whole-wall
-hull is only the broad-phase reject in front of the parts, and every wall has one
-whether or not anything is drawn.
+Every shape is in a group, including a shape touching nothing, so every shape has
+an outline; a freehand trace shapes the hull of whatever it touches like any other
+member. None of this is what navigation runs on — obstacles come from the convex
+*decomposition* of each polygon, and the whole-wall hull is only the broad-phase
+reject in front of the parts.
 
 ### Deliberate divergences
 

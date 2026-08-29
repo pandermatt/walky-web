@@ -3,7 +3,7 @@ import { TOUCH } from './appShell';
 import { injectStyle, installTheme } from './theme';
 
 export type ActionId =
-  | 'start' | 'clear' | 'record' | 'reset_pedestrians' | 'reset_zoom' | 'settings';
+  | 'start' | 'undo' | 'clear' | 'record' | 'reset_pedestrians' | 'reset_zoom' | 'settings';
 
 interface ButtonSpec {
   key: ToolId | ActionId;
@@ -32,6 +32,9 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
     buttons: [
       { key: 'start', icon: 'start.png', title: 'Start / pause', kind: 'action' },
       { key: 'reset_pedestrians', icon: 'reset_pedestrians.png', title: 'Reset pedestrians', kind: 'action' },
+      // Between resetting and clearing, which is where the actions that take
+      // something back belong. The 2016 toolbar had no undo to place.
+      { key: 'undo', icon: 'undo.png', title: 'Undo (Ctrl+Z)', kind: 'action' },
       { key: 'clear', icon: 'clear.png', title: 'Clear map', kind: 'action' },
       { key: 'record', icon: 'record.png', title: 'Record', kind: 'action' },
     ],
@@ -245,6 +248,16 @@ export class Toolbar {
   }
 
   get tool(): ToolId | null { return this.activeTool; }
+
+  /**
+   * Greys out an action there is nothing to do with -- undo with an empty
+   * stack. A disabled button is the honest answer to "can I?", where one that
+   * looks live and does nothing is not; `.wk-btn:disabled` carries the look.
+   */
+  setEnabled(key: ActionId, enabled: boolean): void {
+    const btn = this.buttons.get(key);
+    if (btn) btn.disabled = !enabled;
+  }
 
   /** Marks a toggle action as on or off, e.g. the settings button while open. */
   setPressed(key: ActionId, pressed: boolean): void {

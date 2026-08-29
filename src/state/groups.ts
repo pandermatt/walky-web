@@ -12,12 +12,11 @@ import { polygonsOverlap, type Wall } from './model';
  * its own identity, colour and (eventually) deletability -- the grouping is
  * recomputed from scratch whenever walls change, so it can never accumulate.
  *
- * Walls with `outlinedAlone` false -- freehand traces -- group like any other
- * shape and shape the group's hull like any other member; a squiggle laid across
- * two buildings puts all three under one outline. What they do not get is an
- * outline while they are on their own: a hull around a single trace is a blob
- * that describes nothing. So a group of one is only outlined if that one wall is
- * worth outlining alone. See Wall.outlinedAlone.
+ * One group per connected set of shapes, one hull over all of it, with nothing
+ * left out: a shape touching nothing is a group of one and is hulled just the
+ * same, and a freehand trace shapes the hull of whatever it touches like any
+ * other member -- a squiggle laid across two buildings puts all three under one
+ * outline.
  */
 export interface WallGroup {
   /** Every wall in the group, lowest id first. */
@@ -80,10 +79,6 @@ export function groupWalls(walls: Wall[], tolerance = GROUP_TOLERANCE): WallGrou
 
   const groups: WallGroup[] = [];
   for (const members of byRoot.values()) {
-    // Touching nothing, a shape is outlined only if it is worth outlining alone.
-    // Once it touches something the outline is about the group, so every member
-    // shapes it, traces included.
-    if (members.length === 1 && !walls[members[0]].outlinedAlone) continue;
     const points: Point[] = [];
     for (const i of members) points.push(...walls[i].polygons.flat());
     groups.push({

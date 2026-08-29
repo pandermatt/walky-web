@@ -53,8 +53,6 @@ export interface SerializedWall {
   polygons: Point[][];
   color: RGB;
   isGoal: boolean;
-  /** False for shapes not outlined until they touch something; see Wall.outlinedAlone. */
-  outlinedAlone: boolean;
 }
 
 /**
@@ -111,7 +109,6 @@ export function serializeCore(input: ScenarioInput): ScenarioCore {
       polygons: w.polygons.map((poly) => poly.map(([x, y]) => [round(x), round(y)] as Point)),
       color: w.color,
       isGoal: w.isGoal,
-      outlinedAlone: w.outlinedAlone,
     })),
     agents: input.agents.map((a) => ({
       x: round(a.x),
@@ -212,7 +209,7 @@ export function buildWorld(core: ScenarioCore): { walls: Wall[]; agents: Restore
   for (const sw of core.walls) {
     const polygons = sw.polygons.filter((poly) => poly.length >= 3);
     if (polygons.length === 0) continue;
-    const wall = makeWall(polygons, { color: sw.color, outlinedAlone: sw.outlinedAlone });
+    const wall = makeWall(polygons, { color: sw.color });
     wall.isGoal = sw.isGoal;
     walls.push(wall);
     idMap.set(sw.id, wall.id);
