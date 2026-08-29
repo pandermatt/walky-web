@@ -34,6 +34,7 @@ function stubContext(): { ctx: ToolContext; rec: Recorded } {
     settings: () => DEFAULT_SETTINGS,
     pedestrianBlock: () => [],
     addPedestrians: () => {},
+    addGenerator: () => true,
     setGoalAt: () => false,
     selectPedestrianAt: () => {},
     selectPedestriansIn: () => {},

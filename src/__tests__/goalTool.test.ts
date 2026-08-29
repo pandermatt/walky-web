@@ -24,6 +24,7 @@ function stubContext(): { ctx: ToolContext; rec: Recorded } {
     settings: () => DEFAULT_SETTINGS,
     pedestrianBlock: () => [],
     addPedestrians: () => {},
+    addGenerator: () => true,
     setGoalAt: (at: Point) => {
       if (!onWall(at)) return false;
       rec.marked.push(at);

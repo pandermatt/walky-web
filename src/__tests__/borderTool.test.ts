@@ -119,6 +119,7 @@ describe('BorderTool', () => {
       settings: () => DEFAULT_SETTINGS,
       pedestrianBlock: () => [],
       addPedestrians: () => {},
+      addGenerator: () => true,
       setGoalAt: () => false,
       selectPedestrianAt: () => {},
       selectPedestriansIn: () => {},

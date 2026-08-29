@@ -34,6 +34,7 @@ export const SLIDERS: Record<string, SliderSpec> = {
   pedestrianRadius: { key: 'pedestrianRadius', label: 'Pedestrian radius', ...SETTING_RANGES.pedestrianRadius },
   personalSpace: { key: 'personalSpace', label: 'Personal space', ...SETTING_RANGES.personalSpace },
   brushSize: { key: 'brushSize', label: 'Brush size', ...SETTING_RANGES.brushSize },
+  generatorRate: { key: 'generatorRate', label: 'People per second', ...SETTING_RANGES.generatorRate },
   borderThickness: { key: 'borderThickness', label: 'Border thickness', ...SETTING_RANGES.borderThickness },
   labelSize: { key: 'labelSize', label: 'Text size', ...SETTING_RANGES.labelSize },
   labelWeight: { key: 'labelWeight', label: 'Text weight', ...SETTING_RANGES.labelWeight },

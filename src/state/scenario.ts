@@ -1,8 +1,8 @@
 import { BLACK, type RGB } from '../palette';
 import type { Point } from '../sim/geometry';
 import {
-  DEFAULT_SETTINGS, SETTING_RANGES, makeLabel, makeWall,
-  type Label, type NumericSetting, type Settings, type Wall,
+  DEFAULT_SETTINGS, SETTING_RANGES, makeGenerator, makeLabel, makeWall,
+  type Generator, type Label, type NumericSetting, type Settings, type Wall,
 } from './model';
 
 /**
@@ -20,9 +20,11 @@ import {
  * Version 3 added the border flag, for the same reason: a frame reopened as an
  * ordinary wall would swallow every outline on the map. Version 4 added the
  * labels: a map that says which door is which is a different map from one that
- * does not.
+ * does not. Version 5 added the generators, and the flag saying which
+ * pedestrians came out of one -- a flow reopened as a standing crowd is a
+ * different map again.
  */
-export const SCENARIO_VERSION = 4;
+export const SCENARIO_VERSION = 5;
 
 /**
  * A pedestrian as it is stored: where it is, where it started, and what it is
@@ -37,6 +39,25 @@ export interface SerializedAgent {
   /** Goal wall id, or -1 when unassigned. */
   goal: number;
   arrived: boolean;
+  color: RGB;
+  /**
+   * Whether a generator let this one out; see Agents.spawned. Optional, and read
+   * with a default: a payload written before generators existed describes a map
+   * where every pedestrian was painted by hand.
+   */
+  spawned?: boolean;
+}
+
+/**
+ * A generator as it is stored: where the block is, how fast it lets people out,
+ * and where they are headed. Its footprint is derived from the pedestrian radius
+ * and its emission counter belongs to the run, so neither travels.
+ */
+export interface SerializedGenerator {
+  at: Point;
+  rate: number;
+  /** Goal wall id, or -1 when unassigned. */
+  goal: number;
   color: RGB;
 }
 
@@ -90,6 +111,8 @@ export interface ScenarioCore {
    * it rather than a map that failed to load.
    */
   labels?: SerializedLabel[];
+  /** Optional and defaulted, exactly as the labels are, and for the same reason. */
+  generators?: SerializedGenerator[];
 }
 
 /** A core plus the descriptive extras the JSON report carries. */
@@ -104,6 +127,7 @@ export interface Scenario extends ScenarioCore {
     arrived: number;
     stuck: number;
     labels: number;
+    generators: number;
   };
 }
 
@@ -120,6 +144,7 @@ export interface ScenarioInput {
   walls: Wall[];
   agents: SerializedAgent[];
   labels: Label[];
+  generators: Generator[];
 }
 
 /** The map itself, with every coordinate rounded to two decimals. */
@@ -147,12 +172,19 @@ export function serializeCore(input: ScenarioInput): ScenarioCore {
       goal: a.goal,
       arrived: a.arrived,
       color: a.color,
+      spawned: a.spawned === true,
     })),
     labels: input.labels.map((l) => ({
       at: [round(l.at[0]), round(l.at[1])] as Point,
       text: l.text,
       size: l.size,
       weight: l.weight,
+    })),
+    generators: input.generators.map((g) => ({
+      at: [round(g.at[0]), round(g.at[1])] as Point,
+      rate: g.rate,
+      goal: g.goal,
+      color: g.color,
     })),
   };
 }
@@ -178,6 +210,7 @@ export function serializeScenario(input: ScenarioInput & { stuck: boolean[] }): 
       arrived: agents.filter((a) => a.arrived).length,
       stuck: agents.filter((a) => a.stuck).length,
       labels: core.labels?.length ?? 0,
+      generators: core.generators?.length ?? 0,
     },
   };
 }
@@ -224,6 +257,8 @@ export interface RestoredAgent {
   goal: number;
   arrived: boolean;
   color: RGB;
+  /** Whether a generator let it out, and so whether it goes when it arrives. */
+  spawned: boolean;
 }
 
 /**
@@ -241,7 +276,7 @@ export interface RestoredAgent {
  */
 export function buildWorld(
   core: ScenarioCore,
-): { walls: Wall[]; agents: RestoredAgent[]; labels: Label[] } {
+): { walls: Wall[]; agents: RestoredAgent[]; labels: Label[]; generators: Generator[] } {
   const walls: Wall[] = [];
   const idMap = new Map<number, number>();
   for (const sw of core.walls) {
@@ -269,6 +304,7 @@ export function buildWorld(
       // colour is whatever it wore on the way, which is not what it looks like now.
       color: a.arrived ? BLACK : a.color,
       arrived: a.arrived,
+      spawned: a.spawned === true,
     };
   });
 
@@ -283,5 +319,24 @@ export function buildWorld(
       weight: number(l.weight, DEFAULT_SETTINGS.labelWeight),
     }));
 
-  return { walls, agents, labels };
+  // Goals repointed the way an agent's is, and for the same reason: the ids in
+  // the payload are not the ids this map will have. A generator whose goal did
+  // not survive is simply one that is not pinned anywhere, which is a state the
+  // map already has a meaning for -- it stands there and emits nothing.
+  const generators = (core.generators ?? [])
+    .filter((g) => Array.isArray(g.at) && g.at.length === 2)
+    .map((g) => {
+      const made = makeGenerator(
+        [g.at[0], g.at[1]],
+        number(g.rate, DEFAULT_SETTINGS.generatorRate),
+      );
+      const goal = idMap.get(g.goal) ?? -1;
+      made.goal = goal;
+      // Unpinned it keeps the white makeGenerator gave it; pinned it wears its
+      // goal's colour, as everything else headed for a goal does.
+      if (goal >= 0 && g.color) made.color = g.color;
+      return made;
+    });
+
+  return { walls, agents, labels, generators };
 }

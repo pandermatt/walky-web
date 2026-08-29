@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CODEC_VERSION, FLAG_DEFLATED, FLAG_LABELS, LIMITS, ScenarioLinkError,
+  CODEC_VERSION, FLAG_DEFLATED, FLAG_GENERATORS, FLAG_LABELS, LIMITS, ScenarioLinkError,
   base64UrlToBytes, bytesToBase64Url,
   decodeScenario, decodeScenarioBody, encodeScenario, encodeScenarioBody,
   scenarioHeader,
@@ -18,6 +18,7 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
     walls: [],
     agents: [],
     labels: [],
+    generators: [],
     ...over,
   };
 }
@@ -31,7 +32,10 @@ function box(x: number, y: number, w = 40, h = 30): Point[] {
 }
 
 function agent(x: number, y: number, over: Partial<SerializedAgent> = {}): SerializedAgent {
-  return { x, y, originX: x, originY: y, goal: -1, arrived: false, color: [10, 200, 240], ...over };
+  return {
+    x, y, originX: x, originY: y, goal: -1, arrived: false, color: [10, 200, 240],
+    spawned: false, ...over,
+  };
 }
 
 /** A map with a bit of everything, as a hand-drawn one has. */
@@ -228,6 +232,67 @@ describe('labels, which ride in the flags rather than in the version', () => {
     });
     const bytes = encodeScenario(long);
     expect(() => decodeScenario(bytes)).toThrow(/longer label than Walky can hold/);
+  });
+});
+
+describe('generators, which ride in the flags as the labels do', () => {
+  const doors = () => core({
+    walls: [wall(4, [[[0, 0], [40, 0], [40, 40]]], { isGoal: true })],
+    generators: [
+      { at: [200, -40], rate: 3, goal: 4, color: [200, 30, 90] },
+      { at: [640, 120], rate: 17, goal: -1, color: [255, 255, 255] },
+    ],
+  });
+
+  it('round trips where the door is, how fast it runs and what it is aimed at', () => {
+    expect(decodeScenario(encodeScenario(doors())).generators).toEqual([
+      { at: [200, -40], rate: 3, goal: 4, color: [200, 30, 90] },
+      { at: [640, 120], rate: 17, goal: -1, color: [255, 255, 255] },
+    ]);
+  });
+
+  it('announces itself in the header, and only when there is something to announce', () => {
+    // The same promise the labels make: a map with no door on it encodes to
+    // exactly the bytes it always did, and goes on opening in an older build.
+    expect(encodeScenario(core())[2]).toBe(0);
+    expect(encodeScenario(doors())[2]).toBe(FLAG_GENERATORS);
+  });
+
+  it('sits after the labels, so a map can carry both', () => {
+    const both = core({
+      labels: [{ at: [0, 0], text: 'Gate', size: 28, weight: 1000 }],
+      generators: [{ at: [10, 10], rate: 4, goal: -1, color: [255, 255, 255] }],
+    });
+    expect(encodeScenario(both)[2]).toBe(FLAG_LABELS | FLAG_GENERATORS);
+    const after = decodeScenario(encodeScenario(both));
+    expect(after.labels).toEqual(both.labels);
+    expect(after.generators).toEqual(both.generators);
+  });
+
+  it('is not read at all when the header did not promise it', () => {
+    const bytes = encodeScenario(doors());
+    bytes[2] = 0;
+    expect(() => decodeScenario(bytes)).toThrow(/cut short or damaged/);
+  });
+
+  it('refuses more generators than it could hold, without allocating them', () => {
+    const bytes = encodeScenario(doors());
+    const body = [...encodeScenarioBody(core()), 0x80, 0x80, 0x80, 0x02];
+    const forged = new Uint8Array(body.length + 3);
+    forged.set([bytes[0], bytes[1], FLAG_GENERATORS], 0);
+    forged.set(body, 3);
+    expect(() => decodeScenario(forged)).toThrow(/more generators than Walky can hold/);
+  });
+
+  it('carries whether a pedestrian came out of one, on a bit the byte already had', () => {
+    const before = core({
+      agents: [agent(10, 10), agent(40, 10, { spawned: true })],
+    });
+    expect(decodeScenario(encodeScenario(before)).agents.map((a) => a.spawned))
+      .toEqual([false, true]);
+    // No flag of its own and no version bump: a spare bit of the agent byte.
+    expect(encodeScenario(before)[2]).toBe(0);
+    expect(encodeScenario(before)[1]).toBe(CODEC_VERSION);
   });
 });
 

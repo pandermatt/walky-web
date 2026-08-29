@@ -3,22 +3,23 @@ import type { Settings, WallOptions } from '../state/model';
 
 export type ToolId =
   | 'wall' | 'rectangle' | 'border' | 'pedestrian'
-  | 'goal' | 'select' | 'shift' | 'erase' | 'text';
+  | 'goal' | 'select' | 'shift' | 'erase' | 'text' | 'generator';
 
 /**
  * What the eraser would take away at a point.
  *
  * Whole objects only: one drawn shape, one border frame, one pedestrian, one
- * label. There is no half a wall -- a shape is what one draw action made, and
+ * label, one generator. There is no half a wall -- a shape is what one draw action made, and
  * rubbing a corner off one would mean re-cutting geometry the navigation graph,
  * the group outlines and the undo snapshots are all built from. A label is the
  * same bargain in miniature: a word is what one act of typing made.
  */
 export interface EraseTarget {
-  kind: 'wall' | 'pedestrian' | 'label';
+  kind: 'wall' | 'pedestrian' | 'label' | 'generator';
   /**
-   * The wall's or label's id, or the pedestrian's index -- whichever `kind`
-   * says. A pedestrian has no id of its own; the rest are stable.
+   * The wall's, label's or generator's id, or the pedestrian's index --
+   * whichever `kind` says. A pedestrian has no id of its own; the rest are
+   * stable.
    */
   id: number;
   /** Outlines of what would go, for the preview. A border frame is four bars. */
@@ -32,9 +33,24 @@ export interface ToolContext {
   addWallShape(polygons: Point[][], options?: WallOptions): boolean;
   /** Current settings, for tools that need sizes at preview time. */
   settings(): Readonly<Settings>;
-  /** Legal positions in the brush block centred on `at`, for placement and preview. */
-  pedestrianBlock(at: Point): Point[];
+  /**
+   * Legal positions in a block centred on `at`, for placement and preview.
+   *
+   * `cells` is the block's width in pedestrians, defaulting to the brush's own
+   * setting. The generator asks for its own footprint instead, so that what it
+   * previews is what it will actually be able to let people out of.
+   */
+  pedestrianBlock(at: Point, cells?: number): Point[];
   addPedestrians(at: Point): void;
+  /**
+   * Puts a generator down, at the rate the slider is currently set to. One
+   * click, not a stroke: a generator is a thing on the map rather than paint,
+   * and dragging a row of them is nobody's intention.
+   *
+   * False when there is nowhere inside the block a pedestrian could stand, which
+   * is a door that could never let anybody out.
+   */
+  addGenerator(at: Point): boolean;
   /** Marks the wall under a point as a goal; false when there is no wall there. */
   setGoalAt(at: Point): boolean;
   /** Select the pedestrian under a point (or clear, if there is none). */

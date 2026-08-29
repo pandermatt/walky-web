@@ -82,6 +82,12 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
       // Ninth for the same reason, and last because it is the one tool that adds
       // nothing to the simulation: a label is for the person reading the map.
       { key: 'text', icon: 'text.svg', title: 'Add text', kind: 'tool', shortcut: '9', press: '9', desktopOnly: true },
+      // Tenth, appended for the reason the eraser and the text tool were: the
+      // digit is how far down the capsule a tool is, and slotting a generator in
+      // beside the pedestrian brush -- where it belongs by subject -- would
+      // renumber five tools people already know. Ten is where a single digit runs
+      // out, and 0 is the key that follows 9 along the row.
+      { key: 'generator', icon: 'generator.svg', title: 'Add generator', kind: 'tool', shortcut: '0', press: '0', desktopOnly: true },
     ],
   },
   {
@@ -211,7 +217,12 @@ export const TOOLBAR_CSS = `
  * Record wants a two-minute sit-still and hands back a file a phone has nowhere
  * good to put; the text tool wants a keyboard. Neither is a control that works
  * worse on a phone -- they are controls a phone has no answer for -- so they are
- * taken out of the strip rather than left there to disappoint. \`display: none\`
+ * taken out of the strip rather than left there to disappoint.
+ *
+ * The generator is here for the third version of that argument, which is about
+ * room rather than input: it is a tool you place and then tune, and its slider,
+ * its selection and the goal it has to be pinned to are three panels' worth of
+ * traffic over a screen that is mostly map already. \`display: none\`
  * removes the cell from the layout and from the accessibility tree both, and the
  * query is live, so a tab handed to an installed window or a desktop window
  * dragged narrow agrees without anything listening for it.
@@ -223,6 +234,7 @@ export const TOOLBAR_CSS = `
  */
 @media ${HANDHELD} {
   #toolbar .wk-btn--cell[data-key="record"],
+  #toolbar .wk-btn--cell[data-key="generator"],
   #toolbar .wk-btn--cell[data-key="text"] { display: none; }
 }
 

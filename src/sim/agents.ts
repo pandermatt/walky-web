@@ -16,6 +16,7 @@ export interface AgentsSnapshot {
   color: Uint32Array;
   arrived: Uint8Array;
   selected: Uint8Array;
+  spawned: Uint8Array;
 }
 
 /**
@@ -154,6 +155,15 @@ export class Agents {
   /** Lassoed by the selection tool; the mark-goal tool acts on these alone. */
   selected: Uint8Array;
   /**
+   * Came out of a generator, and so is taken off the map the moment it arrives.
+   *
+   * The one thing that separates the flow from the crowd. A painted pedestrian is
+   * part of the map and stays where it got to; one a generator let out is part of
+   * the run, and a door that left its output standing at the goal would bury the
+   * map inside a minute.
+   */
+  spawned: Uint8Array;
+  /**
    * Indices that crossed into `arrived` during the most recent `step`, so the
    * caller can react to the moment of arrival -- currently the plop sound.
    *
@@ -196,6 +206,7 @@ export class Agents {
     this.effectiveSpace = new Float32Array(capacity);
     this.costToGoal = new Float32Array(capacity).fill(Infinity);
     this.selected = new Uint8Array(capacity);
+    this.spawned = new Uint8Array(capacity);
   }
 
   add(at: Point, color: RGB = randomBrightColor()): number {
@@ -222,6 +233,19 @@ export class Agents {
     this.effectiveSpace[i] = 0;
     this.costToGoal[i] = Infinity;
     this.selected[i] = 0;
+    this.spawned[i] = 0;
+    return i;
+  }
+
+  /**
+   * One pedestrian let out of a generator: painted, aimed and marked as the run's
+   * rather than the map's, all in the one call so that nothing can add a spawned
+   * pedestrian and forget the flag that takes it away again.
+   */
+  addSpawned(at: Point, goal: number, color: RGB): number {
+    const i = this.add(at, color);
+    this.goal[i] = goal;
+    this.spawned[i] = 1;
     return i;
   }
 
@@ -317,6 +341,43 @@ export class Agents {
     this.effectiveSpace[i] = this.effectiveSpace[last];
     this.costToGoal[i] = this.costToGoal[last];
     this.selected[i] = this.selected[last];
+    this.spawned[i] = this.spawned[last];
+  }
+
+  /**
+   * Takes off the map every generator pedestrian that has reached its goal.
+   *
+   * Backwards, like every other removal loop here: removeAt swaps the last agent
+   * down into the freed slot, and walking down means the slot swapped in is
+   * always one already looked at and already known to be staying.
+   *
+   * @returns how many went, so the caller can tell whether anything moved.
+   */
+  removeArrivedSpawned(): number {
+    let removed = 0;
+    for (let i = this.count - 1; i >= 0; i--) {
+      if (this.spawned[i] && this.arrived[i]) {
+        this.removeAt(i);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * Clears the flow, leaving the painted crowd. What Reset means once generators
+   * exist: a pedestrian a generator let out has no starting line to be put back
+   * on, so putting it back means taking it away.
+   */
+  removeSpawned(): number {
+    let removed = 0;
+    for (let i = this.count - 1; i >= 0; i--) {
+      if (this.spawned[i]) {
+        this.removeAt(i);
+        removed++;
+      }
+    }
+    return removed;
   }
 
   /**
@@ -340,6 +401,7 @@ export class Agents {
       color: this.color.slice(0, n),
       arrived: this.arrived.slice(0, n),
       selected: this.selected.slice(0, n),
+      spawned: this.spawned.slice(0, n),
     };
   }
 
@@ -353,6 +415,7 @@ export class Agents {
     this.color.set(snap.color);
     this.arrived.set(snap.arrived);
     this.selected.set(snap.selected);
+    this.spawned.set(snap.spawned);
     // Derived state, cleared rather than restored: a waypoint belongs to a map
     // that may no longer exist, and a stale one would be walked to.
     this.hasWaypoint.fill(0, 0, n);
@@ -444,6 +507,7 @@ export class Agents {
     this.party[i] = partyOf(a.originX, a.originY);
     this.goal[i] = a.goal;
     this.arrived[i] = a.arrived ? 1 : 0;
+    this.spawned[i] = a.spawned ? 1 : 0;
     return i;
   }
 
@@ -602,6 +666,7 @@ export class Agents {
     this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));
     this.costToGoal = copy(this.costToGoal, (n) => new Float32Array(n));
     this.selected = copy(this.selected, (n) => new Uint8Array(n));
+    this.spawned = copy(this.spawned, (n) => new Uint8Array(n));
     this.capacity = next;
   }
 }

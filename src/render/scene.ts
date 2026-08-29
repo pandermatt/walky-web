@@ -30,6 +30,15 @@ interface WallPiece {
 const ERASING_ALPHA = 90;
 const SOLID_ALPHA = 255;
 
+/**
+ * How opaque a generator's block is drawn.
+ *
+ * Short of solid on purpose. It is not a wall -- pedestrians walk out of it and
+ * across it, and a fill they disappeared behind would read as one more obstacle
+ * on a map made of obstacles. Enough to be a block, little enough to be a floor.
+ */
+const GENERATOR_ALPHA = 150;
+
 /** RGB plus the alpha this piece should be drawn at. */
 function withAlpha(color: RGB, alpha: number): [number, number, number, number] {
   return [color[0], color[1], color[2], alpha];
@@ -38,6 +47,21 @@ function withAlpha(color: RGB, alpha: number): [number, number, number, number] 
 export interface Ray {
   from: Point;
   to: Point;
+}
+
+/**
+ * A generator as the scene draws it: the square it occupies, and whether it is
+ * the one the pointer has hold of.
+ *
+ * The polygon comes ready-made rather than being derived here from a centre and
+ * a radius, so that what is drawn, what a click hits and what the tool previewed
+ * are all the same call to generatorSquare.
+ */
+export interface GeneratorView {
+  id: number;
+  polygon: Point[];
+  color: RGB;
+  selected: boolean;
 }
 
 export interface Agent {
@@ -61,6 +85,7 @@ export interface SceneState {
   worldRevision: number;
   agentRevision: number;
   walls: Wall[];
+  generators: GeneratorView[];
   agents: Agent[];
   rays: Ray[];
   paths: Point[][];
@@ -129,10 +154,12 @@ export class Scene {
 
   private buildLayers(state: SceneState) {
     const {
-      worldRevision, agentRevision, walls, agents, rays, paths, showPersonalSpace, erasing,
+      worldRevision, agentRevision, walls, generators, agents,
+      rays, paths, showPersonalSpace, erasing,
     } = state;
     const fadedWall = erasing?.kind === 'wall' ? erasing.id : -1;
     const fadedAgent = erasing?.kind === 'pedestrian' ? erasing.id : -1;
+    const fadedGenerator = erasing?.kind === 'generator' ? erasing.id : -1;
 
     return [
       // Walls are flat 2D fills -- no shadow copy, no extrusion. A merged wall
@@ -154,6 +181,46 @@ export class Scene {
         updateTriggers: {
           getPolygon: worldRevision,
           getFillColor: `${worldRevision}:${fadedWall}`,
+        },
+      }),
+
+      // Over the walls and under the crowd, which is where it stands: a
+      // generator is a thing on the floor that people come out of, and a
+      // pedestrian half-out of one should be in front of it.
+      //
+      // Two layers because it is two marks. The fill is the block in the colour
+      // of the goal it is pinned to -- white, and so plainly unwired, until it
+      // is. The outline is the same white ring the pedestrians wear, and turns
+      // the same thick yellow when it is selected, because being picked in order
+      // to be sent somewhere is exactly what it shares with them.
+      new SolidPolygonLayer<GeneratorView>({
+        id: 'generators',
+        data: generators,
+        getPolygon: (g) => g.polygon,
+        getFillColor: (g) => withAlpha(
+          g.color, g.id === fadedGenerator ? ERASING_ALPHA : GENERATOR_ALPHA,
+        ),
+        filled: true,
+        updateTriggers: {
+          getPolygon: worldRevision,
+          getFillColor: `${worldRevision}:${fadedGenerator}`,
+        },
+      }),
+
+      new PathLayer<GeneratorView>({
+        id: 'generator-outlines',
+        data: generators,
+        // Closed by hand: a path is a line, and a square wants its last corner
+        // joined back to its first.
+        getPath: (g) => [...g.polygon, g.polygon[0]],
+        getColor: (g) => (g.selected ? YELLOW : WHITE) as unknown as [number, number, number],
+        widthUnits: 'pixels',
+        getWidth: (g) => (g.selected ? 3 : 1),
+        jointRounded: true,
+        updateTriggers: {
+          getPath: worldRevision,
+          getColor: worldRevision,
+          getWidth: worldRevision,
         },
       }),
 

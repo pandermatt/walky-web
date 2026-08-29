@@ -3,7 +3,8 @@ import type { Point } from '../sim/geometry';
 import { ZOOM_LEVEL_MAX, ZOOM_LEVEL_MIN } from '../render/viewport';
 import {
   SCENARIO_VERSION, clampSettings,
-  type ScenarioCore, type SerializedAgent, type SerializedLabel, type SerializedWall,
+  type ScenarioCore, type SerializedAgent, type SerializedGenerator,
+  type SerializedLabel, type SerializedWall,
 } from './scenario';
 import type { Settings } from './model';
 
@@ -76,8 +77,18 @@ export const FLAG_DEFLATED = 1;
  */
 export const FLAG_LABELS = 2;
 
+/**
+ * The body carries a generators block after the labels.
+ *
+ * The same escape hatch again, for the same reason: a map with no generator on it
+ * still encodes to exactly the bytes it always did and still opens in a build
+ * from before they existed, and a map with one is refused by name rather than
+ * read as a map whose tail went missing.
+ */
+export const FLAG_GENERATORS = 4;
+
 /** Every bit that means something. Anything else set is a payload from the future. */
-const KNOWN_FLAGS = FLAG_DEFLATED | FLAG_LABELS;
+const KNOWN_FLAGS = FLAG_DEFLATED | FLAG_LABELS | FLAG_GENERATORS;
 
 /** Sub-unit precision for the one thing in a map that is not a whole number. */
 const VIEW_QUANTUM = 16;  // at the deepest zoom a 16th of a unit is under 4px
@@ -105,6 +116,8 @@ export const LIMITS = {
   maxAgents: 100_000,
   /** Enough to name every room on a map, far short of a payload made of prose. */
   maxLabels: 500,
+  /** Far more doors than a map can be read at, and each one is a Dijkstra's worth. */
+  maxGenerators: 500,
   /** The model's own cap on a typed label, applied again to a pasted one. */
   maxLabelBytes: 512,
   /** Well inside the range where a Float32Array still holds integers exactly. */
@@ -274,6 +287,15 @@ const NUMBER_KEYS = [
 const AGENT_ARRIVED = 1;
 const AGENT_ORIGIN_DIFFERS = 2;
 const AGENT_COLOR_REPEATS = 4;
+/**
+ * Came out of a generator; see Agents.spawned.
+ *
+ * A spare bit of a byte that already had room, rather than a version bump or a
+ * flag of its own: unknown bits here were always ignored on the way in, so a
+ * build from before generators reads such a link -- if it reads it at all, which
+ * the header flag decides -- as a map of ordinary pedestrians.
+ */
+const AGENT_SPAWNED = 8;
 
 const WALL_IS_GOAL = 1;
 const WALL_IS_BORDER = 2;
@@ -307,7 +329,8 @@ export function readHeader(bytes: Uint8Array): { flags: number; body: Uint8Array
  * one. shareLink.ts ORs the deflate bit onto whatever this returns.
  */
 export function bodyFlags(core: ScenarioCore): number {
-  return (core.labels?.length ?? 0) > 0 ? FLAG_LABELS : 0;
+  return ((core.labels?.length ?? 0) > 0 ? FLAG_LABELS : 0)
+    | ((core.generators?.length ?? 0) > 0 ? FLAG_GENERATORS : 0);
 }
 
 /** The scenario as bytes: a three-byte header followed by the body. */
@@ -382,6 +405,7 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
     const color = (agent.color[0] << 16) | (agent.color[1] << 8) | agent.color[2];
 
     let bits = agent.arrived ? AGENT_ARRIVED : 0;
+    if (agent.spawned) bits |= AGENT_SPAWNED;
     // A pedestrian that has not moved yet -- every one of them on a map that has
     // not been run -- pays nothing for its origin.
     if (ox !== x || oy !== y) bits |= AGENT_ORIGIN_DIFFERS;
@@ -421,6 +445,28 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
       w.string(label.text);
       lx = x;
       ly = y;
+    }
+  }
+
+  // After the labels, and only when there are any -- the same bargain, one block
+  // further along. A reader that knows about labels but not about generators
+  // stops after them, which is why this is last and why the header says so.
+  const generators = core.generators ?? [];
+  if (generators.length > 0) {
+    w.varint(generators.length);
+    let gx = 0;
+    let gy = 0;
+    for (const generator of generators) {
+      const x = Math.round(generator.at[0]);
+      const y = Math.round(generator.at[1]);
+      w.zigzag(x - gx);
+      w.zigzag(y - gy);
+      w.varint(generator.rate);
+      w.rgb(generator.color);
+      const index = indexOfId.get(generator.goal);
+      w.varint(index === undefined ? 0 : index + 1);
+      gx = x;
+      gy = y;
     }
   }
 
@@ -520,6 +566,7 @@ export function decodeScenarioBody(bytes: Uint8Array, flags = 0): ScenarioCore {
       goal,
       arrived: (bits & AGENT_ARRIVED) !== 0,
       color,
+      spawned: (bits & AGENT_SPAWNED) !== 0,
     });
   }
 
@@ -540,6 +587,24 @@ export function decodeScenarioBody(bytes: Uint8Array, flags = 0): ScenarioCore {
     }
   }
 
+  const generators: SerializedGenerator[] = [];
+  if (flags & FLAG_GENERATORS) {
+    const generatorCount = r.count(LIMITS.maxGenerators, 'generators');
+    let gx = 0;
+    let gy = 0;
+    for (let i = 0; i < generatorCount; i++) {
+      gx = r.step(gx);
+      gy = r.step(gy);
+      // Rate taken as given and clamped where every other untrusted number is,
+      // in scenario.buildWorld.
+      const rate = r.varint();
+      const color = r.rgb();
+      const goalIndex = r.varint();
+      const goal = goalIndex > 0 && goalIndex <= walls.length ? walls[goalIndex - 1].id : -1;
+      generators.push({ at: [gx, gy], rate, goal, color });
+    }
+  }
+
   // Everything decoded, and bytes still to go: the payload is not what it says
   // it is. Better an error than a map quietly missing its tail.
   if (!r.done) throw new ScenarioLinkError(TRUNCATED);
@@ -551,6 +616,7 @@ export function decodeScenarioBody(bytes: Uint8Array, flags = 0): ScenarioCore {
     walls,
     agents,
     labels,
+    generators,
   };
 }
 

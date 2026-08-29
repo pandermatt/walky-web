@@ -2,11 +2,18 @@ import { pointInPolygon, signedArea2, distance, type Point } from '../sim/geomet
 import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
 
 /**
- * Lasso selection of pedestrians, from controller/SelectionToolMouseListener.
+ * Lasso selection of pedestrians and generators, from
+ * controller/SelectionToolMouseListener.
  *
  * Drag to enclose a group; the outline is built from the path the pointer takes,
  * so an irregular shape can be drawn around part of a crowd. A press and release
- * without dragging is a click, which picks the single pedestrian underneath.
+ * without dragging is a click, which picks the single pedestrian -- or the
+ * generator -- underneath.
+ *
+ * Generators are selectable through the same gesture rather than a second one of
+ * their own, because what you do next is identical: a door is picked in order to
+ * be sent somewhere, exactly as a group of pedestrians is, and the goal tool that
+ * follows does not care which it was handed.
  *
  * Holding shift adds to the current selection instead of replacing it, matching
  * the original's "extend mode".
@@ -72,15 +79,15 @@ export class SelectionTool implements Tool {
       // and a gesture that lands on one looks exactly like a gesture that
       // failed. Say so, and stay in hand so the next try needs no toolbar trip.
       ctx.notify(wasDrag
-        ? 'No pedestrians in there — the selection tool picks pedestrians, not walls.'
-        : 'Nothing to select there — the selection tool picks pedestrians, not walls.');
+        ? 'Nothing in there — the selection tool picks pedestrians and generators, not walls.'
+        : 'Nothing to select there — the selection tool picks pedestrians and generators, not walls.');
       return;
     }
 
-    // A group is picked in order to be sent somewhere, so the goal tool is what
-    // comes next; arming it here saves a trip back to the toolbar. Not while
-    // shift is down -- that is extend mode, and the selection is still being
-    // built.
+    // A group -- or a door -- is picked in order to be sent somewhere, so the
+    // goal tool is what comes next; arming it here saves a trip back to the
+    // toolbar. Not while shift is down -- that is extend mode, and the selection
+    // is still being built.
     if (!e.shiftKey) ctx.activateTool('goal');
   }
 

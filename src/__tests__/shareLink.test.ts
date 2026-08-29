@@ -16,6 +16,7 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
     walls: [],
     agents: [],
     labels: [],
+    generators: [],
     ...over,
   };
 }
@@ -36,6 +37,7 @@ function bigCrowd(): ScenarioCore {
       goal: 1,
       arrived: false,
       color: [255, 190, 0],
+      spawned: false,
     });
   }
   return core({ walls: [{ id: 1, polygons: [box(0, 0)], color: [255, 190, 0], isGoal: true, isBorder: false }], agents });
@@ -46,7 +48,10 @@ describe('a map as a link', () => {
     const before = core({
       view: { targetX: 120.5, targetY: -80.25, zoomLevel: -2 },
       walls: [{ id: 4, polygons: [box(0, 0)], color: [1, 2, 3], isGoal: true, isBorder: false }],
-      agents: [{ x: 10, y: 10, originX: 10, originY: 10, goal: 4, arrived: false, color: [1, 2, 3] }],
+      agents: [{
+        x: 10, y: 10, originX: 10, originY: 10, goal: 4, arrived: false,
+        color: [1, 2, 3], spawned: false,
+      }],
     });
     expect(await decodeLink(await encodeLink(before))).toEqual(before);
   });

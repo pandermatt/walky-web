@@ -1,4 +1,4 @@
-import { randomBrightColor, type RGB } from '../palette';
+import { randomBrightColor, WHITE, type RGB } from '../palette';
 import { monotoneChainHull } from '../sim/convexHull';
 import { pointInPolygon, segmentsCross, type Point } from '../sim/geometry';
 
@@ -60,6 +60,15 @@ export interface Settings {
   speed: number;
   brushSize: number;
   /**
+   * How fast the *next* generator lets people out, in pedestrians per second.
+   *
+   * The size of the next block, not a rate every generator runs at: each one
+   * keeps what it was placed at, the way a label keeps the size it was written
+   * at. Selecting a generator loads its rate back in here, so the one slider is
+   * both "what the next one will be" and "what this one is".
+   */
+  generatorRate: number;
+  /**
    * How tall a label is written, in world units.
    *
    * The size the *next* label takes, not a size every label has: each one keeps
@@ -97,6 +106,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // display. Speed is now how many steps a pedestrian may buy per frame.
   speed: 4,
   brushSize: 1,
+  // A steady trickle: fast enough to read as a flow within a second or two, slow
+  // enough that a door is not instantly its own traffic jam.
+  generatorRate: 4,
   // A little over two pedestrian diameters: the size at which a word reads as a
   // caption on the map rather than as something standing on it.
   labelSize: 28,
@@ -119,13 +131,17 @@ export const DEFAULT_SETTINGS: Settings = {
  */
 export type NumericSetting =
   | 'pedestrianRadius' | 'personalSpace' | 'speed' | 'brushSize' | 'borderThickness'
-  | 'labelSize' | 'labelWeight';
+  | 'labelSize' | 'labelWeight' | 'generatorRate';
 
 export const SETTING_RANGES: Record<NumericSetting, { min: number; max: number; step: number }> = {
   speed: { min: 1, max: 20, step: 1 },
   pedestrianRadius: { min: 3, max: 40, step: 1 },
   personalSpace: { min: 0, max: 120, step: 1 },
   brushSize: { min: 1, max: 14, step: 1 },
+  // From somebody through the door every second to a stream the door itself is
+  // the bottleneck on -- past about twenty a generator spends most beats waiting
+  // for its own footprint to clear.
+  generatorRate: { min: 1, max: 20, step: 1 },
   borderThickness: { min: 2, max: 60, step: 1 },
   // From a word that has to be zoomed in on to one that titles the whole map.
   labelSize: { min: 8, max: 120, step: 1 },
@@ -242,6 +258,86 @@ export function makeLabel(at: Point, text: string, style: LabelStyle): Label {
     text: text.slice(0, LABEL_MAX_CHARS),
     size: inRange(style.size, 'labelSize'),
     weight: inRange(style.weight, 'labelWeight'),
+  };
+}
+
+/**
+ * A block that lets pedestrians out, one after another, while the run is on.
+ *
+ * The brush paints a crowd; this paints a flow. A door that keeps letting people
+ * through and a platform that keeps filling are the two things the map could not
+ * say before, and faking either meant painting a long queue and watching it drain
+ * exactly once.
+ *
+ * Everyone it emits walks to its goal, so pinning the generator pins everybody it
+ * will ever produce -- and they are removed the moment they get there. They are
+ * the flow rather than the crowd: there is nothing to reset them to, and a
+ * generator that left its output standing at the goal would bury the map in a
+ * minute.
+ */
+export interface Generator {
+  id: number;
+  /** Centre of the block; its extent is derived, see generatorSquare. */
+  at: Point;
+  /**
+   * Pedestrians per second, as the slider was set when this one was placed.
+   *
+   * Kept per generator rather than read from the settings at emission time, for
+   * the reason a label keeps its own size: a busy door and a quiet one on the
+   * same map is the whole point, and one number in the settings could only
+   * describe a map where every door is the same door.
+   */
+  rate: number;
+  /** Goal wall id, or -1 while it is not pinned to anywhere. */
+  goal: number;
+  /** Its goal's colour, as a pedestrian wears its goal's -- or white unpinned. */
+  color: RGB;
+  /** Unlike Wall.selected, this one is read: it is what the goal tool aims at. */
+  selected: boolean;
+  /**
+   * Fractional emission carried between ticks. Run state rather than map state:
+   * it is not serialized, and Reset puts it back to nought.
+   */
+  owed: number;
+}
+
+/**
+ * How many pedestrians across a generator's footprint is.
+ *
+ * Three, at the brush's own pitch, which is the smallest block that still gives
+ * somebody a way out when the middle of it is occupied -- and the largest that
+ * still reads as a door rather than as a room.
+ */
+export const GENERATOR_CELLS = 3;
+
+/**
+ * The square a generator occupies, in world units.
+ *
+ * Derived from the pedestrian radius rather than stored, so it is the size of the
+ * people coming out of it at whatever the radius slider says -- the same bargain
+ * the brush block makes. Drawing, hit-testing and the placement preview all call
+ * this, so all three agree by construction.
+ */
+export function generatorSquare(at: Point, radius: number): Point[] {
+  const half = GENERATOR_CELLS * radius;
+  return rectanglePolygon([at[0] - half, at[1] - half], [at[0] + half, at[1] + half]);
+}
+
+export function generatorContains(g: Generator, p: Point, radius: number): boolean {
+  return pointInPolygon(generatorSquare(g.at, radius), p);
+}
+
+export function makeGenerator(at: Point, rate: number): Generator {
+  return {
+    id: nextId++,
+    at,
+    rate: Math.max(1, Math.round(rate)),
+    goal: -1,
+    // White until it is pinned somewhere: a generator with no goal emits nothing,
+    // and looking like every other unpinned thing on the map is how it says so.
+    color: WHITE,
+    selected: false,
+    owed: 0,
   };
 }
 

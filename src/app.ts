@@ -1,10 +1,11 @@
-import { Scene, type SceneState } from './render/scene';
+import { Scene, type GeneratorView, type SceneState } from './render/scene';
 import { LABEL_MIN_PX, Overlay, type EditingLabel, type RecordFrame, type ScreenRect } from './render/overlay';
 import { Viewport, type Bounds } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
-  DEFAULT_SETTINGS, makeLabel, makeWall, rectanglePolygon, wallContains,
-  type Label, type LabelStyle, type Settings, type Wall, type WallOptions,
+  DEFAULT_SETTINGS, GENERATOR_CELLS, generatorContains, generatorSquare,
+  makeGenerator, makeLabel, makeWall, rectanglePolygon, wallContains,
+  type Generator, type Label, type LabelStyle, type Settings, type Wall, type WallOptions,
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { groupWalls, type WallGroup } from './state/groups';
@@ -26,6 +27,7 @@ import { PedestrianTool } from './tools/pedestrianTool';
 import { GoalTool } from './tools/goalTool';
 import { EraseTool } from './tools/eraseTool';
 import { TextTool } from './tools/textTool';
+import { GeneratorTool } from './tools/generatorTool';
 import { TextCaret } from './ui/textCaret';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
@@ -83,8 +85,23 @@ const FPS_WINDOW_MS = 1000;
 interface MapSnapshot {
   walls: Wall[];
   labels: Label[];
+  /** Cloned one level deep like the walls: goal, rate and selected are written in place. */
+  generators: Generator[];
   agents: AgentsSnapshot;
 }
+
+/**
+ * Frames a generator counts a second as.
+ *
+ * A rate has to be per something, and the something everything else in this
+ * model is per is the frame: a pedestrian's step budget is topped up once a tick
+ * whatever the clock says. Sixty is what a browser hands out when it can, so a
+ * generator set to four lets four people out a second on a machine keeping up,
+ * and slows down along with the crowd on one that is not -- which is the honest
+ * behaviour, since a door running to the wall clock while the crowd runs to the
+ * frame rate would pour people into a room they cannot cross.
+ */
+const TICKS_PER_SECOND = 60;
 
 /**
  * How many edits back you can go.
@@ -122,6 +139,7 @@ export class App {
 
   private walls: Wall[] = [];
   private labels: Label[] = [];
+  private generators: Generator[] = [];
   /** The label being typed, or null. Not part of the map until it is finished. */
   private editingLabel: EditingLabel | null = null;
   private textCaret: TextCaret;
@@ -215,7 +233,7 @@ export class App {
     for (const t of [
       new WallTool(), new RectangleTool(), new ShiftTool(),
       new PedestrianTool(), new GoalTool(), new SelectionTool(),
-      new BorderTool(), new EraseTool(), new TextTool(),
+      new BorderTool(), new EraseTool(), new TextTool(), new GeneratorTool(),
     ]) {
       this.tools.set(t.id, t as Tool);
     }
@@ -258,6 +276,15 @@ export class App {
       this.settings[key] = value;
       // Radius changes the expanded hulls, so the graph must be rebuilt.
       if (key === 'pedestrianRadius') this.navDirty = true;
+      // The rate slider retunes whatever is held as well as setting what the next
+      // one will be -- which is the whole of "selecting a generator puts its rate
+      // back in your hand". No checkpoint: it is a slider, and the others do not
+      // take one either; a drag would otherwise be forty undo steps.
+      if (key === 'generatorRate') {
+        for (const generator of this.generators) {
+          if (generator.selected) generator.rate = this.settings.generatorRate;
+        }
+      }
       // Both panels can show the same setting, so keep them in step.
       this.settingsSheet.sync();
       this.contextPanel.sync();
@@ -302,7 +329,7 @@ export class App {
     addWall: (polygon, options) => this.addWall(polygon, options),
     addWallShape: (polygons, options) => this.addWallShape(polygons, options),
     settings: () => this.settings,
-    pedestrianBlock: (at) => this.pedestrianBlock(at),
+    pedestrianBlock: (at, cells) => this.pedestrianBlock(at, cells),
     addPedestrians: (at) => {
       const spots = this.pedestrianBlock(at);
       // Nothing landed -- the brush was over a wall or a crowd -- so nothing
@@ -312,6 +339,17 @@ export class App {
       for (const p of spots) this.agents.add(p);
       this.touch();
     },
+    addGenerator: (at) => {
+      // A door with no room in it for anybody to stand is a door that can never
+      // let anybody out -- the same bargain the border tool strikes with a frame
+      // too small to hold a crowd, refused rather than silently made.
+      if (this.pedestrianBlock(at, GENERATOR_CELLS).length === 0) return false;
+      this.checkpoint();
+      const generator = makeGenerator(at, this.settings.generatorRate);
+      this.generators = [...this.generators, generator];
+      this.touch();
+      return true;
+    },
     setGoalAt: (at) => {
       const hit = this.pickWall(at);
       if (!hit) return false;
@@ -319,10 +357,19 @@ export class App {
       hit.isGoal = true;
       // With a selection, the goal applies to it alone; with nothing selected it
       // applies to everyone, as Map.setGoalForSelectedPedestrians did.
-      const onlySelected = this.agents.selectionCount > 0;
+      //
+      // A generator is in "everyone" as squarely as a pedestrian is, and pinning
+      // one is the more consequential half: a pedestrian is sent somewhere once,
+      // a generator sends everybody it will ever let out.
+      const onlySelected = this.selectionCount() > 0;
       for (let i = 0; i < this.agents.count; i++) {
         if (onlySelected && !this.agents.selected[i]) continue;
         this.agents.setGoal(i, hit.id, hit.color);
+      }
+      for (const generator of this.generators) {
+        if (onlySelected && !generator.selected) continue;
+        generator.goal = hit.id;
+        generator.color = hit.color;
       }
       this.pruneGoals(hit.id);
       this.navDirty = true;
@@ -333,22 +380,42 @@ export class App {
       return true;
     },
     selectPedestrianAt: (at, extend) => {
-      if (!extend) this.agents.clearSelection();
-      const hit = this.agents.indexAt(at, this.settings.pedestrianRadius);
-      if (hit >= 0) this.agents.selected[hit] = 1;
-      this.touch();
+      if (!extend) this.clearSelection();
+      // The generator first, against the topmost-wins rule the rest of the app
+      // clicks by -- and deliberately.
+      //
+      // A door is a fixture and the people in its mouth are passing through it,
+      // most of them its own output. Taking the pedestrian would mean a running
+      // generator could not be picked at all: the one square on the map
+      // guaranteed to have somebody standing in it is the square people are
+      // being let out of. Nothing is lost by it that the lasso does not still
+      // do, and the eraser -- which shows you what it is about to take before it
+      // takes it -- goes on answering topmost-wins.
+      const generator = this.pickGenerator(at);
+      if (generator) {
+        generator.selected = true;
+      } else {
+        const hit = this.agents.indexAt(at, this.settings.pedestrianRadius);
+        if (hit >= 0) this.agents.selected[hit] = 1;
+      }
+      this.afterSelectionChange();
     },
     selectPedestriansIn: (lasso, extend) => {
-      if (!extend) this.agents.clearSelection();
+      if (!extend) this.clearSelection();
       for (let i = 0; i < this.agents.count; i++) {
         if (pointInPolygon(lasso, [this.agents.x[i], this.agents.y[i]])) {
           this.agents.selected[i] = 1;
         }
       }
-      this.touch();
+      // By its centre, not its corners: a lasso thrown round a door catches the
+      // door, and one drawn past the edge of one does not take it along.
+      for (const generator of this.generators) {
+        if (pointInPolygon(lasso, generator.at)) generator.selected = true;
+      }
+      this.afterSelectionChange();
     },
-    clearSelection: () => { this.agents.clearSelection(); this.touch(); },
-    selectionCount: () => this.agents.selectionCount,
+    clearSelection: () => { this.clearSelection(); this.afterSelectionChange(); },
+    selectionCount: () => this.selectionCount(),
     deactivateTool: () => this.setTool(null),
     activateTool: (id) => this.setTool(id),
     editTextAt: (at) => { void this.editTextAt(at); },
@@ -537,8 +604,8 @@ export class App {
           return;
         }
       }
-      // The bare keys: 1-7 for the tools, Space for start/pause. Held back from
-      // anything that is already listening -- a field being typed into, a
+      // The bare keys: the digits for the tools, Space for start/pause. Held
+      // back from anything already listening -- a field being typed into, a
       // focused button that Space would press itself, and the sheet, which is
       // modal and whose sliders answer the arrow keys.
       const bound = !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey && !ev.repeat
@@ -572,7 +639,7 @@ export class App {
       if (target?.closest('input, button, [contenteditable]')) return;
       ev.preventDefault();
       this.tool?.cancel?.();
-      this.agents.clearSelection();
+      this.clearSelection();
       this.setTool(null);
     });
   }
@@ -649,8 +716,15 @@ export class App {
   private updateContextPanel(): void {
     const brush = this.tool?.id === 'pedestrian';
     const writing = this.tool?.id === 'text';
+    // Either about to place one or holding one. The slider says "how fast will
+    // the next door be" in the first case and "how fast is this door" in the
+    // second, which is one control and two sentences -- see afterSelectionChange
+    // for the moment it changes which.
+    const generators = this.tool?.id === 'generator'
+      || this.generators.some((g) => g.selected);
     const keys: (keyof Settings)[] = [];
     if (brush) keys.push('brushSize', 'personalSpace');
+    if (generators) keys.push('generatorRate');
     // The size of the next label, beside the caret that is about to write it --
     // and live, so dragging it while a word is half typed resizes the word.
     if (writing) keys.push('labelSize', 'labelWeight');
@@ -666,7 +740,9 @@ export class App {
       this.contextPanel.hide();
       return;
     }
-    const title = brush ? 'Pedestrians' : writing ? 'Text' : 'Running';
+    const title = brush ? 'Pedestrians'
+      : generators ? 'Generator'
+        : writing ? 'Text' : 'Running';
     this.contextPanel.show(title, keys);
   }
 
@@ -695,6 +771,14 @@ export class App {
       for (const polygon of wall.polygons) for (const p of polygon) add(p[0], p[1]);
     }
     for (let i = 0; i < this.agents.count; i++) add(this.agents.x[i], this.agents.y[i]);
+    // The block's corners, not its centre: a generator is a shape on the map,
+    // and reset-zoom framing one half off the screen would be a bug about the
+    // one object whose whole job is being aimed at.
+    for (const generator of this.generators) {
+      for (const p of generatorSquare(generator.at, this.settings.pedestrianRadius)) {
+        add(p[0], p[1]);
+      }
+    }
     // The anchor only: where a label starts is where it is, and how far the
     // word runs from there depends on a zoom the camera has not been set to yet.
     for (const label of this.labels) add(label.at[0], label.at[1]);
@@ -709,6 +793,7 @@ export class App {
   private resetWorld(): void {
     this.walls = [];
     this.labels = [];
+    this.generators = [];
     this.agents.clear();
     this.play(false);
     this.navDirty = true;
@@ -736,6 +821,11 @@ export class App {
         void this.toggleRecording();
         break;
       case 'reset_pedestrians':
+        // The flow is cleared rather than put back: a pedestrian a generator let
+        // out has no starting line to be returned to, so returning it means
+        // taking it away. The doors themselves stay, and start again from nought.
+        this.agents.removeSpawned();
+        for (const generator of this.generators) generator.owed = 0;
         this.agents.resetPositions(this.wallColors());
         this.touch();
         break;
@@ -1009,7 +1099,7 @@ export class App {
     if (!this.isEmpty()) {
       const confirmed = await confirmAction({
         title: 'Clear the map?',
-        message: 'Every wall and pedestrian goes. Undo brings them back.',
+        message: 'Every wall, pedestrian and generator goes. Undo brings them back.',
         confirmLabel: 'Clear',
         destructive: true,
       });
@@ -1068,7 +1158,8 @@ export class App {
 
   /** Nothing drawn and nobody standing: what makes a question about losing it moot. */
   private isEmpty(): boolean {
-    return this.walls.length === 0 && this.agents.count === 0 && this.labels.length === 0;
+    return this.walls.length === 0 && this.agents.count === 0
+      && this.labels.length === 0 && this.generators.length === 0;
   }
 
   /**
@@ -1090,6 +1181,7 @@ export class App {
       // A shallow copy each, like the walls: a label's text and place are
       // replaced rather than edited, so nothing here is written through.
       labels: this.labels.map((l) => ({ ...l })),
+      generators: this.generators.map((g) => ({ ...g })),
       agents: this.agents.snapshot(),
     });
     // Oldest goes first once the stack is full, so the depth is a window on the
@@ -1111,6 +1203,7 @@ export class App {
     if (!previous) return;
     this.walls = previous.walls;
     this.labels = previous.labels;
+    this.generators = previous.generators;
     this.agents.restore(previous.agents);
     this.navDirty = true;
     // Whatever is half-drawn was drawn on a map that no longer exists.
@@ -1173,6 +1266,11 @@ export class App {
         this.agents.removeAt(i);
       }
     }
+    // And so is a generator built over, for the same reason and a stronger one:
+    // buried, its footprint is inside a wall, so every spot it tries to let
+    // somebody out at is refused and it stands there looking like a door that
+    // has stopped working.
+    this.generators = this.generators.filter((g) => !wallContains(wall, g.at));
   }
 
   /**
@@ -1209,6 +1307,52 @@ export class App {
       if (wallContains(this.walls[i], at)) return this.walls[i];
     }
     return null;
+  }
+
+  /** The generator under a point, or null. Topmost wins, as with the walls. */
+  private pickGenerator(at: Point): Generator | null {
+    for (let i = this.generators.length - 1; i >= 0; i--) {
+      if (generatorContains(this.generators[i], at, this.settings.pedestrianRadius)) {
+        return this.generators[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Everything currently picked out, pedestrians and generators together.
+   *
+   * One number rather than two because one question is being asked of it: does a
+   * goal apply to a chosen few or to the whole map. The selection tool asks the
+   * same thing of it to decide whether its gesture caught anybody.
+   */
+  private selectionCount(): number {
+    return this.agents.selectionCount + this.generators.filter((g) => g.selected).length;
+  }
+
+  private clearSelection(): void {
+    this.agents.clearSelection();
+    for (const generator of this.generators) generator.selected = false;
+  }
+
+  /**
+   * Repaints, and puts the rate slider on the generator that was just picked.
+   *
+   * The slider is one control saying two things -- what the next generator will
+   * be, and what this one is -- and this is the moment it changes which. Loading
+   * the selected generator's own rate into the setting is what lets the panel go
+   * on being built from the settings, with nothing in it that knows a generator
+   * exists.
+   */
+  private afterSelectionChange(): void {
+    const picked = this.generators.find((g) => g.selected);
+    if (picked) {
+      this.settings.generatorRate = picked.rate;
+      this.settingsSheet.sync();
+      this.contextPanel.sync();
+    }
+    this.updateContextPanel();
+    this.touch();
   }
 
   /**
@@ -1248,6 +1392,17 @@ export class App {
         outlines: [ring([this.agents.x[i], this.agents.y[i]], halo)],
       };
     }
+    // Then the generators, which are drawn over the walls and under the crowd,
+    // and so are picked in exactly that order.
+    const generator = this.pickGenerator(at);
+    if (generator) {
+      return {
+        kind: 'generator',
+        id: generator.id,
+        outlines: [generatorSquare(generator.at, this.settings.pedestrianRadius)],
+      };
+    }
+
     const wall = this.pickWall(at);
     // A wall's own polygons: for a border frame that is its four bars, which
     // outlines exactly the frame that is about to go.
@@ -1280,6 +1435,20 @@ export class App {
       return true;
     }
 
+    const generator = this.pickGenerator(at);
+    if (generator) {
+      if (!sameStroke) this.checkpoint();
+      // A new array, for the reason the walls take one: deck.gl compares props
+      // shallowly and the same array back is an array it believes nothing
+      // happened to.
+      this.generators = this.generators.filter((g) => g !== generator);
+      // Whatever it had already let out goes on walking. Those are pedestrians
+      // on the map now, with somewhere to be; taking them with the door would be
+      // deleting a crowd nobody pointed at.
+      this.touch();
+      return true;
+    }
+
     const wall = this.pickWall(at);
     if (!wall) return false;
     if (!sameStroke) this.checkpoint();
@@ -1289,6 +1458,14 @@ export class App {
     // Whoever was walking to it has nowhere to be now; left pointing at a wall
     // that is gone they would stand still and the run would never finish.
     this.agents.clearGoal(wall.id);
+    // And any door aimed at it goes back to being unpinned -- white, and idle,
+    // rather than quietly emitting into a goal Navigation no longer has a field
+    // for.
+    for (const generator of this.generators) {
+      if (generator.goal !== wall.id) continue;
+      generator.goal = -1;
+      generator.color = WHITE;
+    }
     this.navDirty = true;
     this.touch();
     return true;
@@ -1362,13 +1539,17 @@ export class App {
    * Ports Map.isThisALegalPedestrianCoordinate: a pedestrian may not be dropped
    * where it would touch a wall or overlap another pedestrian. Used both to place
    * and to draw the ghost preview, so what you see is exactly what you get.
+   *
+   * `cells` is the block's width in pedestrians, the brush's own setting unless
+   * a caller says otherwise. A generator asks for its own footprint, so a door
+   * lets somebody out only where the brush could have painted one.
    */
-  private pedestrianBlock(at: Point): Point[] {
+  private pedestrianBlock(at: Point, cells = this.settings.brushSize): Point[] {
     // Placement legality is judged against the expanded hulls, so make sure they
     // reflect the current walls and radius before testing against them.
     this.rebuildNavIfNeeded();
     const r = this.settings.pedestrianRadius;
-    const n = Math.max(1, this.settings.brushSize);
+    const n = Math.max(1, cells);
     // Shoulder to shoulder, and left to sort themselves out.
     //
     // The original spaced a block by the full interaction diameter, so a freshly
@@ -1417,6 +1598,12 @@ export class App {
       const g = this.agents.goal[i];
       if (g >= 0) wanted.add(g);
     }
+    // A generator's goal counts even with nobody walking to it yet: it is a
+    // standing claim on that wall, and unmarking it would take away the field the
+    // next pedestrian out of the door is going to need.
+    for (const generator of this.generators) {
+      if (generator.goal >= 0) wanted.add(generator.goal);
+    }
     for (const w of this.walls) w.isGoal = wanted.has(w.id);
   }
 
@@ -1424,6 +1611,39 @@ export class App {
     if (!this.navDirty) return;
     this.nav.rebuild(this.walls, this.settings.pedestrianRadius);
     this.navDirty = false;
+  }
+
+  /**
+   * Lets one pedestrian out of every generator that has earned one this tick.
+   *
+   * The rate is people per second and a tick is a frame, so a generator banks a
+   * sixtieth of its rate each time round and spends it when it has a whole one.
+   * Counted in frames rather than off the clock because everything else in the
+   * model is: `speed` is a per-frame step budget, so on a machine that cannot
+   * hold sixty the crowd and the doors slow down together rather than the doors
+   * running on ahead into a room nobody can walk across.
+   *
+   * The balance is capped at one, exactly as a pedestrian's step budget is
+   * capped: a door that has been blocked for ten seconds must not answer the
+   * moment it clears by emptying ten seconds of people into the gap.
+   *
+   * A generator with no goal is skipped. It has nowhere to send anybody, and
+   * since its pedestrians only leave the map by arriving, what it would make is a
+   * pile that never goes away.
+   */
+  private emit(): void {
+    for (const generator of this.generators) {
+      if (generator.goal < 0) continue;
+      generator.owed = Math.min(generator.owed + generator.rate / TICKS_PER_SECOND, 1);
+      if (generator.owed < 1) continue;
+      // The brush's own legality test over the generator's footprint: not inside
+      // a wall, and not on top of somebody already standing there. Empty means
+      // the doorway is full, and the beat is dropped rather than queued.
+      const spot = this.pedestrianBlock(generator.at, GENERATOR_CELLS)[0];
+      if (!spot) continue;
+      this.agents.addSpawned(spot, generator.goal, generator.color);
+      generator.owed -= 1;
+    }
   }
 
   /**
@@ -1441,11 +1661,16 @@ export class App {
     }
     if (this.running) {
       this.rebuildNavIfNeeded();
+      this.emit();
       this.agents.step(
         this.nav, this.hash,
         this.settings.speed, this.settings.pedestrianRadius, this.settings.personalSpace,
       );
       this.playArrivals();
+      // After the sound and before the frame: the plop is placed by where a
+      // pedestrian landed, so the arrivals have to still be there to be heard,
+      // and nothing should be drawn standing on a goal it has already left.
+      this.agents.removeArrivedSpawned();
       this.agentRevision++;
       if (this.recorder.active) this.stopWhenCrowdArrives();
     }
@@ -1466,7 +1691,10 @@ export class App {
    * arrivals still sound, pinned to the side they went off.
    */
   private playArrivals(): void {
-    const arrivals = this.agents.justArrived;
+    // Only the painted crowd. A plop is the end of somebody's journey, which is
+    // an event on a map where arrivals are countable; a door running at ten a
+    // second turns the same sound into a machine gun.
+    const arrivals = this.agents.justArrived.filter((i) => !this.agents.spawned[i]);
     if (!this.settings.sound || arrivals.length === 0) return;
 
     const half = this.viewport.width / 2;
@@ -1541,6 +1769,7 @@ export class App {
       worldRevision: this.worldRevision,
       agentRevision: this.agentRevision,
       walls: this.walls,
+      generators: this.generatorViews(),
       agents: this.agentViews(),
       rays: [],
       paths: this.settings.showLineToTarget ? this.goalPaths() : [],
@@ -1703,9 +1932,26 @@ export class App {
     return out;
   }
 
+  /** The generators as the scene draws them; see agentViews for the same bargain. */
+  private generatorViews(): GeneratorView[] {
+    const r = this.settings.pedestrianRadius;
+    return this.generators.map((g) => ({
+      id: g.id,
+      polygon: generatorSquare(g.at, r),
+      color: g.color,
+      selected: g.selected,
+    }));
+  }
+
+  /** The generators a goal assignment would hit: the selection, or all of them. */
+  private targetableGenerators(): Generator[] {
+    const onlySelected = this.selectionCount() > 0;
+    return this.generators.filter((g) => !onlySelected || g.selected);
+  }
+
   /** The pedestrians a goal assignment would hit: the selection, or everyone. */
   private targetableIndices(): number[] {
-    const onlySelected = this.agents.selectionCount > 0;
+    const onlySelected = this.selectionCount() > 0;
     const out: number[] = [];
     for (let i = 0; i < this.agents.count; i++) {
       if (onlySelected && !this.agents.selected[i]) continue;
@@ -1714,12 +1960,27 @@ export class App {
     return out;
   }
 
+  /**
+   * Where the goal tool's preview lines come from: every pedestrian the click
+   * would send, and every generator it would pin.
+   *
+   * The generators are in here because a line from a door to the wall it is
+   * about to be aimed at is the clearest thing the preview can say -- a
+   * generator on its own says nothing about where its people will go, and that
+   * is the entire question being answered by the click.
+   */
   private targetableAgents(): Point[] {
-    return this.targetableIndices().map((i) => [this.agents.x[i], this.agents.y[i]] as Point);
+    return [
+      ...this.targetableIndices().map((i) => [this.agents.x[i], this.agents.y[i]] as Point),
+      ...this.targetableGenerators().map((g) => g.at),
+    ];
   }
 
   private targetableColors(): RGB[] {
-    return this.targetableIndices().map((i) => unpackRgb(this.agents.color[i]));
+    return [
+      ...this.targetableIndices().map((i) => unpackRgb(this.agents.color[i])),
+      ...this.targetableGenerators().map((g) => g.color),
+    ];
   }
 
   /**
@@ -1757,6 +2018,7 @@ export class App {
         goal: goalId,
         arrived: this.agents.arrived[i] === 1,
         color: unpackRgb(this.agents.color[i]),
+        spawned: this.agents.spawned[i] === 1,
       });
       // No route from here: exactly the pedestrians worth looking at.
       stuck.push(!this.agents.arrived[i] && goalId >= 0
@@ -1772,6 +2034,7 @@ export class App {
       },
       walls: this.walls,
       labels: this.labels,
+      generators: this.generators,
       agents,
       stuck,
     });
@@ -1837,9 +2100,10 @@ export class App {
 
     Object.assign(this.settings, clampSettings(core.settings));
 
-    const { walls, agents, labels } = buildWorld(core);
+    const { walls, agents, labels, generators } = buildWorld(core);
     this.walls = walls;
     this.labels = labels;
+    this.generators = generators;
     for (const agent of agents) this.agents.addRestored(agent);
 
     this.viewport.targetX = core.view.targetX;
@@ -1859,6 +2123,7 @@ export class App {
       `Pedestrians Alive: ${this.agents.count}`,
       `Selected: ${this.agents.selectionCount}`,
       `Walls: ${this.walls.length}`,
+      `Generators: ${this.generators.length}`,
       `Labels: ${this.labels.length}`,
       `Zoom level: ${this.viewport.zoomLevel} (scale ${this.viewport.scale.toFixed(3)})`,
       m ? `X: ${Math.round(m[0])} / Y: ${Math.round(m[1])}` : 'X: - / Y: -',

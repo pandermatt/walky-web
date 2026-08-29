@@ -30,6 +30,7 @@ describe('the snapshot', () => {
       walls: [wall],
       agents: [agent({ x: 1.239, y: 2.341 })],
       labels: [],
+      generators: [],
     });
     expect(out.walls[0].polygons[0][0]).toEqual([0.13, 0.12]);
     expect(out.view.targetX).toBe(1.24);
@@ -45,9 +46,12 @@ describe('the snapshot', () => {
       walls: [goal, makeWall([rectanglePolygon([20, 0], [30, 10])])],
       agents: [agent({ arrived: true }), agent(), agent()],
       labels: [],
+      generators: [],
       stuck: [false, true, false],
     });
-    expect(scenario.summary).toEqual({ walls: 2, goals: 1, agents: 3, arrived: 1, stuck: 1, labels: 0 });
+    expect(scenario.summary).toEqual({
+      walls: 2, goals: 1, agents: 3, arrived: 1, stuck: 1, labels: 0, generators: 0,
+    });
     expect(scenario.agents.map((a) => a.stuck)).toEqual([false, true, false]);
     expect(JSON.parse(scenarioToJson(scenario)).summary.walls).toBe(2);
   });
@@ -59,6 +63,7 @@ describe('the snapshot', () => {
       walls: [],
       agents: [agent({ color: [9, 8, 7] })],
       labels: [],
+      generators: [],
     });
     expect(out.agents[0].color).toEqual([9, 8, 7]);
   });
@@ -70,6 +75,7 @@ describe('the snapshot', () => {
       walls: [],
       agents: [agent()],
       labels: [],
+      generators: [],
     });
     expect(out).not.toHaveProperty('created');
     expect(out).not.toHaveProperty('summary');
@@ -182,6 +188,7 @@ describe('building a world out of a snapshot', () => {
       ],
       agents: [agent({ goal: 1 })],
       labels: [],
+      generators: [],
     }));
     expect(world.walls).toHaveLength(1);
     expect(world.walls[0].polygons).toHaveLength(1);
@@ -193,6 +200,7 @@ describe('building a world out of a snapshot', () => {
     const { agents } = buildWorld(core({
       agents: [agent({ x: 90, y: 90, originX: 10, originY: 10 })],
       labels: [],
+      generators: [],
     }));
     expect(agents[0]).toMatchObject({ x: 90, y: 90, originX: 10, originY: 10 });
   });
@@ -235,5 +243,39 @@ describe('labels out of a snapshot', () => {
   it('drops a label with nothing written in it', () => {
     const { labels } = buildWorld(core({ labels: [{ at: [0, 0], text: '', size: 28, weight: 1000 }] }));
     expect(labels).toHaveLength(0);
+  });
+});
+
+describe('generators out of a saved map', () => {
+  it('repoints them at the fresh wall ids, exactly as it does the pedestrians', () => {
+    const { walls, generators } = buildWorld(core({
+      walls: [{ id: 7, polygons: [rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: true, isBorder: false }],
+      generators: [{ at: [40, 40], rate: 6, goal: 7, color: [1, 2, 3] }],
+    }));
+    expect(generators[0].goal).toBe(walls[0].id);
+    expect(generators[0].goal).not.toBe(7);
+    expect(generators[0].rate).toBe(6);
+  });
+
+  it('leaves one whose goal did not survive simply unpinned', () => {
+    const { generators } = buildWorld(core({
+      walls: [],
+      generators: [{ at: [40, 40], rate: 6, goal: 7, color: [1, 2, 3] }],
+    }));
+    expect(generators[0].goal).toBe(-1);
+    // Unpinned it wears white, whatever colour the payload claimed: the colour
+    // is the goal's, and it no longer has one.
+    expect(generators[0].color).toEqual([255, 255, 255]);
+  });
+
+  it('takes the default rate from a payload that names none', () => {
+    const { generators } = buildWorld(core({
+      generators: [{ at: [0, 0], goal: -1, color: [1, 2, 3] } as never],
+    }));
+    expect(generators[0].rate).toBe(DEFAULT_SETTINGS.generatorRate);
+  });
+
+  it('is a map with no doors when the payload predates them', () => {
+    expect(buildWorld(core()).generators).toEqual([]);
   });
 });

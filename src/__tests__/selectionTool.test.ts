@@ -26,6 +26,7 @@ function stubContext(crowd: Point[]): Recorded {
     settings: () => DEFAULT_SETTINGS,
     pedestrianBlock: () => [],
     addPedestrians: () => {},
+    addGenerator: () => true,
     setGoalAt: () => false,
     selectPedestrianAt: (at: Point, extend: boolean) => {
       if (!extend) selected.clear();
