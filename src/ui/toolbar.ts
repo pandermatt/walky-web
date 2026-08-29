@@ -8,7 +8,8 @@ interface ButtonSpec {
   /** Filename inside public/icons, including the extension. */
   icon: string;
   title: string;
-  kind: 'tool' | 'action';
+  /** 'toggle' actions show a pressed state, like a tool does. */
+  kind: 'tool' | 'action' | 'toggle';
 }
 
 /**
@@ -31,7 +32,7 @@ const BUTTONS: ButtonSpec[] = [
   { key: 'select', icon: 'select.png', title: 'Selection tool', kind: 'tool' },
   { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool' },
   { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom', kind: 'action' },
-  { key: 'settings', icon: 'settings.png', title: 'Settings', kind: 'action' },
+  { key: 'settings', icon: 'settings.png', title: 'Settings', kind: 'toggle' },
 ];
 
 const CSS = `
@@ -41,7 +42,13 @@ const CSS = `
   padding: 6px; border-radius: 8px;
   background: #ECECEC; border: 1px solid #9A9A9A;
   box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  /* Thirteen buttons do not fit a short window; without this the lower tools,
+     settings among them, are simply unreachable. */
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
+#toolbar button { flex: 0 0 auto; }
 #toolbar button {
   width: 40px; height: 40px; padding: 5px; cursor: pointer;
   background: #F7F7F7; border: 1px solid #B4B4B4; border-radius: 5px;
@@ -84,7 +91,7 @@ export class Toolbar {
       btn.type = 'button';
       btn.title = spec.title;
       btn.setAttribute('aria-label', spec.title);
-      if (spec.kind === 'tool') {
+      if (spec.kind !== 'action') {
         btn.setAttribute('aria-pressed', String(spec.key === initialTool));
       }
       const img = document.createElement('img');
@@ -115,6 +122,11 @@ export class Toolbar {
   }
 
   get tool(): ToolId | null { return this.activeTool; }
+
+  /** Marks a toggle action as on or off, e.g. the settings button while open. */
+  setPressed(key: ActionId, pressed: boolean): void {
+    this.buttons.get(key)?.setAttribute('aria-pressed', String(pressed));
+  }
 
   /** Swaps the start icon for pause, as ToolboxPanel did on toggle. */
   setRunning(running: boolean): void {

@@ -133,6 +133,12 @@ Bugs found while porting, all with regression tests:
   diagonal gap to slip through, and it is committed as a single wall so it is one
   thing to select, colour and delete. Thickness is a setting; a frame too small to
   hold anyone is refused and previewed in red rather than silently made.
+- **Contextual panels.** Selecting the pedestrian tool brings up brush size and
+  preferred space; running the simulation brings up speed. Both live in the full
+  settings panel too, but these are the cases where you change a value and want to
+  see the effect immediately, without leaving the tool you are holding. Picking any
+  tool closes the settings panel, which otherwise sits over the canvas you are
+  about to draw on, and the settings button shows a pressed state while it is open.
 - **One-shot tools disarm themselves.** Assigning a goal clears the selection and
   steps off the tool, so the next click cannot reassign by accident. Escape does
   the same from anywhere.

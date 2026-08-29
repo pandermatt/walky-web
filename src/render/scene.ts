@@ -57,6 +57,8 @@ export interface SceneState {
 
 export class Scene {
   private deck: Deck<OrthographicView>;
+  private canvas: HTMLCanvasElement;
+  private cursor = 'default';
 
   /**
    * `onAfterRender` fires inside deck.gl's own draw loop. The 2D overlay paints
@@ -69,6 +71,7 @@ export class Scene {
     initialViewState: OrthographicViewState,
     onAfterRender?: () => void,
   ) {
+    this.canvas = canvas;
     this.deck = new Deck({
       canvas,
       views: new OrthographicView({ id: 'ortho' }),
@@ -76,7 +79,22 @@ export class Scene {
       controller: false,
       layers: [],
       onAfterRender,
+      // deck.gl's default is ({isDragging}) => isDragging ? 'grabbing' : 'grab',
+      // and it writes container.style.cursor directly -- so the canvas showed a
+      // grab cursor whatever the active tool was, overriding anything set on the
+      // stage underneath it. The active tool owns the cursor instead.
+      getCursor: () => this.cursor,
     });
+  }
+
+  /** The cursor deck.gl should paint on its canvas. */
+  setCursor(cursor: string): void {
+    if (cursor === this.cursor) return;
+    this.cursor = cursor;
+    // Applied directly as well as through getCursor: deck only re-reads getCursor
+    // on its own pointer events, so without this the cursor would not change
+    // until the next time the mouse moved over the canvas.
+    this.canvas.style.cursor = cursor;
   }
 
   setViewState(viewState: OrthographicViewState): void {

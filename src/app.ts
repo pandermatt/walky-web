@@ -11,6 +11,7 @@ import { groupWalls, type WallGroup } from './state/groups';
 import { Toolbar, type ActionId } from './ui/toolbar';
 import { serializeScenario, scenarioToJson, type SerializedAgent } from './state/scenario';
 import { SettingsPanel } from './ui/settingsPanel';
+import { ContextPanel } from './ui/contextPanel';
 import { BorderTool } from './tools/borderTool';
 import { SelectionTool } from './tools/selectionTool';
 import { WallTool } from './tools/wallTool';
@@ -30,6 +31,7 @@ export class App {
   private overlay: Overlay;
   private toolbar: Toolbar;
   private settingsPanel: SettingsPanel;
+  private contextPanel: ContextPanel;
 
   private walls: Wall[] = [];
   private trees: Tree[] = [];
@@ -82,17 +84,26 @@ export class App {
     // Input binds to the deck canvas, not the stage: the toolbar is a sibling
     // inside the stage, so binding higher up made every toolbar click also land
     // on the canvas as a tool click.
+    // One column so the settings panel and the contextual panel stack instead of
+    // overlapping each other.
+    const panels = document.createElement('div');
+    panels.id = 'panels';
+    stage.appendChild(panels);
+
+    const onSettingChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+      this.settings[key] = value;
+      // Radius changes the expanded hulls, so the graph must be rebuilt.
+      if (key === 'pedestrianRadius') this.navDirty = true;
+      // Both panels can show the same setting, so keep them in step.
+      this.settingsPanel.sync();
+      this.contextPanel.sync();
+      this.touch();
+    };
+
     this.settingsPanel = new SettingsPanel(
-      stage,
-      this.settings,
-      (key, value) => {
-        this.settings[key] = value;
-        // Radius changes the expanded hulls, so the graph must be rebuilt.
-        if (key === 'pedestrianRadius') this.navDirty = true;
-        this.touch();
-      },
-      () => this.copyMapToClipboard(),
+      panels, this.settings, onSettingChange, () => this.copyMapToClipboard(),
     );
+    this.contextPanel = new ContextPanel(panels, this.settings, onSettingChange);
 
     this.bindPointer(deckCanvas);
     this.resize();
@@ -226,12 +237,40 @@ export class App {
     this.tool?.cancel?.();
     this.tool = id ? this.tools.get(id) ?? null : null;
     this.toolbar.selectTool(this.tool ? this.tool.id : null, true);
+    // Picking a tool means you are done with settings; leaving it open would sit
+    // over the canvas you are about to draw on.
+    this.closeSettings();
+    this.updateContextPanel();
     this.applyCursor();
     this.requestRender();
   }
 
+  private closeSettings(): void {
+    this.settingsPanel.close();
+    this.toolbar.setPressed('settings', false);
+  }
+
+  /**
+   * Shows the handful of settings that matter to whatever is active: the brush
+   * controls while placing pedestrians, speed while the simulation runs.
+   */
+  private updateContextPanel(): void {
+    if (this.running) {
+      this.contextPanel.show('Running', ['speed']);
+      return;
+    }
+    if (this.tool?.id === 'pedestrian') {
+      this.contextPanel.show('Pedestrians', ['brushSize', 'preferredSpace']);
+      return;
+    }
+    this.contextPanel.hide();
+  }
+
   private applyCursor(): void {
-    this.stage.style.cursor = this.tool?.cursor ?? 'default';
+    const cursor = this.tool?.cursor ?? 'default';
+    this.stage.style.cursor = cursor;
+    // The deck canvas sits on top and paints its own cursor, so it needs telling.
+    this.scene.setCursor(cursor);
   }
 
   private runAction(id: ActionId): void {
@@ -246,6 +285,7 @@ export class App {
         this.agents.clear();
         this.running = false;
         this.toolbar.setRunning(false);
+        this.updateContextPanel();
         this.navDirty = true;
         this.tool?.cancel?.();
         this.touch();
@@ -253,6 +293,7 @@ export class App {
       case 'start':
         this.running = !this.running;
         this.toolbar.setRunning(this.running);
+        this.updateContextPanel();
         if (this.running) this.tick();
         break;
       case 'reset_pedestrians':
@@ -260,7 +301,7 @@ export class App {
         this.touch();
         break;
       case 'settings':
-        this.settingsPanel.toggle();
+        this.toolbar.setPressed('settings', this.settingsPanel.toggle());
         break;
       default:
         // record arrives with the MediaRecorder step

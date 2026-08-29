@@ -7,6 +7,12 @@
     <title>Walky</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1E1E1E; }
+      /* Without this Safari starts a text/element drag from the canvas and swaps
+         in its own drag cursor mid-gesture. */
+      #stage, #stage canvas {
+        user-select: none; -webkit-user-select: none; -webkit-user-drag: none;
+        touch-action: none;
+      }
       #stage { position: absolute; inset: 0; }
       #deck-canvas, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
       #overlay { pointer-events: none; }
