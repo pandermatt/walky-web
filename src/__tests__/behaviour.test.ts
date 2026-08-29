@@ -30,6 +30,29 @@ describe('behaviour', () => {
     expect(agents.arrived[i]).toBe(1);
   });
 
+  it('reports the tick an agent arrives on, exactly once', () => {
+    // What the plop sound hangs off: the moment of arrival, not the state.
+    const { nav, goal } = scenario();
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    const i = agents.add([-380, -100]);
+    agents.setGoal(i, goal.id, goal.color);
+
+    let announced = 0;
+    for (let t = 0; t < 3000; t++) {
+      agents.step(nav, hash, 1, R, PREF);
+      announced += agents.justArrived.length;
+      if (agents.arrived[i] && t > 0) {
+        // One more tick: an agent already arrived must not announce again.
+        agents.step(nav, hash, 1, R, PREF);
+        announced += agents.justArrived.length;
+        break;
+      }
+    }
+    expect(agents.arrived[i]).toBe(1);
+    expect(announced).toBe(1);
+  });
+
   it('does not deadlock when a diagonal step comes due', () => {
     // Regression: the counter is clamped to exactly sqrt(2) and a diagonal costs
     // exactly sqrt(2). Stored as float32 the clamp lands just below the cost, so

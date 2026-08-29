@@ -44,6 +44,14 @@ export class Agents {
   costToGoal: Float32Array;
   /** Lassoed by the selection tool; the mark-goal tool acts on these alone. */
   selected: Uint8Array;
+  /**
+   * Indices that crossed into `arrived` during the most recent `step`, so the
+   * caller can react to the moment of arrival -- currently the plop sound.
+   *
+   * Valid until the next `step` or any mutation that moves agents between slots
+   * (`removeAt`, `clear`), so read it straight after stepping.
+   */
+  readonly justArrived: number[] = [];
   count = 0;
 
   constructor(private capacity = 4096) {
@@ -151,6 +159,7 @@ export class Agents {
    * it on whole lattice steps until it runs out or the agent cannot move.
    */
   step(nav: Navigation, hash: SpatialHash, speed: number, radius: number, preferred: number): void {
+    this.justArrived.length = 0;
     hash.build(this.x, this.y, this.count, Math.max(1, 2 * (radius + preferred)));
     const behaviour = new Behaviour(this, nav, hash);
 
@@ -161,8 +170,7 @@ export class Agents {
 
       const here: Point = [this.x[i], this.y[i]];
       if (nav.hasArrived(here, goalId, radius + 1)) {
-        this.arrived[i] = 1;
-        this.color[i] = packRgb(BLACK); // matches IntelligentPedestrian:113
+        this.markArrived(i);
         continue;
       }
 
@@ -225,12 +233,18 @@ export class Agents {
         if (distance([this.x[i], this.y[i]], target) <= 1) this.hasWaypoint[i] = 0;
 
         if (nav.hasArrived([this.x[i], this.y[i]], goalId, radius + 1)) {
-          this.arrived[i] = 1;
-          this.color[i] = packRgb(BLACK);
+          this.markArrived(i);
           break;
         }
       }
     }
+  }
+
+  /** The one place an agent becomes arrived, so nothing that watches it is missed. */
+  private markArrived(i: number): void {
+    this.arrived[i] = 1;
+    this.color[i] = packRgb(BLACK); // matches IntelligentPedestrian:113
+    this.justArrived.push(i);
   }
 
   private grow(): void {

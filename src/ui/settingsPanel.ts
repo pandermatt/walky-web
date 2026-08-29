@@ -15,6 +15,7 @@ const TOGGLES: ToggleSpec[] = [
   { key: 'showLineToTarget', label: 'Path to goal' },
   { key: 'showPreferredRadius', label: 'Preferred radius' },
   { key: 'showDebug', label: 'Debug info' },
+  { key: 'sound', label: 'Arrival sound' },
 ];
 
 const SLIDER_ORDER: (keyof Settings)[] = [

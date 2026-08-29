@@ -56,6 +56,8 @@ export interface Settings {
   speed: number;
   brushSize: number;
   borderThickness: number;
+  /** Whether a pedestrian plops when it reaches its goal. */
+  sound: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -75,6 +77,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // by its radius, so thickness changes how the wall looks far more than how it
   // blocks. The original used 2, which is a hairline on a modern display.
   borderThickness: 12,
+  sound: true,
 };
 
 export const SPEED_MIN = 1;
