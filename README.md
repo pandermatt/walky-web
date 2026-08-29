@@ -34,11 +34,17 @@ Two details worth stating, because they are easy to get wrong:
   24% land pastel. The palette is genuinely mixed; the `#C419C0`-type colours are
   the third of the distribution that sticks in memory.
 
-All icons and cursors are the original PNGs, unmodified. None needed redrawing:
-the buttons are 128–626px, and the cursors are 32×32, which is exactly the size
-browsers cap CSS cursors at. The toolbar strip is light because the icons were
-drawn for Swing's light toolbar — `border.png` is a black outline that would
-vanish on a dark strip.
+All toolbar icons are the original PNGs, unmodified — none needed redrawing, since
+they are 128–626px. The toolbar strip is light because the icons were drawn for
+Swing's light toolbar; `border.png` is a black outline that would vanish on a dark
+strip.
+
+The original's 32×32 cursor PNGs are **not** used. A fixed-size cursor image can't
+show the real dimensions of what a tool is about to place — it can't grow with the
+pedestrian radius or the brush size, and it blurs at whatever scale the browser
+picks. Instead every tool uses a standard CSS cursor and draws its shape on the
+canvas under the pointer, at true size and scaling with zoom, the way the
+pedestrian brush already previewed its block.
 
 ## What changed inside, and why
 
@@ -95,6 +101,20 @@ Bugs found while porting, all with regression tests:
   dense crowd at a narrow gap went from 0/196 arriving to 196/196.
 - **Speed did nothing.** `stepTowards` clamped the budget to √2 on every call, so
   speed above ~1.41 was inert in the original too. The cap is now the speed itself.
+
+### Quality-of-life additions
+
+- **Copy map to clipboard** (in Settings). Puts the whole scenario — walls, goals,
+  pedestrians, settings, camera — on the clipboard as JSON, with each pedestrian
+  flagged `stuck` when it currently has no route, and a summary line. A stuck
+  pedestrian depends on the exact geometry around it, so this makes a case
+  reproducible instead of describable. Falls back to the console if the browser
+  refuses clipboard access.
+- **Rectangles can be dragged** as well as click-then-click-again.
+- **The mark-goal tool draws a line from every pedestrian to the pointer**, in the
+  colour of the wall underneath — a port of `drawMarkTargetLine`, which used
+  yellow. Since pedestrians wear their goal's colour, it previews what the crowd
+  is about to become.
 
 ### Deliberate divergences
 

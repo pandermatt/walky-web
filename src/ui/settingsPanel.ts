@@ -41,6 +41,12 @@ const CSS = `
 #settings .slider .val { font-variant-numeric: tabular-nums; color: #444; }
 #settings input[type=range] { width: 100%; }
 #settings hr { border: 0; border-top: 1px solid #C4C4C4; margin: 10px 0; }
+#settings button {
+  width: 100%; padding: 7px 10px; cursor: pointer; font: inherit;
+  background: #F7F7F7; border: 1px solid #B4B4B4; border-radius: 5px;
+}
+#settings button:hover { background: #FFFFFF; }
+#settings .note { margin: 6px 0 0; font-size: 12px; color: #4A4A4A; min-height: 15px; }
 `;
 
 export class SettingsPanel {
@@ -51,6 +57,7 @@ export class SettingsPanel {
     parent: HTMLElement,
     private settings: Settings,
     private onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void,
+    private onCopyMap: () => Promise<string>,
   ) {
     const style = document.createElement('style');
     style.textContent = CSS;
@@ -74,6 +81,24 @@ export class SettingsPanel {
     for (const spec of TOGGLES) {
       this.root.appendChild(this.buildToggle(spec));
     }
+
+    this.root.appendChild(document.createElement('hr'));
+
+    // Debugging aid: the whole scenario as JSON, ready to hand to someone else.
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.textContent = 'Copy map to clipboard';
+    const note = document.createElement('p');
+    note.className = 'note';
+    copy.addEventListener('click', async () => {
+      try {
+        note.textContent = await this.onCopyMap();
+      } catch {
+        // Clipboard access can be refused; say so rather than failing silently.
+        note.textContent = 'Clipboard blocked by the browser';
+      }
+    });
+    this.root.append(copy, note);
 
     // Keep canvas tools from reacting to clicks meant for the panel.
     for (const type of ['pointerdown', 'pointerup', 'wheel', 'dblclick']) {

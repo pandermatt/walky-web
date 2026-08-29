@@ -1,5 +1,5 @@
 import type { Point } from '../sim/geometry';
-import { EMPTY_PREVIEW, cursorUrl, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
+import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
 
 /**
  * Adds pedestrians, ported from controller/PedestrianMouseListener: a click drops
@@ -8,7 +8,7 @@ import { EMPTY_PREVIEW, cursorUrl, type PointerInfo, type Tool, type ToolContext
  */
 export class PedestrianTool implements Tool {
   readonly id = 'pedestrian' as const;
-  readonly cursor = cursorUrl('ped', 16, 16);
+  readonly cursor = 'crosshair';
   private painting = false;
   /** Ghost dots for the block under the cursor, as drawTemporaryPedestrians did. */
   private ghost: Point[] = [];

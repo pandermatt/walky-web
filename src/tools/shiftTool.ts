@@ -1,4 +1,4 @@
-import { EMPTY_PREVIEW, cursorUrl, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
+import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
 
 /**
  * Pan, ported from ZoomMouseListener.shiftView. In the original, dragging only
@@ -7,7 +7,7 @@ import { EMPTY_PREVIEW, cursorUrl, type PointerInfo, type Tool, type ToolContext
  */
 export class ShiftTool implements Tool {
   readonly id = 'shift' as const;
-  readonly cursor = cursorUrl('shift', 16, 16);
+  readonly cursor = 'grab';
   private dragging = false;
 
   onPointerDown(): void { this.dragging = true; }

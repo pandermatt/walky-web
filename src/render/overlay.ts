@@ -1,6 +1,7 @@
 import { toCss, WHITE, YELLOW, type RGB } from '../palette';
 import type { Point } from '../sim/geometry';
 import type { Viewport } from './viewport';
+import type { CursorGhost, TargetLines } from '../tools/types';
 
 /**
  * The 2D layer that sits on top of deck.gl: dashed outlines, in-progress tool
@@ -35,6 +36,12 @@ export interface OverlayState {
   /** Ghost dots showing where the pedestrian brush would place. */
   pendingPedestrians: Point[];
   pedestrianRadius: number;
+  /** Shape drawn under the pointer in place of a custom cursor image. */
+  cursorGhost: CursorGhost | null;
+  /** Lines from each pedestrian to the pointer, for the mark-goal tool. */
+  targetLines: TargetLines | null;
+  agentPositions: Point[];
+  agentColors: RGB[];
   mouseWorld: Point | null;
   debugLines: string[];
 }
@@ -67,6 +74,8 @@ export class Overlay {
     this.drawPendingRect(state.pendingRect);
     this.drawSelection(state.selectionPolygon);
     this.drawPendingPedestrians(state.pendingPedestrians, state.pedestrianRadius);
+    this.drawTargetLines(state);
+    this.drawCursorGhost(state.cursorGhost);
     if (state.showDebug) this.drawDebug(state.debugLines);
   }
 
@@ -155,6 +164,94 @@ export class Overlay {
       ctx.beginPath();
       ctx.arc(s[0], s[1], r, 0, Math.PI * 2);
       ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Ports drawMarkTargetLine(): while the mark-goal tool is active, a line runs
+   * from every pedestrian to the pointer. The original switched them to yellow
+   * over a wall; here they take that wall's colour, which previews the colour the
+   * crowd is about to become.
+   */
+  private drawTargetLines(state: OverlayState): void {
+    const lines = state.targetLines;
+    if (!lines) return;
+    const { ctx } = this;
+    const to = this.viewport.worldToScreen(lines.to);
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.8;
+    // A shared colour can be stroked in one path; otherwise each line is its own.
+    if (lines.color) {
+      ctx.strokeStyle = toCss(lines.color as RGB);
+      ctx.beginPath();
+      for (const p of state.agentPositions) {
+        const s = this.viewport.worldToScreen(p);
+        ctx.moveTo(s[0], s[1]);
+        ctx.lineTo(to[0], to[1]);
+      }
+      ctx.stroke();
+    } else {
+      state.agentPositions.forEach((p, i) => {
+        ctx.strokeStyle = toCss(state.agentColors[i] ?? YELLOW);
+        const s = this.viewport.worldToScreen(p);
+        ctx.beginPath();
+        ctx.moveTo(s[0], s[1]);
+        ctx.lineTo(to[0], to[1]);
+        ctx.stroke();
+      });
+    }
+    ctx.restore();
+  }
+
+  /**
+   * The shape the active tool will produce, drawn under the pointer.
+   *
+   * This replaces the original's custom cursor PNGs: a 32x32 image cannot show
+   * the real size of what is about to be placed, while this scales with zoom and
+   * with the tool's own settings.
+   */
+  private drawCursorGhost(ghost: CursorGhost | null): void {
+    if (!ghost || ghost.kind === 'none') return;
+    const { ctx } = this;
+    const at = this.viewport.worldToScreen(ghost.at);
+    const r = Math.max(3, ghost.size * this.viewport.scale);
+    ctx.save();
+    ctx.strokeStyle = toCss(WHITE);
+    ctx.fillStyle = toCss(WHITE);
+    ctx.lineWidth = 1;
+
+    switch (ghost.kind) {
+      case 'square':
+        ctx.setLineDash(DASH);
+        ctx.strokeRect(at[0] - r, at[1] - r, r * 2, r * 2);
+        break;
+      case 'point':
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(at[0], at[1], 4, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case 'tree':
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.arc(at[0], at[1], r, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'target': {
+        // A ring with a cross through it, echoing the goal icon.
+        ctx.beginPath();
+        ctx.arc(at[0], at[1], r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(at[0] - r - 4, at[1]);
+        ctx.lineTo(at[0] + r + 4, at[1]);
+        ctx.moveTo(at[0], at[1] - r - 4);
+        ctx.lineTo(at[0], at[1] + r + 4);
+        ctx.stroke();
+        break;
+      }
     }
     ctx.restore();
   }

@@ -16,6 +16,36 @@ export interface ToolContext {
   selectWithin(polygon: Point[], extend: boolean): void;
   panBy(dxScreen: number, dyScreen: number): void;
   requestRender(): void;
+  /** Colour of the wall under a point, if any -- used to tint the goal preview. */
+  colorAt(at: Point): [number, number, number] | null;
+  /** Live positions of every pedestrian, for previews that reference them. */
+  agentPositions(): Point[];
+}
+
+/**
+ * The shape drawn under the pointer to say what the active tool will do.
+ *
+ * Replaces the original's custom cursor images. A 32x32 PNG cursor is small,
+ * fixed-size, and cannot show the tool's actual dimensions -- it can't grow with
+ * the pedestrian radius or the brush size, and it blurs at whatever scale the
+ * browser decides. Drawing the shape on the canvas instead means the pointer
+ * always previews the real thing at the real size, the way the pedestrian brush
+ * already did.
+ */
+export type GhostKind = 'square' | 'point' | 'tree' | 'target' | 'none';
+
+export interface CursorGhost {
+  kind: GhostKind;
+  at: Point;
+  /** Radius or half-extent, in world units. */
+  size: number;
+}
+
+/** Lines from each pedestrian to the pointer, for the mark-goal tool. */
+export interface TargetLines {
+  to: Point;
+  /** Colour of the shape under the pointer, or null to use each pedestrian's own. */
+  color: [number, number, number] | null;
 }
 
 /** Transient state a tool wants drawn on the overlay. */
@@ -25,6 +55,8 @@ export interface ToolPreview {
   selectionPolygon: Point[] | null;
   /** Where pedestrians would land if the brush fired now. */
   pendingPedestrians: Point[];
+  cursorGhost: CursorGhost | null;
+  targetLines: TargetLines | null;
 }
 
 export const EMPTY_PREVIEW: ToolPreview = {
@@ -32,6 +64,8 @@ export const EMPTY_PREVIEW: ToolPreview = {
   pendingRect: null,
   selectionPolygon: null,
   pendingPedestrians: [],
+  cursorGhost: null,
+  targetLines: null,
 };
 
 export interface PointerInfo {
@@ -46,7 +80,7 @@ export interface PointerInfo {
 
 export interface Tool {
   readonly id: ToolId;
-  /** CSS cursor value, using the original 32x32 cursor PNGs. */
+  /** A standard CSS cursor keyword; the tool's shape is drawn on the canvas. */
   readonly cursor: string;
   onPointerDown?(e: PointerInfo, ctx: ToolContext): void;
   onPointerMove?(e: PointerInfo, ctx: ToolContext): void;
@@ -57,6 +91,4 @@ export interface Tool {
   preview(): ToolPreview;
 }
 
-export function cursorUrl(name: string, hotX = 0, hotY = 0): string {
-  return `url(./cursors/${name}.png) ${hotX} ${hotY}, crosshair`;
-}
+

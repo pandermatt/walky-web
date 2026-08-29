@@ -8,6 +8,7 @@ import {
 } from './state/model';
 import { pointInPolygon, type Point } from './sim/geometry';
 import { Toolbar, type ActionId } from './ui/toolbar';
+import { serializeScenario, scenarioToJson, type SerializedAgent } from './state/scenario';
 import { SettingsPanel } from './ui/settingsPanel';
 import { WallTool } from './tools/wallTool';
 import { RectangleTool } from './tools/rectangleTool';
@@ -74,12 +75,17 @@ export class App {
     // Input binds to the deck canvas, not the stage: the toolbar is a sibling
     // inside the stage, so binding higher up made every toolbar click also land
     // on the canvas as a tool click.
-    this.settingsPanel = new SettingsPanel(stage, this.settings, (key, value) => {
-      this.settings[key] = value;
-      // Radius changes the expanded hulls, so the navigation graph must be rebuilt.
-      if (key === 'pedestrianRadius') this.navDirty = true;
-      this.touch();
-    });
+    this.settingsPanel = new SettingsPanel(
+      stage,
+      this.settings,
+      (key, value) => {
+        this.settings[key] = value;
+        // Radius changes the expanded hulls, so the graph must be rebuilt.
+        if (key === 'pedestrianRadius') this.navDirty = true;
+        this.touch();
+      },
+      () => this.copyMapToClipboard(),
+    );
 
     this.bindPointer(deckCanvas);
     this.resize();
@@ -127,6 +133,15 @@ export class App {
     },
     panBy: (dx, dy) => this.viewport.panBy(dx, dy),
     requestRender: () => this.requestRender(),
+    colorAt: (at) => {
+      const hit = [...this.walls].reverse().find((w) => wallContains(w, at));
+      return hit ? (hit.color as unknown as [number, number, number]) : null;
+    },
+    agentPositions: () => {
+      const out: Point[] = new Array(this.agents.count);
+      for (let i = 0; i < this.agents.count; i++) out[i] = [this.agents.x[i], this.agents.y[i]];
+      return out;
+    },
   };
 
   // ---- input --------------------------------------------------------------
@@ -445,6 +460,11 @@ export class App {
       selectionPolygon: preview.selectionPolygon,
       pendingPedestrians: preview.pendingPedestrians,
       pedestrianRadius: this.settings.pedestrianRadius,
+      cursorGhost: preview.cursorGhost,
+      targetLines: preview.targetLines,
+      // Only gathered when something is actually going to draw them.
+      agentPositions: preview.targetLines ? this.context.agentPositions() : [],
+      agentColors: preview.targetLines ? this.agentColorList() : [],
       mouseWorld: this.mouseWorld,
       debugLines: this.debugLines(),
     });
@@ -493,6 +513,67 @@ export class App {
       };
     }
     return out;
+  }
+
+  private agentColorList(): RGB[] {
+    const out: RGB[] = new Array(this.agents.count);
+    for (let i = 0; i < this.agents.count; i++) out[i] = unpackRgb(this.agents.color[i]);
+    return out;
+  }
+
+  /**
+   * The whole map as JSON on the clipboard.
+   *
+   * A stuck pedestrian depends on the exact walls, positions, goals and settings
+   * around it, which is close to impossible to describe in words -- this makes a
+   * case reproducible by handing over the snapshot.
+   */
+  private async copyMapToClipboard(): Promise<string> {
+    const { json, note } = this.buildScenarioJson();
+    try {
+      await navigator.clipboard.writeText(json);
+      return note;
+    } catch {
+      // Clipboard access needs a secure context and a user gesture, and can still
+      // be refused. Don't lose the snapshot: put it on the console, where it can
+      // be copied by hand.
+      console.log('[walky] map snapshot:\n' + json);
+      return `${note} — clipboard blocked, logged to console`;
+    }
+  }
+
+  /** The scenario as JSON, plus a one-line summary. */
+  buildScenarioJson(): { json: string; note: string } {
+    const agents: SerializedAgent[] = [];
+    for (let i = 0; i < this.agents.count; i++) {
+      const goalId = this.agents.goal[i];
+      agents.push({
+        x: this.agents.x[i],
+        y: this.agents.y[i],
+        originX: this.agents.originX[i],
+        originY: this.agents.originY[i],
+        goal: goalId,
+        arrived: this.agents.arrived[i] === 1,
+        // No route from here: exactly the pedestrians worth looking at.
+        stuck: !this.agents.arrived[i] && goalId >= 0
+          && this.nav.hasGoal(goalId)
+          && this.nav.nextWaypoint([this.agents.x[i], this.agents.y[i]], goalId) === null,
+      });
+    }
+    const scenario = serializeScenario({
+      settings: this.settings,
+      view: {
+        targetX: this.viewport.targetX,
+        targetY: this.viewport.targetY,
+        zoomLevel: this.viewport.zoomLevel,
+      },
+      walls: this.walls,
+      trees: this.trees,
+      agents,
+    });
+    const note = `${scenario.summary.walls} walls, ${scenario.summary.agents} pedestrians, `
+      + `${scenario.summary.stuck} stuck`;
+    return { json: scenarioToJson(scenario), note };
   }
 
   private debugLines(): string[] {

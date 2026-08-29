@@ -1,4 +1,5 @@
-import { EMPTY_PREVIEW, cursorUrl, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
+import type { Point } from '../sim/geometry';
+import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
 
 /**
  * Places trees. In the original, trees only ever arrived from an OpenStreetMap
@@ -7,12 +8,26 @@ import { EMPTY_PREVIEW, cursorUrl, type PointerInfo, type Tool, type ToolContext
  */
 export class TreeTool implements Tool {
   readonly id = 'tree' as const;
-  readonly cursor = cursorUrl('no', 16, 16);
+  readonly cursor = 'crosshair';
+
+  private mouse: Point | null = null;
 
   onPointerDown(e: PointerInfo, ctx: ToolContext): void {
     if (e.buttons !== 1) return;
     ctx.addTree(e.world);
   }
 
-  preview(): ToolPreview { return EMPTY_PREVIEW; }
+  onPointerMove(e: PointerInfo, ctx: ToolContext): void {
+    this.mouse = e.world;
+    ctx.requestRender();
+  }
+
+  cancel(): void { this.mouse = null; }
+
+  preview(): ToolPreview {
+    return {
+      ...EMPTY_PREVIEW,
+      cursorGhost: this.mouse ? { kind: 'tree', at: this.mouse, size: 22 } : null,
+    };
+  }
 }
