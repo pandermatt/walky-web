@@ -514,6 +514,12 @@ npm test
 
 ## Credits
 
+Google Sans Flex by **David Berlow**, under the SIL Open Font License 1.1 —
+the licence travels with the font at `public/fonts/OFL.txt`, which is what the
+OFL asks of anyone redistributing it, a self-hosted web font included. No
+Reserved Font Name is declared, so the subset served here keeps the family's
+own name.
+
 Original Walky (2016): **Pascal Andermatt** and **Jan Huber** —
 <https://github.com/pandermatt/walky>. The Dijkstra implementation there credits a
 StackOverflow answer by Luke; the convex hull adapted code by Alexander Hristov;
