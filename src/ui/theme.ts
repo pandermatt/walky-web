@@ -33,6 +33,47 @@ const ACCENT = toCss(ORANGE);
 const ACCENT_TEXT = toCss(shadowOf(ORANGE));
 const ACCENT_TINT = withAlpha(ORANGE, 0.28);
 
+export /*
+ * Walky's typeface.
+ *
+ * Google Sans Flex, self-hosted. Every other surface in the app already commits
+ * to a specific value rather than borrowing one -- the background is derived,
+ * the wall colours are the original's rule, the accent is the path colour in
+ * shadow -- and the type was the last thing still deferring to whatever the
+ * device happened to have. `system-ui` meant Walky read as SF Pro on a Mac,
+ * Segoe on Windows and Roboto on Android: three apps wearing one another's
+ * clothes, and none of them Walky's.
+ *
+ * It is a variable font on one axis, weight, which is all a chrome of labels and
+ * a wordmark asks for. The latin subset is 50KB against a 767KB bundle. The
+ * width, optical-size, slant and rounded-terminal axes the family also carries
+ * are pinned at their defaults by the subsetter; ROND in particular would suit a
+ * chrome made entirely of capsules, and costs 20KB if it is ever wanted.
+ *
+ * Served from public/, so the precache list picks it up with the icons and the
+ * offline guarantee stays true -- a font fetched from fonts.googleapis.com would
+ * have quietly made "offline in the strong sense" a lie, and failed silently
+ * rather than loudly, since there is no CSP to stop it. The URL is relative to
+ * the document for the same reason the toolbar icons are: the app is built with
+ * a relative base and can be served from a subpath.
+ *
+ * The fallback stack is kept and the range declared: before the file lands, if
+ * it never lands, or for a character outside latin, the platform's own face
+ * answers instead.
+ */
+const FONT_CSS = `
+@font-face {
+  font-family: 'Google Sans Flex';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url('./fonts/google-sans-flex-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+`;
+
 export const THEME_CSS = `
 :root {
   --wk-accent: ${ACCENT};
@@ -65,7 +106,8 @@ export const THEME_CSS = `
    */
   --wk-tap: 40px;
 
-  --wk-font: 13px/1.4 system-ui, -apple-system, sans-serif;
+  --wk-font-family: 'Google Sans Flex', system-ui, -apple-system, sans-serif;
+  --wk-font: 13px/1.4 var(--wk-font-family);
 
   /* The toolbar's measured height, republished by ui/toolbar.ts on every resize
      so that the panel column and the update chip can clear whatever the bar
@@ -87,6 +129,9 @@ export const THEME_CSS = `
 @media ${TOUCH} {
   :root { --wk-tap: 44px; }
 }
+
+/* One baseline, so anything that does not set its own font still gets Walky's. */
+body { font-family: var(--wk-font-family); }
 `;
 
 /**
@@ -171,6 +216,8 @@ export function injectStyle(id: string, css: string): void {
 
 /** Puts the tokens and the button roles in place. Safe to call from anywhere. */
 export function installTheme(): void {
+  // The face first: an @font-face the tokens then name.
+  injectStyle('font', FONT_CSS);
   injectStyle('theme', THEME_CSS);
   injectStyle('buttons', BUTTON_CSS);
 }

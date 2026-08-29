@@ -60,7 +60,7 @@ export const SHEET_CSS = `
   border-radius: var(--wk-r-card);
   overflow: hidden;
   background: var(--wk-group); color: var(--wk-ink);
-  font: 17px/1.35 system-ui, -apple-system, sans-serif;
+  font: 17px/1.35 var(--wk-font-family);
   box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
 }
 .wk-sheet, .wk-sheet * { box-sizing: border-box; }

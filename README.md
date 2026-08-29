@@ -50,6 +50,32 @@ its colour, and `#FFC800` on a white cell is 1.4:1 — an outline is what makes 
 bright fill legible without dimming it, and "is that switch on?" is not a
 question to leave people answering wrong.
 
+The typeface is **Google Sans Flex**, self-hosted. Every other value in this
+section is committed to rather than borrowed — the background is derived, the
+wall colours are the original's rule, the accent is the path colour in shadow —
+and the type was the last thing still deferring to whatever the device happened
+to have. `system-ui` meant Walky read as SF Pro on a Mac, Segoe on Windows and
+Roboto on Android: three apps wearing one another's clothes, and none of them
+Walky's.
+
+One axis, weight, which is all a chrome of labels and a wordmark asks for; the
+latin subset is 50KB against a 767KB bundle. The family also carries width,
+optical-size, slant and rounded-terminal axes, pinned at their defaults by the
+subsetter — `ROND` in particular would suit a chrome made entirely of capsules,
+and costs 20KB if it is ever wanted. It is served from `public/`, so the
+precache list picks it up alongside the icons and "offline in the strong sense"
+stays true; a `<link>` to `fonts.googleapis.com` would have quietly made that a
+lie, and there is no CSP to have caught it. The fallback stack is kept and the
+unicode range declared, so before the file lands — or for a character outside
+latin — the platform's own face answers instead.
+
+Swapping it in is nearly invisible in practice, which is the one piece of luck
+here: the toolbar carries icons and no labels, so the first paint has essentially
+no text in it to reflow.
+
+The debug overlay stays on the platform's monospace. It is a diagnostic readout
+drawn to canvas, and it should look like one.
+
 All toolbar icons are the original PNGs, unmodified — none needed redrawing, since
 they are 128–626px. The toolbar strip is light because the icons were drawn for
 Swing's light toolbar; `border.png` is a black outline that would vanish on a dark
@@ -486,6 +512,12 @@ npm test
 ```
 
 ## Credits
+
+Google Sans Flex by **David Berlow**, under the SIL Open Font License 1.1 —
+the licence travels with the font at `public/fonts/OFL.txt`, which is what the
+OFL asks of anyone redistributing it, a self-hosted web font included. No
+Reserved Font Name is declared, so the subset served here keeps the family's
+own name.
 
 Original Walky (2016): **Pascal Andermatt** and **Jan Huber** —
 <https://github.com/pandermatt/walky>. The Dijkstra implementation there credits a
