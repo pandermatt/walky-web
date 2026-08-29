@@ -18,6 +18,9 @@ export const FAT_DASH = [21, 9, 3, 9];
 /** Badge colours for the rectangle tool's cursor ghost. */
 const GHOST_BLUE = '#2D6FD4';
 const GHOST_BLUE_EDGE = '#1B4E9E';
+/** The eraser's, in the same pair: this badge takes away rather than adds. */
+const GHOST_RED = '#D43A2D';
+const GHOST_RED_EDGE = '#8E241B';
 
 /** How far in from the top-left the readout starts, as drawInformationString had it. */
 const DEBUG_MARGIN = 20;
@@ -360,6 +363,26 @@ export class Overlay {
         ctx.strokeStyle = GHOST_BLUE;
         ctx.lineWidth = 2.5;
         ctx.stroke(wave);
+        break;
+      }
+      case 'eraser': {
+        // The same badge as the drawing tools carry, leaning like the icon and
+        // red rather than blue -- the one tool on the strip that removes.
+        const size = 14;
+        const gap = 3;
+        const x = at[0] + gap;
+        const y = at[1] + gap;
+        const block = new Path2D();
+        block.moveTo(x + size * 0.34, y + size);
+        block.lineTo(x, y + size * 0.66);
+        block.lineTo(x + size * 0.66, y);
+        block.lineTo(x + size, y + size * 0.34);
+        block.closePath();
+        ctx.fillStyle = GHOST_RED;
+        ctx.strokeStyle = GHOST_RED_EDGE;
+        ctx.lineWidth = 1.5;
+        ctx.fill(block);
+        ctx.stroke(block);
         break;
       }
       case 'target': {

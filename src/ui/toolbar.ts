@@ -1,5 +1,5 @@
 import type { ToolId } from '../tools/types';
-import { TOUCH } from './appShell';
+import { FINE, TOUCH } from './appShell';
 import { injectStyle, installTheme } from './theme';
 import { attachTooltip } from './tooltip';
 
@@ -21,6 +21,14 @@ interface ButtonSpec {
    * Ctrl+Z, which is not one key and not one platform's spelling of it.
    */
   press?: string;
+  /**
+   * Present in the document but hidden where there is no mouse -- see the rule
+   * at the foot of the stylesheet. A flag rather than leaving the button out at
+   * build time, because the question is about the input in use and a hybrid
+   * machine changes its answer while the page is open; a CSS rule follows that
+   * and a list built once does not.
+   */
+  desktopOnly?: boolean;
 }
 
 /**
@@ -66,6 +74,11 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
       { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool', shortcut: '5', press: '5' },
       { key: 'select', icon: 'select.png', title: 'Selection tool', kind: 'tool', shortcut: '6', press: '6' },
       { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool', shortcut: '7', press: '7' },
+      // Eighth rather than slotted in beside the drawing tools it undoes: the
+      // digits mean how far down the capsule a tool is, so putting the eraser
+      // among them would renumber three tools people already know in order to
+      // group it with the ones it is about.
+      { key: 'erase', icon: 'erase.svg', title: 'Erase shapes', kind: 'tool', shortcut: '8', press: '8', desktopOnly: true },
     ],
   },
   {
@@ -129,7 +142,7 @@ export const TOOLBAR_CSS = `
   top: calc(12px + env(safe-area-inset-top, 0px));
   left: calc(12px + env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
-  /* Thirteen buttons do not fit a short window; without this the lower tools,
+  /* Fourteen buttons do not fit a short window; without this the lower tools,
      settings among them, are simply unreachable. A wheel over a capsule scrolls
      this, since the capsule is what takes the pointer. */
   max-height: calc(100vh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
@@ -216,6 +229,24 @@ export const TOOLBAR_CSS = `
   }
   html[data-standalone] #toolbar .group { flex-direction: row; }
   html[data-standalone] #toolbar .group[data-group="tools"] { order: 1; }
+}
+
+/*
+ * The eraser is withheld from anything but a mouse.
+ *
+ * It is the one destructive tool on the strip, and a fingertip over a map of
+ * shapes drawn against each other is the worst input there is for saying which
+ * one to delete -- the finger covers the answer. A pointer can hover first and
+ * see the outline go red before it commits, which is the whole safety net, and
+ * a touchscreen has no hover to give.
+ *
+ * Not a width breakpoint, for the reason the bar's placement is not one either:
+ * the question is what is in the hand. \`not all and\` is how a media query is
+ * negated, and it is negated rather than written as coarse-or-no-hover so that
+ * this rule and the one the app asks in setTool are the same sentence.
+ */
+@media not all and ${FINE} {
+  #toolbar .wk-btn--cell[data-key="erase"] { display: none; }
 }
 `;
 

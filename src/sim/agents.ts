@@ -253,6 +253,28 @@ export class Agents {
   }
 
   /**
+   * Cuts loose every pedestrian bound for a wall that has just been erased.
+   *
+   * Not tidiness: Navigation has no field for a wall that is gone, so
+   * nextWaypoint answers null and those pedestrians stand still for ever --
+   * while `allArrived` goes on saying the run is unfinished, which is what a
+   * recording waits for before it stops itself.
+   *
+   * The colour is left alone. It says where the pedestrian was going, which is
+   * still the truth about it, and resetPositions already repaints a pedestrian
+   * whose goal has been deleted since -- see the note there.
+   */
+  clearGoal(wallId: number): void {
+    for (let i = 0; i < this.count; i++) {
+      if (this.goal[i] !== wallId) continue;
+      this.goal[i] = -1;
+      this.arrived[i] = 0;
+      this.hasWaypoint[i] = 0;
+      this.costToGoal[i] = Infinity;
+    }
+  }
+
+  /**
    * Removes one agent by swapping the last into its slot. Order is not meaningful
    * -- nothing holds an index across ticks -- so this avoids shifting the arrays.
    */

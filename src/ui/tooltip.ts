@@ -1,3 +1,4 @@
+import { FINE } from './appShell';
 import { injectStyle, installTheme } from './theme';
 
 /**
@@ -87,9 +88,6 @@ export const TOOLTIP_CSS = `
   #wk-tip { transition: none; }
 }
 `;
-
-/** The pointer this is for: a mouse, on a device that can hover at all. */
-const FINE = '(hover: hover) and (pointer: fine)';
 
 let tip: HTMLDivElement | null = null;
 /** Which anchor the tip is currently showing for, so a stale hide is ignored. */

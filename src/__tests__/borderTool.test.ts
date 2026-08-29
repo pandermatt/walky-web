@@ -132,6 +132,9 @@ describe('BorderTool', () => {
       colorAt: () => null,
       agentPositions: () => [],
       worldPerPixel: () => 1,
+      // The tool under test never erases; the eraser has its own file.
+      eraseTargetAt: () => null,
+      eraseAt: () => false,
     } satisfies ToolContext;
     return { ctx, walls };
   }

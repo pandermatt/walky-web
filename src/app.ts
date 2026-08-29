@@ -24,6 +24,7 @@ import { RectangleTool } from './tools/rectangleTool';
 import { ShiftTool } from './tools/shiftTool';
 import { PedestrianTool } from './tools/pedestrianTool';
 import { GoalTool } from './tools/goalTool';
+import { EraseTool } from './tools/eraseTool';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
 import { Plops } from './audio/plops';
@@ -31,7 +32,11 @@ import { MAX_MS, Recorder, canRecord, recordingFilename, saveBlob } from './rend
 import { RecordingChip } from './ui/recordingChip';
 import { dismissToast, showToast } from './pwa';
 import { SpatialHash } from './sim/spatialHash';
-import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolId } from './tools/types';
+import {
+  EMPTY_PREVIEW,
+  type EraseTarget, type PointerInfo, type Tool, type ToolContext, type ToolId,
+} from './tools/types';
+import { FINE } from './ui/appShell';
 
 /**
  * How long a recording holds on the finished picture before it stops itself.
@@ -68,6 +73,23 @@ interface MapSnapshot {
  * crowd it holds, and a full one is around 100KB.
  */
 const UNDO_DEPTH = 40;
+
+/**
+ * A circle written as a polygon, for outlining a pedestrian the eraser is over.
+ *
+ * Sixteen sides, because the overlay already knows how to stroke a dashed
+ * outline round a list of points and a ring is the shape that says "this one,
+ * and only this one". At any size a pedestrian is drawn at, sixteen reads as
+ * round.
+ */
+function ring(centre: Point, radius: number, sides = 16): Point[] {
+  const out: Point[] = [];
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2;
+    out.push([centre[0] + Math.cos(a) * radius, centre[1] + Math.sin(a) * radius]);
+  }
+  return out;
+}
 
 export class App {
   private viewport = new Viewport();
@@ -158,7 +180,7 @@ export class App {
     for (const t of [
       new WallTool(), new RectangleTool(), new ShiftTool(),
       new PedestrianTool(), new GoalTool(), new SelectionTool(),
-      new BorderTool(),
+      new BorderTool(), new EraseTool(),
     ]) {
       this.tools.set(t.id, t as Tool);
     }
@@ -246,7 +268,7 @@ export class App {
       this.touch();
     },
     setGoalAt: (at) => {
-      const hit = [...this.walls].reverse().find((w) => wallContains(w, at));
+      const hit = this.pickWall(at);
       if (!hit) return false;
       this.checkpoint();
       hit.isGoal = true;
@@ -288,7 +310,7 @@ export class App {
     panBy: (dx, dy) => this.viewport.panBy(dx, dy),
     requestRender: () => this.requestRender(),
     colorAt: (at) => {
-      const hit = [...this.walls].reverse().find((w) => wallContains(w, at));
+      const hit = this.pickWall(at);
       return hit ? (hit.color as unknown as [number, number, number]) : null;
     },
     worldPerPixel: () => 1 / this.viewport.scale,
@@ -297,6 +319,8 @@ export class App {
       for (let i = 0; i < this.agents.count; i++) out[i] = [this.agents.x[i], this.agents.y[i]];
       return out;
     },
+    eraseTargetAt: (at) => this.eraseTargetAt(at),
+    eraseAt: (at, sameStroke) => this.eraseAt(at, sameStroke),
   };
 
   // ---- input --------------------------------------------------------------
@@ -498,6 +522,11 @@ export class App {
   }
 
   private setTool(id: ToolId | null): void {
+    // The eraser is a pointer's tool. Its cell is hidden on a touch device by a
+    // rule in the toolbar's stylesheet, and this is the same question asked of
+    // the other way in -- the digit shortcut. Asked here rather than at startup
+    // so a hybrid laptop gets the answer for the input in use right now.
+    if (id === 'erase' && !window.matchMedia(FINE).matches) return;
     this.tool?.cancel?.();
     // A press held back for the old tool is not the new tool's to receive.
     this.pendingTouch = null;
@@ -891,6 +920,82 @@ export class App {
         this.agents.removeAt(i);
       }
     }
+  }
+
+  /**
+   * The wall under a point, or null. Topmost wins, as clicking expects: the
+   * last one drawn is the one on top, and reversing is what asks in that order.
+   *
+   * Tested against the raw polygons rather than the expanded hulls, because
+   * this answers "what did I click", and what you can see is the wall itself.
+   */
+  private pickWall(at: Point): Wall | null {
+    for (let i = this.walls.length - 1; i >= 0; i--) {
+      if (wallContains(this.walls[i], at)) return this.walls[i];
+    }
+    return null;
+  }
+
+  /**
+   * How near the eraser counts as being on a pedestrian.
+   *
+   * Its own radius, but never less than a few screen pixels' worth: zoomed out
+   * far enough a pedestrian is smaller than the pointer tip, and a target you
+   * cannot hit is a tool that looks broken.
+   */
+  private eraseReach(): number {
+    return Math.max(this.settings.pedestrianRadius, 6 / this.viewport.scale);
+  }
+
+  /** What the eraser would take at a point, outlined for the preview. */
+  private eraseTargetAt(at: Point): EraseTarget | null {
+    // Pedestrians are painted over the walls, so one under the pointer is what
+    // you are pointing at -- the same order clicking already answers in.
+    const reach = this.eraseReach();
+    const i = this.agents.indexAt(at, reach);
+    if (i >= 0) {
+      // Drawn a few pixels clear of the pedestrian rather than around its own
+      // edge, where the dashes would land on the ring it already wears and read
+      // as nothing at all.
+      const halo = reach + 5 / this.viewport.scale;
+      return { kind: 'pedestrian', outlines: [ring([this.agents.x[i], this.agents.y[i]], halo)] };
+    }
+    const wall = this.pickWall(at);
+    // A wall's own polygons: for a border frame that is its four bars, which
+    // outlines exactly the frame that is about to go.
+    return wall ? { kind: 'wall', outlines: wall.polygons } : null;
+  }
+
+  /**
+   * Rubs out the whole object under a point.
+   *
+   * @param sameStroke set for every removal after the first in one sweep, so the
+   *   drag is a single thing to take back. Nothing is checkpointed until
+   *   something is definitely going, which is the rule the rest of the edits
+   *   follow: a step that undoes nothing is worse than no step.
+   * @returns false when there was nothing there.
+   */
+  private eraseAt(at: Point, sameStroke: boolean): boolean {
+    const i = this.agents.indexAt(at, this.eraseReach());
+    if (i >= 0) {
+      if (!sameStroke) this.checkpoint();
+      this.agents.removeAt(i);
+      this.touch();
+      return true;
+    }
+
+    const wall = this.pickWall(at);
+    if (!wall) return false;
+    if (!sameStroke) this.checkpoint();
+    // A new array rather than a splice: deck.gl compares props shallowly, and
+    // the same array back is an array it believes nothing happened to.
+    this.walls = this.walls.filter((w) => w !== wall);
+    // Whoever was walking to it has nowhere to be now; left pointing at a wall
+    // that is gone they would stand still and the run would never finish.
+    this.agents.clearGoal(wall.id);
+    this.navDirty = true;
+    this.touch();
+    return true;
   }
 
   /** Every wall's colour by id, for the things that colour themselves after one. */

@@ -21,6 +21,17 @@ const STANDALONE = '(display-mode: standalone)';
 export const TOUCH = '(pointer: coarse)';
 
 /**
+ * The other end of the same question: a mouse, on a device that can hover at
+ * all. What "desktop" means here is the input, not the screen -- the same
+ * argument the toolbar's placement rule makes.
+ *
+ * Asked live wherever it is used rather than answered once at startup: a hybrid
+ * laptop replies differently depending on which input the person last touched,
+ * so anything gated on it should follow them between the two.
+ */
+export const FINE = '(hover: hover) and (pointer: fine)';
+
+/**
  * The same question the CSS asks, for the one decision that cannot be made in
  * a stylesheet: whether opening settings should also push a history entry.
  */

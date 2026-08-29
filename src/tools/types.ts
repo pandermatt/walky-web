@@ -3,7 +3,21 @@ import type { Settings, WallOptions } from '../state/model';
 
 export type ToolId =
   | 'wall' | 'rectangle' | 'border' | 'pedestrian'
-  | 'goal' | 'select' | 'shift';
+  | 'goal' | 'select' | 'shift' | 'erase';
+
+/**
+ * What the eraser would take away at a point.
+ *
+ * Whole objects only: one drawn shape, one border frame, one pedestrian. There
+ * is no half a wall -- a shape is what one draw action made, and rubbing a
+ * corner off one would mean re-cutting geometry the navigation graph, the group
+ * outlines and the undo snapshots are all built from.
+ */
+export interface EraseTarget {
+  kind: 'wall' | 'pedestrian';
+  /** Outlines of what would go, for the preview. A border frame is four bars. */
+  outlines: Point[][];
+}
 
 /** What a tool is allowed to do to the world, kept narrow on purpose. */
 export interface ToolContext {
@@ -45,6 +59,15 @@ export interface ToolContext {
   agentPositions(): Point[];
   /** World units per screen pixel, so tolerances can be expressed in pixels. */
   worldPerPixel(): number;
+  /** What the eraser would remove at a point, for the hover highlight. */
+  eraseTargetAt(at: Point): EraseTarget | null;
+  /**
+   * Removes the whole object under a point; false when there is nothing there.
+   *
+   * `sameStroke` is set for every removal after the first in one drag, so a
+   * sweep across six shapes is one thing to take back rather than six.
+   */
+  eraseAt(at: Point, sameStroke: boolean): boolean;
 }
 
 /**
@@ -57,7 +80,7 @@ export interface ToolContext {
  * always previews the real thing at the real size, the way the pedestrian brush
  * already did.
  */
-export type GhostKind = 'square' | 'squiggle' | 'frame' | 'target' | 'none';
+export type GhostKind = 'square' | 'squiggle' | 'frame' | 'target' | 'eraser' | 'none';
 
 export interface CursorGhost {
   kind: GhostKind;
@@ -81,7 +104,11 @@ export interface ToolPreview {
   pendingRect: [Point, Point] | null;
   /** Arbitrary outlines to preview, e.g. the bars of a border frame. */
   pendingPolygons: Point[][];
-  /** Draw the pending outlines as a warning: the shape would be unusable. */
+  /**
+   * Draw the pending outlines as a warning rather than as a proposal: the shape
+   * would be unusable, or -- for the eraser -- is what a click is about to take
+   * away. Both are "red, do not expect this to stay", which is the same picture.
+   */
   pendingPolygonsInvalid: boolean;
   selectionPolygon: Point[] | null;
   /** Where pedestrians would land if the brush fired now. */

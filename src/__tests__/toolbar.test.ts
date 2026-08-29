@@ -3,12 +3,16 @@ import { SHORTCUTS } from '../ui/toolbar';
 
 /**
  * The shortcuts are derived from the strip, so what is worth checking is the
- * promise the numbers make: 1 to 7 are the tools, in the order you see them.
+ * promise the numbers make: 1 to 8 are the tools, in the order you see them.
  * Insert a tool without renumbering and this is what says so.
+ *
+ * The eraser is eighth and last for that reason, and it keeps its number on a
+ * touch device even though its cell is hidden there -- the app is what refuses
+ * to arm it (see App.setTool), not the list of keys.
  */
 
 const TOOLS_IN_ORDER = [
-  'wall', 'rectangle', 'border', 'pedestrian', 'goal', 'select', 'shift',
+  'wall', 'rectangle', 'border', 'pedestrian', 'goal', 'select', 'shift', 'erase',
 ];
 
 describe('the keyboard shortcuts', () => {
