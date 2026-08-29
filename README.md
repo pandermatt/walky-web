@@ -288,6 +288,11 @@ bloom through. Where `backdrop-filter` is unsupported the capsule goes fully
 opaque instead, since without the filter that pane is a 72%-opaque sheet with
 the map legible through it.
 
+The armed tool wears a tinted circle rather than the desktop strip's outlined
+blue box, and a tap dims the cell rather than filling it: iOS acknowledges a
+touch by dimming, and these icons are artwork that cannot be tinted, so the cell
+does it on their behalf.
+
 One capsule per group, and the groups are the three separators ToolboxPanel
 already had: run, tools, view. They wrap, so the layout follows the screen
 instead of being told about it — portrait puts the seven tools on their own row
@@ -308,11 +313,34 @@ panel over.
 ### And settings becomes a page
 
 A 232px card floating in a corner is a desktop shape. On a phone it covers most
-of the map anyway, so installed it stops pretending and becomes the screen: a
-title bar with a Done button, and a body that scrolls, with the spacing a thumb
-needs rather than a cursor's. The controls are the same controls in the same
-order — the markup is built once, the header is the heading it always was, and
-only the frame around it changes, in CSS.
+of the map anyway, so installed it stops pretending and becomes the screen, in
+the shape iOS gives a settings screen: a title bar with the title centred and a
+tinted **Done** on the right, groups of white cells on `#F2F2F7`, separators
+that start at the text rather than the card's edge, switches instead of
+checkboxes, and sliders with a blue lead-in and a knob big enough to catch. The
+sizes and colours are the real ones — 51×31 for a switch, `#007AFF` and
+`#34C759`, 10px corners, 35px between groups — because the shape is only
+convincing at the values it actually uses.
+
+It is the same markup either way. Each run of controls is a section, the rule
+that used to divide them rides along inside it, and as a page the section
+becomes the card and the rules go away, since the card's edges already say what
+the line was saying. The controls themselves are matched on the panel rather
+than the page, so the contextual panel gets the same slider you just left; that
+panel is the other thing floating over the map, so it is made of the same glass
+as the bar. Only the settings screen opts out of the glass — it is a screen, not
+something floating.
+
+The light appearance and not the dark one, deliberately. The chrome over the map
+has to be light because the toolbar icons are 2016 artwork drawn for a light
+Swing toolbar, and a dark sheet arriving over a light bar would be the odd one
+out.
+
+It arrives and leaves as a sheet does, sliding from the bottom on iOS's own
+curve. That is a `display` transition with `allow-discrete` and `@starting-style`
+rather than a class and a timer, so a browser that does not know the at-rule
+simply shows the page, which is what it did before; `prefers-reduced-motion`
+turns it off outright.
 
 Opening it also pushes a history entry, which is the part that makes it a page
 rather than a sheet: installed there is no browser chrome and no back button,

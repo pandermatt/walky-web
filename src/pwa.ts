@@ -34,7 +34,15 @@ const CSS = `
   html[data-standalone] #wk-toast {
     bottom: calc(28px + var(--wk-toolbar-h, 0px) + env(safe-area-inset-bottom, 0px));
     max-width: calc(100vw - 24px);
+    border-radius: 999px; padding: 8px 8px 8px 16px;
   }
+  /* Tinted text, the way a control inside a bar reads on iOS. */
+  html[data-standalone] #wk-toast button {
+    background: none; border: 0; padding: 6px 8px;
+    color: #007AFF; font-weight: 600;
+  }
+  html[data-standalone] #wk-toast button:hover { background: none; }
+  html[data-standalone] #wk-toast button:active { opacity: .3; }
 }
 `;
 

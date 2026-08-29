@@ -147,8 +147,10 @@ const CSS = `
     gap: 4px; padding: 6px;
     border-radius: 999px;
     background: #ECECEC;
-    border: 1px solid rgba(154, 154, 154, .75);
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, .55), 0 8px 28px rgba(0, 0, 0, .55);
+    /* A hairline and a soft, wide shadow: a floating bar reads as sitting a
+       little above the content, not as an outlined box drawn on top of it. */
+    border: .5px solid rgba(0, 0, 0, .08);
+    box-shadow: inset 0 .5px 0 0 rgba(255, 255, 255, .7), 0 6px 20px rgba(0, 0, 0, .38);
   }
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     html[data-standalone] #toolbar .group {
@@ -164,11 +166,14 @@ const CSS = `
     width: 44px; height: 44px; padding: 7px;
     border-radius: 999px;
     background: none; border-color: transparent;
+    transition: background-color .15s ease;
   }
   html[data-standalone] #toolbar button:hover { background: none; }
-  html[data-standalone] #toolbar button:active { background: rgba(0, 0, 0, .09); }
+  /* Dimming, which is how iOS acknowledges a tap; the icons are artwork and
+     cannot be tinted, so the cell tints instead. */
+  html[data-standalone] #toolbar button:active { opacity: .4; }
   html[data-standalone] #toolbar button[aria-pressed="true"] {
-    background: #C3D9F0; border-color: #4A7EBB;
+    background: rgba(0, 122, 255, .16); border-color: transparent;
   }
 }
 `;

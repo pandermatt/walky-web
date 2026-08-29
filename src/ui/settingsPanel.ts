@@ -71,23 +71,37 @@ export class SettingsPanel {
     body.className = 'body';
     this.root.append(head, body);
 
+    /*
+     * Each run of controls is a section, and the rule that used to divide them
+     * rides along inside it. As a panel that is the same stack of controls with
+     * the same lines between them -- a section box adds no spacing of its own.
+     * As a page each one becomes an iOS grouped card and the rules go away,
+     * because the card's edges already say what the line was saying.
+     */
+    const group = () => {
+      const section = document.createElement('section');
+      section.className = 'group';
+      body.appendChild(section);
+      return section;
+    };
+
+    const sliders = group();
     for (const key of SLIDER_ORDER) {
       const spec = SLIDERS[key as string];
       if (!spec) continue;
       const { el, sync } = buildSlider(spec, settings, onChange);
       this.syncers.push(sync);
-      body.appendChild(el);
+      sliders.appendChild(el);
     }
+    sliders.appendChild(document.createElement('hr'));
 
-    body.appendChild(document.createElement('hr'));
-
+    const toggles = group();
     for (const spec of TOGGLES) {
       const { el, sync } = buildToggle(spec, settings, onChange);
       this.syncers.push(sync);
-      body.appendChild(el);
+      toggles.appendChild(el);
     }
-
-    body.appendChild(document.createElement('hr'));
+    toggles.appendChild(document.createElement('hr'));
 
     // Debugging aid: the whole scenario as JSON, ready to hand to someone else.
     const copy = document.createElement('button');
@@ -102,7 +116,10 @@ export class SettingsPanel {
         note.textContent = 'Clipboard blocked by the browser';
       }
     });
-    body.append(copy, note);
+    // The note sits outside the section: as a page it is the grey footnote
+    // under a group, which is where iOS puts the sentence about a group.
+    group().appendChild(copy);
+    body.appendChild(note);
 
     swallowPointerEvents(this.root);
     parent.appendChild(this.root);

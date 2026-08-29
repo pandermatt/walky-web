@@ -77,12 +77,18 @@ export const PANEL_CSS = `
 }
 #panels > * { pointer-events: auto; }
 /*
- * Installed on a phone, settings stop being a panel and become a page.
+ * Installed on a phone, settings stop being a panel and become a page, in the
+ * shape iOS gives a settings screen.
  *
  * A 232px card floating in the corner covers most of a phone screen anyway, so
- * the honest shape is the screen: a title bar with a way out, and a body that
- * scrolls. It is the same markup either way -- the header is the heading it
- * always was, the body a plain block -- so nothing has to be built twice.
+ * the honest shape is the screen: a title bar with a way out, groups of white
+ * cells on a grey ground, and the controls a thumb expects to find -- a switch
+ * rather than a checkbox, a slider with a knob it can catch. It is the same
+ * markup either way, so nothing is built twice; only this stylesheet knows.
+ *
+ * The colours are iOS's own system palette, light appearance, because the
+ * chrome over the map is already light -- the toolbar has to be, for the sake
+ * of the original icons -- and a dark sheet would be the odd one out.
  *
  * position: fixed, so the page escapes the bounded, scrolling column the panels
  * live in; #panels is not a containing block for it (nothing here transforms),
@@ -92,43 +98,202 @@ export const PANEL_CSS = `
 @media ${TOUCH} {
   html[data-standalone] #panels { z-index: 30; }
 
+  /* Border-box inside the page, so a row asked for 44px is 44px tall and not
+     44px plus whatever padding it happens to carry. */
+  html[data-standalone] .wk-settings,
+  html[data-standalone] .wk-settings * { box-sizing: border-box; }
+
   html[data-standalone] .wk-settings {
     position: fixed; inset: 0;
     width: auto; padding: 0;
     border: 0; border-radius: 0; box-shadow: none;
-    background: #ECECEC;
+    background: #F2F2F7; color: #000;
+    font-size: 17px;
     display: flex; flex-direction: column;
+    /* Presented and dismissed the way a sheet is. allow-discrete is what lets
+       a display: none element animate at all; where it is unsupported the page
+       simply appears, which is what it did before. */
+    transform: translateY(0);
+    transition:
+      transform .32s cubic-bezier(.32, .72, 0, 1),
+      display .32s allow-discrete;
   }
-  html[data-standalone] .wk-settings[hidden] { display: none; }
+  html[data-standalone] .wk-settings[hidden] { display: none; transform: translateY(100%); }
+  @starting-style {
+    html[data-standalone] .wk-settings { transform: translateY(100%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html[data-standalone] .wk-settings { transition: none; transform: none; }
+  }
+
+  /*
+   * A sheet's title bar: the title centred, the way out on the right. The
+   * outer 1fr columns are equal, so the middle one is the middle of the screen
+   * however wide "Done" turns out to be.
+   */
   html[data-standalone] .wk-settings .head {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding-top: calc(10px + env(safe-area-inset-top, 0px));
-    padding-bottom: 10px;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    /* A bar is 44px tall whatever is in it, plus whatever the status bar takes. */
+    min-height: calc(44px + env(safe-area-inset-top, 0px));
+    padding-top: calc(5px + env(safe-area-inset-top, 0px));
+    padding-bottom: 5px;
     padding-left: calc(16px + env(safe-area-inset-left, 0px));
-    padding-right: calc(12px + env(safe-area-inset-right, 0px));
-    background: #F7F7F7; border-bottom: 1px solid #C4C4C4;
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+    background: rgba(249, 249, 249, .94);
+    border-bottom: .5px solid rgba(60, 60, 67, .29);
   }
-  html[data-standalone] .wk-settings .head h2 { margin: 0; font-size: 17px; }
-  /* Auto width, unlike every other button in a panel, and the tap target a
-     thumb needs. */
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    html[data-standalone] .wk-settings .head {
+      background: rgba(249, 249, 249, .8);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+    }
+  }
+  html[data-standalone] .wk-settings .head h2 {
+    grid-column: 2; margin: 0; font-size: 17px; font-weight: 600;
+    letter-spacing: -.02em;
+  }
+  /* A bar button is text, not a button-looking thing: iOS tints it and leaves
+     it at that. min-height keeps the tap target a thumb needs behind it. */
   html[data-standalone] .wk-settings .done {
-    display: block; width: auto; min-height: 36px; padding: 7px 14px;
-    font-weight: 600;
+    display: block; grid-column: 3; justify-self: end;
+    width: auto; min-height: 34px; padding: 4px 0 4px 16px;
+    background: none; border: 0; border-radius: 0;
+    color: #007AFF; font-size: 17px; font-weight: 600;
   }
+  html[data-standalone] .wk-settings .done:hover { background: none; }
+  html[data-standalone] .wk-settings .done:active { opacity: .3; }
+
   html[data-standalone] .wk-settings .body {
     flex: 1; overflow-y: auto;
     /* #stage turns touch panning off so a drag draws instead of scrolling the
-       map; the page has to opt back in to be scrollable at all. */
-    touch-action: pan-y;
-    padding-top: 14px;
-    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+       map; the page has to opt back in to be scrollable at all, and contain
+       stops a flick at the end of the list bouncing the app behind it. */
+    touch-action: pan-y; overscroll-behavior: contain;
+    padding-top: 20px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
     padding-left: calc(16px + env(safe-area-inset-left, 0px));
     padding-right: calc(16px + env(safe-area-inset-right, 0px));
   }
-  /* Room to hit: a 232px card's spacing is desktop spacing. */
-  html[data-standalone] .wk-settings .row { margin-bottom: 12px; }
-  html[data-standalone] .wk-settings .slider { margin-bottom: 18px; }
-  html[data-standalone] .wk-settings input[type=checkbox] { width: 20px; height: 20px; }
+
+  /* A grouped card. 10px and 35px are iOS's own corner and the gap it leaves
+     between groups. */
+  html[data-standalone] .wk-settings .group {
+    background: #FFF; border-radius: 10px; margin-bottom: 35px;
+  }
+  html[data-standalone] .wk-settings .group:last-of-type { margin-bottom: 8px; }
+  html[data-standalone] .wk-settings hr { display: none; }
+
+  /* Cells. The separator starts at the text rather than the card's edge, which
+     is the detail that makes a list read as iOS rather than as a table. */
+  html[data-standalone] .wk-settings .group > * {
+    position: relative; margin: 0; padding: 11px 16px;
+  }
+  html[data-standalone] .wk-settings .group > * + *::before {
+    content: ''; position: absolute; left: 16px; right: 0; top: 0;
+    height: .5px; background: rgba(60, 60, 67, .29);
+  }
+
+  html[data-standalone] .wk-settings .row {
+    /* The checkbox is first in the markup, where a label belongs on iOS: the
+       reversal puts the switch on the right without reordering anything. */
+    flex-direction: row-reverse; min-height: 44px; gap: 12px;
+  }
+  html[data-standalone] .wk-settings .slider .top { margin-bottom: 2px; }
+  html[data-standalone] .wk-settings .slider .val {
+    color: rgba(60, 60, 67, .6); font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * The contextual panel is the other thing floating over the map, so it is
+   * made of what the bar is made of rather than staying a flat card next to it.
+   * :not() keeps the page out of this: it is a screen, not something floating.
+   */
+  html[data-standalone] .wk-panel:not(.wk-settings) {
+    border-radius: 14px;
+    background: #ECECEC;
+    border: .5px solid rgba(0, 0, 0, .08);
+    box-shadow: inset 0 .5px 0 0 rgba(255, 255, 255, .7), 0 6px 20px rgba(0, 0, 0, .38);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    html[data-standalone] .wk-panel:not(.wk-settings) {
+      background: rgba(236, 236, 236, .72);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+    }
+  }
+
+  /*
+   * The controls themselves are the platform's, so they are matched on the
+   * panel rather than the page: the contextual panel is still a small floating
+   * card, but a slider inside it is the same slider you just left.
+   */
+
+  /* The switch: 51x31 is the real one's size, and the knob travels the
+     difference. */
+  html[data-standalone] .wk-panel input[type=checkbox] {
+    appearance: none; -webkit-appearance: none;
+    flex: 0 0 auto; width: 51px; height: 31px; margin: 0;
+    border-radius: 999px; background: rgba(120, 120, 128, .16);
+    transition: background .2s ease;
+  }
+  html[data-standalone] .wk-panel input[type=checkbox]::after {
+    content: ''; display: block; width: 27px; height: 27px; margin: 2px;
+    border-radius: 50%; background: #FFF;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, .15), 0 1px 1px rgba(0, 0, 0, .16);
+    transition: transform .2s ease;
+  }
+  html[data-standalone] .wk-panel input[type=checkbox]:checked { background: #34C759; }
+  html[data-standalone] .wk-panel input[type=checkbox]:checked::after {
+    transform: translateX(20px);
+  }
+
+  /* The slider: a 4px track that fills blue behind the knob, and a knob big
+     enough to catch. --fill is written by buildSlider. */
+  html[data-standalone] .wk-panel input[type=range] {
+    appearance: none; -webkit-appearance: none;
+    height: 28px; background: none;
+  }
+  html[data-standalone] .wk-panel input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 2px;
+    background: linear-gradient(
+      to right,
+      #007AFF 0 var(--fill, 0%),
+      rgba(120, 120, 128, .16) var(--fill, 0%) 100%
+    );
+  }
+  html[data-standalone] .wk-panel input[type=range]::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none;
+    width: 28px; height: 28px; margin-top: -12px;
+    border-radius: 50%; background: #FFF;
+    box-shadow: 0 0 0 .5px rgba(0, 0, 0, .04), 0 6px 13px rgba(0, 0, 0, .12),
+      0 .5px 4px rgba(0, 0, 0, .12);
+  }
+  html[data-standalone] .wk-panel input[type=range]::-moz-range-track {
+    height: 4px; border-radius: 2px; background: rgba(120, 120, 128, .16);
+  }
+  html[data-standalone] .wk-panel input[type=range]::-moz-range-progress {
+    height: 4px; border-radius: 2px; background: #007AFF;
+  }
+  html[data-standalone] .wk-panel input[type=range]::-moz-range-thumb {
+    width: 28px; height: 28px; border: 0; border-radius: 50%; background: #FFF;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .2);
+  }
+
+  /* An action row: tinted text across the cell, no button of its own. */
+  html[data-standalone] .wk-settings .group button {
+    width: 100%; min-height: 44px;
+    background: none; border: 0; border-radius: 0;
+    color: #007AFF; font-size: 17px; text-align: left;
+  }
+  html[data-standalone] .wk-settings .group button:hover { background: none; }
+  html[data-standalone] .wk-settings .group button:active { opacity: .3; }
+
+  /* The sentence under a group, in iOS's footnote place and colour. */
+  html[data-standalone] .wk-settings .note {
+    margin: 0; padding: 0 16px;
+    font-size: 13px; color: rgba(60, 60, 67, .6);
+  }
 
   /* The strip is a bar across the bottom now: the corner the panels were being
      kept out of is free, and the room they have is what is above it.
@@ -168,15 +333,29 @@ export function buildSlider(
   input.step = String(spec.step);
   label.htmlFor = input.id = `set-${spec.key}-${Math.random().toString(36).slice(2, 8)}`;
 
+  /**
+   * How far along the track the knob is, as a percentage.
+   *
+   * A range input paints one track, not a filled part and an empty part, so the
+   * iOS slider's blue lead-in has to come from a gradient that knows where the
+   * knob is. Written whatever the shape, since the panel simply does not read it.
+   */
+  const setFill = () => {
+    const fraction = (Number(input.value) - spec.min) / (spec.max - spec.min);
+    input.style.setProperty('--fill', `${fraction * 100}%`);
+  };
+
   const sync = () => {
     input.value = String(settings[spec.key]);
     value.textContent = String(settings[spec.key]);
+    setFill();
   };
   sync();
 
   input.addEventListener('input', () => {
     const next = Number(input.value);
     value.textContent = String(next);
+    setFill();
     onChange(spec.key, next as Settings[typeof spec.key]);
   });
 
