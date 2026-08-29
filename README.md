@@ -182,7 +182,9 @@ Bugs found while porting, all with regression tests:
   thing to select, colour and delete. Thickness is a setting; a frame too small to
   hold anyone is refused and previewed in red rather than silently made.
 - **Contextual panels.** Selecting the pedestrian tool brings up brush size and
-  preferred space; running the simulation brings up speed. Both live in the full
+  preferred space; running the simulation brings up speed and preferred space,
+  since the room agents keep from each other is as much a live dial as the clock
+  they run on. Both live in the full
   settings panel too, but these are the cases where you change a value and want to
   see the effect immediately, without leaving the tool you are holding. Picking any
   tool closes the settings panel, which otherwise sits over the canvas you are

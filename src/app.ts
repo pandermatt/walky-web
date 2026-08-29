@@ -427,7 +427,8 @@ export class App {
 
   /**
    * Shows the handful of settings that matter to whatever is active: the brush
-   * controls while placing pedestrians, speed while the simulation runs.
+   * controls while placing pedestrians, speed and preferred space while the
+   * simulation runs.
    *
    * Both, when both are true. Painting a crowd into a running simulation is a
    * thing people do, and asking about the run first meant the brush controls
@@ -437,7 +438,14 @@ export class App {
     const brush = this.tool?.id === 'pedestrian';
     const keys: (keyof Settings)[] = [];
     if (brush) keys.push('brushSize', 'preferredSpace');
-    if (this.running) keys.push('speed');
+    if (this.running) {
+      keys.push('speed');
+      // Preferred space is not only the pitch a brushed block is painted at: it
+      // is the room agents keep from each other on every tick, so watching a
+      // crowd loosen or tighten as you drag it is exactly the case this panel
+      // exists for. The brush already put it up when both are active.
+      if (!brush) keys.push('preferredSpace');
+    }
     if (keys.length === 0) {
       this.contextPanel.hide();
       return;
