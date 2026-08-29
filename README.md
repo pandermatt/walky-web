@@ -179,6 +179,45 @@ walls whenever the map changes, so unlike merging it can never accumulate.
   point-in-polygon is a coin flip and half the surrounding lattice cells are
   illegal, so pedestrians could not stand on their own waypoint.
 
+## Installable, and offline in the strong sense
+
+Walky has no backend, no fonts from a CDN, no analytics and no third-party
+anything, so "works offline" is a fact that can be arranged rather than a
+degraded mode that has to be designed: every byte the page can ask for is in
+`dist/`. A service worker precaches all of it on install and then serves
+cache-first, so after the first visit the network is not consulted at all —
+whether or not there is one.
+
+The precache list is generated at build time by `build/pwa.ts` rather than
+written by hand. Rollup's filenames carry a content hash, so a hand-kept list is
+stale after the first edit, and a list that is one file short is a missing
+toolbar icon on the plane. The plugin takes the emitted bundle plus everything
+copied from `public/`, drops the worker itself, and substitutes both the list and
+a hash of its contents into `src/sw.ts`. That hash names the cache, so a new
+build lands in a new cache and the previous one is deleted on activation.
+
+Updating is offered, never imposed. The map you have drawn lives in memory and
+nowhere else, so a worker that reloaded the page to apply an update would throw
+away the crowd you were watching. The new worker takes over for the *next* load
+and the page shows a "new version is ready" chip with a Reload button; a first
+install shows "ready to run offline" instead, and that one retires itself after
+a few seconds. The worker is a production concern only — `npm run dev` registers
+nothing, and unregisters anything a previous production visit left behind on the
+same origin, which would otherwise serve yesterday's app over the file you just
+edited.
+
+Two things the manifest does not cover:
+
+- **iOS reads almost none of it.** The home-screen icon, the app name and
+  standalone display each need their own tag in `index.html`.
+- **Installed, the page runs edge to edge**, so the toolbar and the panels are
+  offset by `env(safe-area-inset-*)` instead of sitting under a notch.
+
+The app icons are derived from `images/icon.png` — the original's own pedestrian
+glyph — painted white on `#1E1E1E`, since a black glyph on transparency
+disappears against a dark home screen. The maskable variant keeps the figure
+inside the inner 80% so that a circular crop cannot take its head off.
+
 ## Performance
 
 Measured on an **Apple M3 Max, 36 GB, macOS 26.6.2, Node 24.19**, via
@@ -221,7 +260,15 @@ npm run build
 
 `npm run build` emits a fully static `dist/` — no backend, no auth, no analytics,
 no tracking. It deploys to Cloudflare Pages as-is; `_headers` sets caching and
-basic security headers.
+basic security headers, and keeps `sw.js` revalidated so a new build can reach
+anyone still holding the old one.
+
+```bash
+npm run preview
+```
+
+The service worker only exists in a build, so `npm run preview` is where to check
+the offline behaviour: load the page once, then kill the network and reload.
 
 ```bash
 npm test

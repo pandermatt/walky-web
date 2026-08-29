@@ -52,7 +52,9 @@ export const PANEL_CSS = `
 .wk-panel button:hover { background: #FFFFFF; }
 .wk-panel .note { margin: 6px 0 0; font-size: 12px; color: #4A4A4A; min-height: 15px; }
 #panels {
-  position: absolute; top: 12px; left: 84px; z-index: 11;
+  position: absolute; z-index: 11;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(84px + env(safe-area-inset-left));
   display: flex; flex-direction: column; gap: 8px;
   align-items: flex-start; pointer-events: none;
 }

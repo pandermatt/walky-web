@@ -6,6 +6,20 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# The worker is how a new build reaches anyone who already has the old one, so
+# it has to be revalidated rather than served from an intermediate cache.
+/sw.js
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
 /icons/*
   Cache-Control: public, max-age=604800
 
