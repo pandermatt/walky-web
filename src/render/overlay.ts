@@ -15,6 +15,10 @@ import type { CursorGhost, TargetLines } from '../tools/types';
 export const DASH = [9, 9];
 export const FAT_DASH = [21, 9, 3, 9];
 
+/** Badge colours for the rectangle tool's cursor ghost. */
+const GHOST_BLUE = '#2D6FD4';
+const GHOST_BLUE_EDGE = '#1B4E9E';
+
 /** A hull outline to draw, already expanded by the pedestrian radius. */
 export interface HullOutline {
   points: Point[];
@@ -223,10 +227,22 @@ export class Overlay {
     ctx.lineWidth = 1;
 
     switch (ghost.kind) {
-      case 'square':
-        ctx.setLineDash(DASH);
-        ctx.strokeRect(at[0] - r, at[1] - r, r * 2, r * 2);
+      case 'square': {
+        // A badge hanging off the pointer's lower-left, the way a tool cursor
+        // carries its icon. Fixed pixel size rather than world units: it says
+        // which tool is armed, so it should not grow or shrink with zoom, and it
+        // sits clear of the pointer instead of under it.
+        const size = 14;
+        const gap = 3;
+        const x = at[0] - size - gap;
+        const y = at[1] + gap;
+        ctx.fillStyle = GHOST_BLUE;
+        ctx.strokeStyle = GHOST_BLUE_EDGE;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(x, y, size, size);
+        ctx.strokeRect(x, y, size, size);
         break;
+      }
       case 'point':
         ctx.globalAlpha = 0.8;
         ctx.beginPath();

@@ -34,14 +34,10 @@ Two details worth stating, because they are easy to get wrong:
   24% land pastel. The palette is genuinely mixed; the `#C419C0`-type colours are
   the third of the distribution that sticks in memory.
 
-Toolbar icons are the original PNGs, unmodified — none needed redrawing for
-resolution, since they are 128–626px. The one exception is the rectangle wall
-tool, which is a new SVG: the original `addWallSquare.png` was a house-with-a-plus
-almost identical to the freehand wall icon beside it, so the two were hard to tell
-apart in the strip. It is now a blue square.
-
-The toolbar strip is light because the icons were drawn for Swing's light toolbar;
-`border.png` is a black outline that would vanish on a dark strip.
+All toolbar icons are the original PNGs, unmodified — none needed redrawing, since
+they are 128–626px. The toolbar strip is light because the icons were drawn for
+Swing's light toolbar; `border.png` is a black outline that would vanish on a dark
+strip.
 
 The original's 32×32 cursor PNGs are **not** used. A fixed-size cursor image can't
 show the real dimensions of what a tool is about to place — it can't grow with the

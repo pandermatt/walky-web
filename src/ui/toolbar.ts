@@ -17,10 +17,6 @@ interface ButtonSpec {
  * The strip is light because the original icons were drawn for Swing's light
  * toolbar -- border.png in particular is a black outline that would vanish on a
  * dark strip. Keeping the strip light is what makes the original art read as drawn.
- *
- * All icons are the original PNGs except the rectangle tool, which is an SVG. The
- * original addWallSquare.png was a house-with-a-plus nearly identical to the
- * freehand wall icon beside it, so the two were hard to tell apart in the strip.
  */
 const BUTTONS: ButtonSpec[] = [
   { key: 'start', icon: 'start.png', title: 'Start / pause', kind: 'action' },
@@ -28,7 +24,7 @@ const BUTTONS: ButtonSpec[] = [
   { key: 'clear', icon: 'clear.png', title: 'Clear map', kind: 'action' },
   { key: 'record', icon: 'record.png', title: 'Record', kind: 'action' },
   { key: 'wall', icon: 'addWall.png', title: 'Wall tool', kind: 'tool' },
-  { key: 'rectangle', icon: 'rectangle.svg', title: 'Rectangle wall tool', kind: 'tool' },
+  { key: 'rectangle', icon: 'addWallSquare.png', title: 'Rectangle wall tool', kind: 'tool' },
   { key: 'border', icon: 'border.png', title: 'Border tool', kind: 'tool' },
   { key: 'pedestrian', icon: 'pedestrian.png', title: 'Add pedestrians', kind: 'tool' },
   { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool' },
