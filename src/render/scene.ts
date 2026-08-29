@@ -1,6 +1,6 @@
 import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
 import { SolidPolygonLayer, ScatterplotLayer, LineLayer, PathLayer, IconLayer } from '@deck.gl/layers';
-import { BLUE, ORANGE, RED, WHITE, type RGB } from '../palette';
+import { BLUE, ORANGE, RED, WHITE, YELLOW, type RGB } from '../palette';
 
 export type Point = [number, number];
 
@@ -32,6 +32,7 @@ export interface Agent {
   color: RGB;
   radius: number;
   preferredSpace: number;
+  selected: boolean;
 }
 
 export interface SceneState {
@@ -163,10 +164,18 @@ export class Scene {
         filled: true,
         getFillColor: (a) => a.color as unknown as [number, number, number],
         stroked: true,
-        getLineColor: WHITE as unknown as [number, number, number],
+        // Selected pedestrians wear a thicker yellow ring instead of the white
+        // one, which is the original's selection colour.
+        getLineColor: (a) => (a.selected ? YELLOW : WHITE) as unknown as [number, number, number],
         lineWidthUnits: 'pixels',
-        getLineWidth: 1,
-        updateTriggers: { getPosition: agentRevision, getFillColor: agentRevision, getRadius: agentRevision },
+        getLineWidth: (a) => (a.selected ? 3 : 1),
+        updateTriggers: {
+          getPosition: agentRevision,
+          getFillColor: agentRevision,
+          getRadius: agentRevision,
+          getLineColor: agentRevision,
+          getLineWidth: agentRevision,
+        },
       }),
     ];
   }

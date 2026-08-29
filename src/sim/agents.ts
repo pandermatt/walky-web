@@ -42,6 +42,8 @@ export class Agents {
   stepsUntil: Float64Array;
   /** Remaining distance to the goal; lower means higher priority in a crowd. */
   costToGoal: Float32Array;
+  /** Lassoed by the selection tool; the mark-goal tool acts on these alone. */
+  selected: Uint8Array;
   count = 0;
 
   constructor(private capacity = 4096) {
@@ -60,6 +62,7 @@ export class Agents {
     this.stepsTaken = new Float64Array(capacity);
     this.stepsUntil = new Float64Array(capacity);
     this.costToGoal = new Float32Array(capacity).fill(Infinity);
+    this.selected = new Uint8Array(capacity);
   }
 
   add(at: Point, color: RGB = randomBrightColor()): number {
@@ -75,10 +78,29 @@ export class Agents {
     this.stepsTaken[i] = 0;
     this.stepsUntil[i] = 0;
     this.costToGoal[i] = Infinity;
+    this.selected[i] = 0;
     return i;
   }
 
   clear(): void { this.count = 0; }
+
+  clearSelection(): void {
+    this.selected.fill(0, 0, this.count);
+  }
+
+  get selectionCount(): number {
+    let n = 0;
+    for (let i = 0; i < this.count; i++) if (this.selected[i]) n++;
+    return n;
+  }
+
+  /** The pedestrian under a point, or -1. Topmost wins, as clicking expects. */
+  indexAt(p: Point, radius: number): number {
+    for (let i = this.count - 1; i >= 0; i--) {
+      if (Math.hypot(this.x[i] - p[0], this.y[i] - p[1]) <= radius) return i;
+    }
+    return -1;
+  }
 
   /**
    * Removes one agent by swapping the last into its slot. Order is not meaningful
@@ -99,6 +121,7 @@ export class Agents {
     this.stepsTaken[i] = this.stepsTaken[last];
     this.stepsUntil[i] = this.stepsUntil[last];
     this.costToGoal[i] = this.costToGoal[last];
+    this.selected[i] = this.selected[last];
   }
 
   /** Back to origin, as controller Resetable / Map.resetPedestrianLocation did. */
@@ -230,6 +253,7 @@ export class Agents {
     this.stepsTaken = copy(this.stepsTaken, (n) => new Float64Array(n));
     this.stepsUntil = copy(this.stepsUntil, (n) => new Float64Array(n));
     this.costToGoal = copy(this.costToGoal, (n) => new Float32Array(n));
+    this.selected = copy(this.selected, (n) => new Uint8Array(n));
     this.capacity = next;
   }
 }

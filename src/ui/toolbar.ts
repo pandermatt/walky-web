@@ -55,11 +55,12 @@ const CSS = `
 export class Toolbar {
   private root: HTMLDivElement;
   private buttons = new Map<string, HTMLButtonElement>();
-  private activeTool: ToolId;
+  /** null means no tool is armed, which is the state after a one-shot action. */
+  private activeTool: ToolId | null;
 
   constructor(
     parent: HTMLElement,
-    initialTool: ToolId,
+    initialTool: ToolId | null,
     private onTool: (id: ToolId) => void,
     private onAction: (id: ActionId) => void,
   ) {
@@ -99,16 +100,20 @@ export class Toolbar {
     parent.appendChild(this.root);
   }
 
-  selectTool(id: ToolId): void {
+  /**
+   * @param silent set when the app is telling the toolbar what happened, rather
+   *   than the user clicking -- avoids bouncing the change straight back.
+   */
+  selectTool(id: ToolId | null, silent = false): void {
     this.activeTool = id;
     for (const spec of BUTTONS) {
       if (spec.kind !== 'tool') continue;
       this.buttons.get(spec.key)?.setAttribute('aria-pressed', String(spec.key === id));
     }
-    this.onTool(id);
+    if (!silent && id) this.onTool(id);
   }
 
-  get tool(): ToolId { return this.activeTool; }
+  get tool(): ToolId | null { return this.activeTool; }
 
   /** Swaps the start icon for pause, as ToolboxPanel did on toggle. */
   setRunning(running: boolean): void {

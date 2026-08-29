@@ -289,3 +289,35 @@ describe('crowd deadlock', () => {
     }
   });
 });
+
+describe('selection', () => {
+  it('tracks, clears and hit-tests a selection', () => {
+    const agents = new Agents();
+    const a = agents.add([0, 0]);
+    const b = agents.add([100, 0]);
+    expect(agents.selectionCount).toBe(0);
+
+    agents.selected[a] = 1;
+    expect(agents.selectionCount).toBe(1);
+
+    // Hit testing picks the pedestrian under a point, and nothing elsewhere.
+    expect(agents.indexAt([2, 2], R)).toBe(a);
+    expect(agents.indexAt([100, 3], R)).toBe(b);
+    expect(agents.indexAt([500, 500], R)).toBe(-1);
+
+    agents.clearSelection();
+    expect(agents.selectionCount).toBe(0);
+  });
+
+  it('keeps selection consistent when an agent is removed', () => {
+    const agents = new Agents();
+    agents.add([0, 0]);
+    const keep = agents.add([100, 0]);
+    agents.selected[keep] = 1;
+    expect(agents.selectionCount).toBe(1);
+    // Removing swaps the last agent into the freed slot; the flag must travel.
+    agents.removeAt(0);
+    expect(agents.count).toBe(1);
+    expect(agents.selectionCount).toBe(1);
+  });
+});

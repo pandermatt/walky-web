@@ -12,8 +12,19 @@ export interface ToolContext {
   addTree(at: Point): void;
   addPedestrians(at: Point): void;
   setGoalAt(at: Point): void;
-  selectAt(at: Point, extend: boolean): void;
-  selectWithin(polygon: Point[], extend: boolean): void;
+  /** Select the pedestrian under a point (or clear, if there is none). */
+  selectPedestrianAt(at: Point, extend: boolean): void;
+  /** Select every pedestrian inside a lasso outline. */
+  selectPedestriansIn(lasso: Point[], extend: boolean): void;
+  /** Drop the current selection. */
+  clearSelection(): void;
+  /** How many pedestrians are currently selected. */
+  selectionCount(): number;
+  /**
+   * Put the toolbar back to no active tool. Used after a one-shot action has
+   * completed, so the next click cannot repeat it by accident.
+   */
+  deactivateTool(): void;
   panBy(dxScreen: number, dyScreen: number): void;
   requestRender(): void;
   /** Colour of the wall under a point, if any -- used to tint the goal preview. */

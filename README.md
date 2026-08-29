@@ -111,6 +111,15 @@ Bugs found while porting, all with regression tests:
   reproducible instead of describable. Falls back to the console if the browser
   refuses clipboard access.
 - **Rectangles can be dragged** as well as click-then-click-again.
+- **Lasso selection of pedestrians.** Drag around part of a crowd to select it
+  (shift adds to the selection); a quick straight drag falls back to a rectangular
+  marquee, since a fast drag reports too few points to form a lasso. Selected
+  pedestrians wear a yellow ring. The mark-goal tool then applies to the selection
+  alone, and with nothing selected it applies to everyone — which is what the
+  original did via `hasSelectedElements`.
+- **One-shot tools disarm themselves.** Assigning a goal clears the selection and
+  steps off the tool, so the next click cannot reassign by accident. Escape does
+  the same from anywhere.
 - **The mark-goal tool draws a line from every pedestrian to the pointer**, in the
   colour of the wall underneath — a port of `drawMarkTargetLine`, which used
   yellow. Since pedestrians wear their goal's colour, it previews what the crowd

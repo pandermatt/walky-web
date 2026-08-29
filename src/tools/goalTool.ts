@@ -4,11 +4,15 @@ import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type Tool
 /**
  * Marks a wall as the goal, from controller/MarkGoalToolMouseListener.
  *
- * While the tool is active it draws a line from every pedestrian to the pointer,
- * which is the original's drawMarkTargetLine. The original turned those lines
- * yellow when the pointer was over a wall; here they take the colour of the wall
- * underneath, so you can see which goal you are about to assign -- and, since
- * pedestrians wear their goal's colour, what the crowd is about to turn into.
+ * While the tool is active it draws a line from every pedestrian it would affect
+ * to the pointer, which is the original's drawMarkTargetLine. The original turned
+ * those lines yellow when the pointer was over a wall; here they take the colour
+ * of the wall underneath, so you can see which goal you are about to assign --
+ * and, since pedestrians wear their goal's colour, what the crowd will become.
+ *
+ * If a selection exists the goal applies to it alone (Map.setGoalForSelected
+ * Pedestrians); with nothing selected it applies to everyone, which is what the
+ * original did when no elements were selected.
  */
 export class GoalTool implements Tool {
   readonly id = 'goal' as const;
@@ -19,6 +23,10 @@ export class GoalTool implements Tool {
   onPointerDown(e: PointerInfo, ctx: ToolContext): void {
     if (e.buttons !== 1) return;
     ctx.setGoalAt(e.world);
+    // Assigning a goal completes the gesture: drop the selection it applied to,
+    // and step off the tool so the next click cannot reassign by accident.
+    ctx.clearSelection();
+    ctx.deactivateTool();
   }
 
   onPointerMove(e: PointerInfo, ctx: ToolContext): void {

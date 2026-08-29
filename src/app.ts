@@ -10,6 +10,7 @@ import { pointInPolygon, type Point } from './sim/geometry';
 import { Toolbar, type ActionId } from './ui/toolbar';
 import { serializeScenario, scenarioToJson, type SerializedAgent } from './state/scenario';
 import { SettingsPanel } from './ui/settingsPanel';
+import { SelectionTool } from './tools/selectionTool';
 import { WallTool } from './tools/wallTool';
 import { RectangleTool } from './tools/rectangleTool';
 import { ShiftTool } from './tools/shiftTool';
@@ -19,7 +20,7 @@ import { TreeTool } from './tools/treeTool';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb } from './sim/agents';
 import { SpatialHash } from './sim/spatialHash';
-import type { PointerInfo, Tool, ToolContext, ToolId } from './tools/types';
+import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolId } from './tools/types';
 
 export class App {
   private viewport = new Viewport();
@@ -38,7 +39,8 @@ export class App {
   private navDirty = true;
 
   private tools = new Map<ToolId, Tool>();
-  private tool: Tool;
+  /** No tool active is a real state: after a one-shot action, nothing is armed. */
+  private tool: Tool | null = null;
   private mouseWorld: Point | null = null;
   private lastScreen: Point | null = null;
   private frameRequested = false;
@@ -59,11 +61,11 @@ export class App {
 
     for (const t of [
       new WallTool(), new RectangleTool(), new ShiftTool(),
-      new PedestrianTool(), new GoalTool(), new TreeTool(),
+      new PedestrianTool(), new GoalTool(), new TreeTool(), new SelectionTool(),
     ]) {
       this.tools.set(t.id, t as Tool);
     }
-    this.tool = this.tools.get('rectangle')!;
+    this.tool = this.tools.get('rectangle') ?? null;
 
     this.toolbar = new Toolbar(
       stage,
@@ -112,25 +114,33 @@ export class App {
       for (const w of this.walls) w.isGoal = w.id === hit.id;
       this.navDirty = true;
       this.rebuildNavIfNeeded();
+      // With a selection, the goal applies to it alone; with nothing selected it
+      // applies to everyone, as Map.setGoalForSelectedPedestrians did.
+      const onlySelected = this.agents.selectionCount > 0;
       for (let i = 0; i < this.agents.count; i++) {
+        if (onlySelected && !this.agents.selected[i]) continue;
         this.agents.setGoal(i, hit.id, hit.color);
       }
       this.touch();
     },
-    selectAt: (at, extend) => {
-      for (const w of this.walls) {
-        const hit = wallContains(w, at);
-        w.selected = hit ? true : extend ? w.selected : false;
+    selectPedestrianAt: (at, extend) => {
+      if (!extend) this.agents.clearSelection();
+      const hit = this.agents.indexAt(at, this.settings.pedestrianRadius);
+      if (hit >= 0) this.agents.selected[hit] = 1;
+      this.touch();
+    },
+    selectPedestriansIn: (lasso, extend) => {
+      if (!extend) this.agents.clearSelection();
+      for (let i = 0; i < this.agents.count; i++) {
+        if (pointInPolygon(lasso, [this.agents.x[i], this.agents.y[i]])) {
+          this.agents.selected[i] = 1;
+        }
       }
       this.touch();
     },
-    selectWithin: (poly, extend) => {
-      for (const w of this.walls) {
-        const hit = w.polygons.flat().some((p: Point) => pointInPolygon(poly, p));
-        w.selected = hit ? true : extend ? w.selected : false;
-      }
-      this.touch();
-    },
+    clearSelection: () => { this.agents.clearSelection(); this.touch(); },
+    selectionCount: () => this.agents.selectionCount,
+    deactivateTool: () => this.setTool(null),
     panBy: (dx, dy) => this.viewport.panBy(dx, dy),
     requestRender: () => this.requestRender(),
     colorAt: (at) => {
@@ -167,27 +177,27 @@ export class App {
       (el as HTMLElement).setPointerCapture?.(ev.pointerId);
       const e = info(ev);
       this.lastScreen = e.screen;
-      this.tool.onPointerDown?.(e, this.context);
+      this.tool?.onPointerDown?.(e, this.context);
       this.requestRender();
     });
 
     el.addEventListener('pointermove', (ev) => {
       const e = info(ev);
       this.mouseWorld = e.world;
-      this.tool.onPointerMove?.(e, this.context);
+      this.tool?.onPointerMove?.(e, this.context);
       this.lastScreen = e.screen;
       if (this.settings.showDebug) this.requestRender();
     });
 
     el.addEventListener('pointerup', (ev) => {
       const e = info(ev);
-      this.tool.onPointerUp?.(e, this.context);
+      this.tool?.onPointerUp?.(e, this.context);
       this.lastScreen = null;
       this.requestRender();
     });
 
     el.addEventListener('dblclick', (ev) => {
-      this.tool.onDoubleClick?.(info(ev), this.context);
+      this.tool?.onDoubleClick?.(info(ev), this.context);
     });
 
     el.addEventListener('wheel', (ev) => {
@@ -200,20 +210,20 @@ export class App {
     el.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
     window.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Escape') { this.tool.cancel?.(); this.requestRender(); }
+      if (ev.key === 'Escape') { this.tool?.cancel?.(); this.agents.clearSelection(); this.setTool(null); }
     });
   }
 
-  private setTool(id: ToolId): void {
-    this.tool.cancel?.();
-    const next = this.tools.get(id);
-    if (next) this.tool = next;
+  private setTool(id: ToolId | null): void {
+    this.tool?.cancel?.();
+    this.tool = id ? this.tools.get(id) ?? null : null;
+    this.toolbar.selectTool(this.tool ? this.tool.id : null, true);
     this.applyCursor();
     this.requestRender();
   }
 
   private applyCursor(): void {
-    this.stage.style.cursor = this.tool.cursor;
+    this.stage.style.cursor = this.tool?.cursor ?? 'default';
   }
 
   private runAction(id: ActionId): void {
@@ -229,7 +239,7 @@ export class App {
         this.running = false;
         this.toolbar.setRunning(false);
         this.navDirty = true;
-        this.tool.cancel?.();
+        this.tool?.cancel?.();
         this.touch();
         break;
       case 'start':
@@ -450,7 +460,7 @@ export class App {
   }
 
   private drawOverlay(): void {
-    const preview = this.tool.preview();
+    const preview = this.tool?.preview() ?? EMPTY_PREVIEW;
     this.overlay.render({
       hulls: this.expandedHulls(),
       showConvexHull: this.settings.showConvexHull,
@@ -462,9 +472,10 @@ export class App {
       pedestrianRadius: this.settings.pedestrianRadius,
       cursorGhost: preview.cursorGhost,
       targetLines: preview.targetLines,
-      // Only gathered when something is actually going to draw them.
-      agentPositions: preview.targetLines ? this.context.agentPositions() : [],
-      agentColors: preview.targetLines ? this.agentColorList() : [],
+      // Only gathered when something is going to draw them, and only for the
+      // pedestrians the goal would actually apply to.
+      agentPositions: preview.targetLines ? this.targetableAgents() : [],
+      agentColors: preview.targetLines ? this.targetableColors() : [],
       mouseWorld: this.mouseWorld,
       debugLines: this.debugLines(),
     });
@@ -510,15 +521,29 @@ export class App {
         color: unpackRgb(this.agents.color[i]),
         radius: r,
         preferredSpace: space,
+        selected: this.agents.selected[i] === 1,
       };
     }
     return out;
   }
 
-  private agentColorList(): RGB[] {
-    const out: RGB[] = new Array(this.agents.count);
-    for (let i = 0; i < this.agents.count; i++) out[i] = unpackRgb(this.agents.color[i]);
+  /** The pedestrians a goal assignment would hit: the selection, or everyone. */
+  private targetableIndices(): number[] {
+    const onlySelected = this.agents.selectionCount > 0;
+    const out: number[] = [];
+    for (let i = 0; i < this.agents.count; i++) {
+      if (onlySelected && !this.agents.selected[i]) continue;
+      out.push(i);
+    }
     return out;
+  }
+
+  private targetableAgents(): Point[] {
+    return this.targetableIndices().map((i) => [this.agents.x[i], this.agents.y[i]] as Point);
+  }
+
+  private targetableColors(): RGB[] {
+    return this.targetableIndices().map((i) => unpackRgb(this.agents.color[i]));
   }
 
   /**
@@ -580,6 +605,7 @@ export class App {
     const m = this.mouseWorld;
     return [
       `Pedestrians Alive: ${this.agents.count}`,
+      `Selected: ${this.agents.selectionCount}`,
       `Walls: ${this.walls.length}`,
       `Zoom level: ${this.viewport.zoomLevel} (scale ${this.viewport.scale.toFixed(3)})`,
       m ? `X: ${Math.round(m[0])} / Y: ${Math.round(m[1])}` : 'X: - / Y: -',
