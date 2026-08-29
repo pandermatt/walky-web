@@ -11,6 +11,7 @@ import { groupWalls, type WallGroup } from './state/groups';
 import { Toolbar, type ActionId } from './ui/toolbar';
 import { serializeScenario, scenarioToJson, type SerializedAgent } from './state/scenario';
 import { SettingsSheet } from './ui/settingsSheet';
+import { confirmAction } from './ui/confirmDialog';
 import { ContextPanel } from './ui/contextPanel';
 import { BorderTool } from './tools/borderTool';
 import { SelectionTool } from './tools/selectionTool';
@@ -434,15 +435,7 @@ export class App {
         this.requestRender();
         break;
       case 'clear':
-        this.walls = [];
-        this.trees = [];
-        this.agents.clear();
-        this.running = false;
-        this.toolbar.setRunning(false);
-        this.updateContextPanel();
-        this.navDirty = true;
-        this.tool?.cancel?.();
-        this.touch();
+        void this.clearMap();
         break;
       case 'start':
         this.running = !this.running;
@@ -465,6 +458,39 @@ export class App {
         // record arrives with the MediaRecorder step
         break;
     }
+  }
+
+  /**
+   * Throws the map away, having asked first.
+   *
+   * The question is the whole point of the method: clear is one cell in a strip
+   * of them, there is no undo behind it, and a mis-tap that lands here costs
+   * every wall someone has drawn. Asked only when there is something to lose,
+   * though -- an alert over an empty map is a question with one answer, and
+   * confirming nothing teaches people to confirm without reading.
+   */
+  private async clearMap(): Promise<void> {
+    const empty = this.walls.length === 0 && this.trees.length === 0
+      && this.agents.count === 0;
+    if (!empty) {
+      const confirmed = await confirmAction({
+        title: 'Clear the map?',
+        message: 'Every wall, tree and pedestrian goes. This cannot be undone.',
+        confirmLabel: 'Clear',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+
+    this.walls = [];
+    this.trees = [];
+    this.agents.clear();
+    this.running = false;
+    this.toolbar.setRunning(false);
+    this.updateContextPanel();
+    this.navDirty = true;
+    this.tool?.cancel?.();
+    this.touch();
   }
 
   // ---- rendering ----------------------------------------------------------
