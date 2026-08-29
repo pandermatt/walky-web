@@ -1,4 +1,5 @@
 import type { ToolId } from '../tools/types';
+import { TOUCH } from './appShell';
 
 export type ActionId =
   | 'start' | 'clear' | 'record' | 'reset_pedestrians' | 'reset_zoom' | 'settings';
@@ -108,7 +109,7 @@ const CSS = `
  * ToolboxPanel's order for anything reading the document rather than looking
  * at it.
  */
-@media (pointer: coarse) {
+@media ${TOUCH} {
   html[data-standalone] #toolbar {
     top: auto;
     left: calc(12px + env(safe-area-inset-left, 0px));

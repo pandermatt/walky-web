@@ -112,6 +112,8 @@ export class App {
 
     this.settingsPanel = new SettingsPanel(
       panels, this.settings, onSettingChange, () => this.copyMapToClipboard(),
+      // As a page it also closes itself, on Done or on the back gesture.
+      () => this.toolbar.setPressed('settings', false),
     );
     this.contextPanel = new ContextPanel(panels, this.settings, onSettingChange);
 

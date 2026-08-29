@@ -1,3 +1,5 @@
+import { TOUCH } from './ui/appShell';
+
 /**
  * Service worker registration, and the one piece of UI it needs.
  *
@@ -28,7 +30,7 @@ const CSS = `
 /* The installed app's toolbar is a bar across the bottom, so the chip keeps its
    corner and sits above it -- --wk-toolbar-h is the bar's measured height (see
    ui/toolbar.ts) and 20px is the gap it floats at. */
-@media (pointer: coarse) {
+@media ${TOUCH} {
   html[data-standalone] #wk-toast {
     bottom: calc(28px + var(--wk-toolbar-h, 0px) + env(safe-area-inset-bottom, 0px));
     max-width: calc(100vw - 24px);

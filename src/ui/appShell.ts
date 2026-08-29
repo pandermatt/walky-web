@@ -13,6 +13,22 @@
 
 const STANDALONE = '(display-mode: standalone)';
 
+/**
+ * The other half of the condition, exported so that the rules which depend on
+ * it are written once. Installed on a desktop there is a pointer and room for
+ * the strip, so only a touch device gets the phone shape.
+ */
+export const TOUCH = '(pointer: coarse)';
+
+/**
+ * The same question the CSS asks, for the one decision that cannot be made in
+ * a stylesheet: whether opening settings should also push a history entry.
+ */
+export function isAppShell(): boolean {
+  return document.documentElement.hasAttribute('data-standalone')
+    && window.matchMedia(TOUCH).matches;
+}
+
 function isStandalone(query: MediaQueryList): boolean {
   return query.matches
     || (navigator as Navigator & { standalone?: boolean }).standalone === true;

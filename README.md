@@ -305,6 +305,26 @@ scroll: settings and a contextual panel open together are taller than a phone,
 which is the same problem the toolbar's own `max-height` was already solving one
 panel over.
 
+### And settings becomes a page
+
+A 232px card floating in a corner is a desktop shape. On a phone it covers most
+of the map anyway, so installed it stops pretending and becomes the screen: a
+title bar with a Done button, and a body that scrolls, with the spacing a thumb
+needs rather than a cursor's. The controls are the same controls in the same
+order — the markup is built once, the header is the heading it always was, and
+only the frame around it changes, in CSS.
+
+Opening it also pushes a history entry, which is the part that makes it a page
+rather than a sheet: installed there is no browser chrome and no back button,
+and the edge-swipe gesture is the way out people reach for. It needs an entry to
+pop. Done pops the same one, so leaving by either route costs the same and the
+history does not grow a step per visit. The URL never changes — there is one
+page here, and going back from settings lands where you already are.
+
+The contextual panels stay panels. They exist so you can change a value without
+leaving the tool in your hand, and a full screen is exactly the leaving they
+were built to avoid.
+
 ## Performance
 
 Measured on an **Apple M3 Max, 36 GB, macOS 26.6.2, Node 24.19**, via

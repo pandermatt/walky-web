@@ -1,4 +1,5 @@
 import type { Settings } from '../state/model';
+import { TOUCH } from './appShell';
 
 /**
  * Slider and checkbox builders shared by the settings panel and the small
@@ -50,6 +51,8 @@ export const PANEL_CSS = `
   background: #F7F7F7; border: 1px solid #B4B4B4; border-radius: 5px;
 }
 .wk-panel button:hover { background: #FFFFFF; }
+/* Only the page has a way out to offer; as a panel the toolbar button is it. */
+.wk-panel .done { display: none; }
 .wk-panel .note { margin: 6px 0 0; font-size: 12px; color: #4A4A4A; min-height: 15px; }
 #panels {
   position: absolute; z-index: 11; box-sizing: border-box;
@@ -73,11 +76,64 @@ export const PANEL_CSS = `
   touch-action: pan-y;
 }
 #panels > * { pointer-events: auto; }
-/* Installed on a touch device the strip is a bar across the bottom: the corner
-   it was being kept out of is free, and the room it leaves is what is above it.
-   --wk-toolbar-h is the bar's measured height (see ui/toolbar.ts) and 20px is
-   the gap it floats at. */
-@media (pointer: coarse) {
+/*
+ * Installed on a phone, settings stop being a panel and become a page.
+ *
+ * A 232px card floating in the corner covers most of a phone screen anyway, so
+ * the honest shape is the screen: a title bar with a way out, and a body that
+ * scrolls. It is the same markup either way -- the header is the heading it
+ * always was, the body a plain block -- so nothing has to be built twice.
+ *
+ * position: fixed, so the page escapes the bounded, scrolling column the panels
+ * live in; #panels is not a containing block for it (nothing here transforms),
+ * and only its z-index has to rise so that the page covers the update chip as
+ * well as the map.
+ */
+@media ${TOUCH} {
+  html[data-standalone] #panels { z-index: 30; }
+
+  html[data-standalone] .wk-settings {
+    position: fixed; inset: 0;
+    width: auto; padding: 0;
+    border: 0; border-radius: 0; box-shadow: none;
+    background: #ECECEC;
+    display: flex; flex-direction: column;
+  }
+  html[data-standalone] .wk-settings[hidden] { display: none; }
+  html[data-standalone] .wk-settings .head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    padding-bottom: 10px;
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(12px + env(safe-area-inset-right, 0px));
+    background: #F7F7F7; border-bottom: 1px solid #C4C4C4;
+  }
+  html[data-standalone] .wk-settings .head h2 { margin: 0; font-size: 17px; }
+  /* Auto width, unlike every other button in a panel, and the tap target a
+     thumb needs. */
+  html[data-standalone] .wk-settings .done {
+    display: block; width: auto; min-height: 36px; padding: 7px 14px;
+    font-weight: 600;
+  }
+  html[data-standalone] .wk-settings .body {
+    flex: 1; overflow-y: auto;
+    /* #stage turns touch panning off so a drag draws instead of scrolling the
+       map; the page has to opt back in to be scrollable at all. */
+    touch-action: pan-y;
+    padding-top: 14px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+  /* Room to hit: a 232px card's spacing is desktop spacing. */
+  html[data-standalone] .wk-settings .row { margin-bottom: 12px; }
+  html[data-standalone] .wk-settings .slider { margin-bottom: 18px; }
+  html[data-standalone] .wk-settings input[type=checkbox] { width: 20px; height: 20px; }
+
+  /* The strip is a bar across the bottom now: the corner the panels were being
+     kept out of is free, and the room they have is what is above it.
+     --wk-toolbar-h is the bar's measured height (see ui/toolbar.ts) and 20px is
+     the gap it floats at. */
   html[data-standalone] #panels {
     left: env(safe-area-inset-left, 0px);
     max-height: calc(
