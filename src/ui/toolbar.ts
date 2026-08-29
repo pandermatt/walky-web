@@ -222,6 +222,8 @@ export const TOOLBAR_CSS = `
 export class Toolbar {
   private root: HTMLDivElement;
   private buttons = new Map<string, HTMLButtonElement>();
+  /** The strip's last measured box; see publishMetrics and `frame`. */
+  private box: DOMRect = new DOMRect();
   /** null means no tool is armed, which is the state after a one-shot action. */
   private activeTool: ToolId | null;
 
@@ -289,11 +291,12 @@ export class Toolbar {
       this.root.appendChild(box);
     }
     parent.appendChild(this.root);
-    this.publishHeight();
+    this.publishMetrics();
   }
 
   /**
-   * Publishes the strip's height as --wk-toolbar-h.
+   * Measures the strip: publishes its height as --wk-toolbar-h and keeps `frame`
+   * current.
    *
    * The installed app's bar is a row of capsules that wraps according to the
    * screen, so it is one row deep in landscape and two in portrait, and both
@@ -301,14 +304,32 @@ export class Toolbar {
    * Measuring it here is what lets everything downstream stay a CSS rule
    * instead of a second copy of the wrapping logic.
    */
-  private publishHeight(): void {
+  private publishMetrics(): void {
     const write = () => {
-      const height = Math.round(this.root.getBoundingClientRect().height);
+      this.box = this.root.getBoundingClientRect();
+      const height = Math.round(this.box.height);
       document.documentElement.style.setProperty('--wk-toolbar-h', `${height}px`);
     };
     write();
     new ResizeObserver(write).observe(this.root);
+    // Where the strip is can change without its size changing: installed, the
+    // bar is pinned to the bottom edge, so a shorter window walks it up the
+    // screen while it stays exactly as big -- and an observer watching for a
+    // change of size hears nothing about that.
+    window.addEventListener('resize', write);
   }
+
+  /**
+   * The box the strip occupies, in CSS pixels.
+   *
+   * For the debug readout, which is painted on the overlay canvas so that it is
+   * there in a recording -- and a canvas cannot be asked to flow around a div,
+   * so whatever draws over the map has to be told where the bar is and step
+   * around it itself. Read from the measurement above rather than measured on
+   * demand: this is asked once a frame while the readout is on, and a
+   * getBoundingClientRect inside a render loop is a layout flush per frame.
+   */
+  get frame(): DOMRect { return this.box; }
 
   /**
    * @param silent set when the app is telling the toolbar what happened, rather

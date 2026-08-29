@@ -19,6 +19,61 @@ export const FAT_DASH = [21, 9, 3, 9];
 const GHOST_BLUE = '#2D6FD4';
 const GHOST_BLUE_EDGE = '#1B4E9E';
 
+/** How far in from the top-left the readout starts, as drawInformationString had it. */
+const DEBUG_MARGIN = 20;
+/** Baseline to baseline, also from the original. */
+const DEBUG_LINE_H = 20;
+/**
+ * The gap between the toolbar and a readout that has stepped around it -- the
+ * same 12px the strip itself is inset by, so the text lines up with the rhythm
+ * of the chrome rather than being pushed clear by an arbitrary amount.
+ */
+const DEBUG_CLEARANCE = 12;
+
+/** A box of screen, in CSS pixels. `DOMRect` satisfies it, which is the point. */
+export interface ScreenRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Where the debug readout starts, given the box the toolbar occupies.
+ *
+ * The readout belongs in the top-left corner -- that is where it has always
+ * been, and it is the corner of the map with the least in it. In a browser the
+ * toolbar is there too, a column of capsules 12px in from both edges over the
+ * top of the canvas, and it was covering the first few characters of every
+ * line: "Pedestrians Alive: 6" read as "strians Alive: 6". Installed on a phone
+ * the strip is a bar across the bottom instead and the corner is free.
+ *
+ * So rather than choosing a corner per platform, or repeating the media query
+ * that moves the bar, the text steps around wherever the bar actually is: an
+ * intersection test against its measured box, indenting past its right edge
+ * only when it genuinely overlaps. The width is measured rather than guessed
+ * because it is what decides whether a bar off to one side is in the way at all.
+ */
+export function debugTextOrigin(
+  lineCount: number,
+  textWidth: number,
+  bar: ScreenRect | null,
+): Point {
+  const origin: Point = [DEBUG_MARGIN, DEBUG_MARGIN];
+  if (!bar || lineCount === 0) return origin;
+
+  // The block of text: the top of the first line up to the baseline of the last.
+  // Close enough for an overlap test -- a descender either side of it changes
+  // nothing about whether a 600px column of buttons is in the way.
+  const top = DEBUG_MARGIN - DEBUG_LINE_H;
+  const bottom = DEBUG_MARGIN + (lineCount - 1) * DEBUG_LINE_H;
+  const overlaps = bar.left < DEBUG_MARGIN + textWidth && bar.right > DEBUG_MARGIN
+    && bar.top < bottom && bar.bottom > top;
+
+  if (overlaps) origin[0] = bar.right + DEBUG_CLEARANCE;
+  return origin;
+}
+
 /** An outline to draw, already expanded by the pedestrian radius. */
 export interface HullOutline {
   points: Point[];
@@ -34,6 +89,11 @@ export interface OverlayState {
    */
   hulls: HullOutline[];
   showDebug: boolean;
+  /**
+   * Where the toolbar is, so the readout can keep out of its way. Null when
+   * there is no readout to place, which is most of the time.
+   */
+  toolbarBox: ScreenRect | null;
   /** Points of a wall being drawn right now. */
   pendingWallPoints: Point[];
   pendingWallTracing: boolean;
@@ -88,7 +148,7 @@ export class Overlay {
     this.drawPendingPedestrians(state.pendingPedestrians, state.pedestrianRadius);
     this.drawTargetLines(state);
     this.drawCursorGhost(state.cursorGhost);
-    if (state.showDebug) this.drawDebug(state.debugLines);
+    if (state.showDebug) this.drawDebug(state.debugLines, state.toolbarBox);
   }
 
   /**
@@ -344,14 +404,23 @@ export class Overlay {
     ctx.restore();
   }
 
-  /** Ports drawInformationString(): white text pinned to the top-left. */
-  private drawDebug(lines: string[]): void {
+  /**
+   * Ports drawInformationString(): white text pinned to the top-left, stepped
+   * around the toolbar where the two share that corner (see debugTextOrigin).
+   *
+   * The font is set before the text is measured because measureText answers for
+   * whatever font the context is carrying, which on a fresh frame is the
+   * default sans one and not the monospace this draws in.
+   */
+  private drawDebug(lines: string[], toolbarBox: ScreenRect | null): void {
     const { ctx } = this;
     ctx.save();
     ctx.fillStyle = toCss(WHITE);
     ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textBaseline = 'alphabetic';
-    lines.forEach((line, i) => ctx.fillText(line, 20, 20 + i * 20));
+    const width = lines.reduce((w, line) => Math.max(w, ctx.measureText(line).width), 0);
+    const [x, y] = debugTextOrigin(lines.length, width, toolbarBox);
+    lines.forEach((line, i) => ctx.fillText(line, x, y + i * DEBUG_LINE_H));
     ctx.restore();
   }
 

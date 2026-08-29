@@ -1132,6 +1132,9 @@ export class App {
     this.overlay.render({
       hulls: this.expandedHulls(),
       showDebug: this.settings.showDebug,
+      // Only measured when something is going to be placed against it, the same
+      // as the target lines below.
+      toolbarBox: this.settings.showDebug ? this.toolbar.frame : null,
       pendingWallPoints: preview.pendingWallPoints,
       pendingWallTracing: preview.pendingWallTracing,
       pendingRect: preview.pendingRect,
