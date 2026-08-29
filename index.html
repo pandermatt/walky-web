@@ -2,8 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="A pedestrian simulator that runs entirely in the browser. Draw walls, mark a goal, paint a crowd, and watch it find its way." />
+    <meta name="theme-color" content="#1E1E1E" />
     <link rel="icon" href="./images/icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <!-- iOS reads none of the manifest: the home-screen icon, the app name and
+         the standalone display mode each need their own tag. -->
+    <link rel="apple-touch-icon" href="./images/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Walky" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <title>Walky</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1E1E1E; }

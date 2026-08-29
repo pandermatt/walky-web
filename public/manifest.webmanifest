@@ -1,0 +1,20 @@
+{
+  "name": "Walky — Pedestrian Simulator",
+  "short_name": "Walky",
+  "description": "Draw walls, mark a goal, paint a crowd, and watch it find its way. Runs entirely in the browser.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1E1E1E",
+  "theme_color": "#1E1E1E",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["education", "utilities"],
+  "icons": [
+    { "src": "./images/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./images/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./images/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
