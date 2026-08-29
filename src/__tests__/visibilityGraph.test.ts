@@ -204,3 +204,62 @@ describe('a wall whose parts cross each other', () => {
     expect(arrived).toBe(agents.count);
   });
 });
+
+describe('separate overlapping walls behave as one obstacle', () => {
+  // Removing auto-merge rests on this: two overlapping walls left separate must
+  // navigate exactly like the single merged wall they used to become.
+  const LEFT = rectanglePolygon([0, 0], [120, 60]);
+  const RIGHT = rectanglePolygon([100, 40], [220, 100]);
+
+  it('produces the same reachability whether merged or not', () => {
+    const goalPoly = rectanglePolygon([320, 30], [380, 90]);
+
+    const separateGoal = makeWall([goalPoly]);
+    separateGoal.isGoal = true;
+    const separate = buildVisibilityGraph(
+      [makeWall([LEFT]), makeWall([RIGHT]), separateGoal], RADIUS,
+    );
+
+    const mergedGoal = makeWall([goalPoly]);
+    mergedGoal.isGoal = true;
+    const merged = buildVisibilityGraph([makeWall([LEFT, RIGHT]), mergedGoal], RADIUS);
+
+    const reach = (g: ReturnType<typeof buildVisibilityGraph>, id: number) => {
+      const { dist } = dijkstra(g.csr, nodesOfWall(g, id));
+      return dist.filter(Number.isFinite).length / g.csr.nodeCount;
+    };
+    // Every node reachable in one case is reachable in the other.
+    expect(reach(separate, separateGoal.id)).toBe(1);
+    expect(reach(merged, mergedGoal.id)).toBe(1);
+  });
+
+  it('blocks a straight line through the union either way', () => {
+    const separate = buildVisibilityGraph([makeWall([LEFT]), makeWall([RIGHT])], RADIUS);
+    const merged = buildVisibilityGraph([makeWall([LEFT, RIGHT])], RADIUS);
+    // A line through the overlap region must be refused in both.
+    const from: Point = [60, -40];
+    const to: Point = [160, 140];
+    expect(isVisible(from, to, separate)).toBe(false);
+    expect(isVisible(from, to, merged)).toBe(false);
+  });
+
+  it('a pedestrian walks around the pair without cutting through it', () => {
+    const goal = makeWall([rectanglePolygon([320, 30], [380, 90])]);
+    goal.isGoal = true;
+    const nav = new Navigation();
+    nav.rebuild([makeWall([LEFT]), makeWall([RIGHT]), goal], RADIUS);
+
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    const i = agents.add([-80, 50]);
+    agents.setGoal(i, goal.id, goal.color);
+
+    for (let t = 0; t < 4000 && !agents.arrived[i]; t++) {
+      agents.step(nav, hash, 4, RADIUS, 30);
+      const x = agents.x[i], y = agents.y[i];
+      expect(x > 0 && x < 120 && y > 0 && y < 60).toBe(false);
+      expect(x > 100 && x < 220 && y > 40 && y < 100).toBe(false);
+    }
+    expect(agents.arrived[i]).toBe(1);
+  });
+});

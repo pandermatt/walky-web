@@ -125,6 +125,14 @@ Bugs found while porting, all with regression tests:
   pedestrians wear a yellow ring. The mark-goal tool then applies to the selection
   alone, and with nothing selected it applies to everyone — which is what the
   original did via `hasSelectedElements`.
+- **Enclosures.** The border tool draws a hollow rectangular frame you can trap a
+  crowd inside — drag it out, or click two corners. It is the one tool that makes
+  a shape with an *inside*; every other tool produces a filled polygon, so tracing
+  a boundary with them gives a blob rather than a room. The frame is four bars
+  that overlap at the corners, since bars meeting at a shared point can leave a
+  diagonal gap to slip through, and it is committed as a single wall so it is one
+  thing to select, colour and delete. Thickness is a setting; a frame too small to
+  hold anyone is refused and previewed in red rather than silently made.
 - **One-shot tools disarm themselves.** Assigning a goal clears the selection and
   steps off the tool, so the next click cannot reassign by accident. Escape does
   the same from anywhere.
@@ -132,6 +140,25 @@ Bugs found while porting, all with regression tests:
   colour of the wall underneath — a port of `drawMarkTargetLine`, which used
   yellow. Since pedestrians wear their goal's colour, it previews what the crowd
   is about to become.
+
+### Overlapping walls are no longer merged
+
+The original absorbed any wall a new shape overlapped into a single `Wall`. That
+existed because it navigated by **one convex hull per wall**, so two overlapping
+walls had to become one for the hull to cover their union. Convex decomposition
+removed the requirement — separate overlapping walls are already handled as
+independent obstacles — and merging then only did harm:
+
+- It cascaded. Draw an enclosure, then anything touching it, and the two became
+  one object; repeat and the whole map was a single wall with one colour and one
+  identity, impossible to select or delete apart.
+- It defeated the broad phase. A single map-sized wall shell never rejects
+  anything, so every visibility test walked every convex part.
+
+Shapes now keep their own identity, and the dashed outline is drawn once per
+*connected group* of touching shapes instead of per wall — the same picture
+merging gave, without fusing anything. Grouping is recomputed from the current
+walls whenever the map changes, so unlike merging it can never accumulate.
 
 ### Deliberate divergences
 

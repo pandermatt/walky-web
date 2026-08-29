@@ -3,13 +3,15 @@ import { Overlay } from './render/overlay';
 import { Viewport } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
-  DEFAULT_SETTINGS, makeWall, makeTree, refreshHull, wallContains, wallOverlapsPolygon,
+  DEFAULT_SETTINGS, makeWall, makeTree, wallContains,
   type Settings, type Tree, type Wall,
 } from './state/model';
-import { pointInPolygon, type Point } from './sim/geometry';
+import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
+import { groupWalls, type WallGroup } from './state/groups';
 import { Toolbar, type ActionId } from './ui/toolbar';
 import { serializeScenario, scenarioToJson, type SerializedAgent } from './state/scenario';
 import { SettingsPanel } from './ui/settingsPanel';
+import { BorderTool } from './tools/borderTool';
 import { SelectionTool } from './tools/selectionTool';
 import { WallTool } from './tools/wallTool';
 import { RectangleTool } from './tools/rectangleTool';
@@ -37,6 +39,8 @@ export class App {
   private hash = new SpatialHash();
   private running = false;
   private navDirty = true;
+  private groupCache: WallGroup[] | null = null;
+  private groupCacheRevision = -1;
 
   private tools = new Map<ToolId, Tool>();
   /** No tool active is a real state: after a one-shot action, nothing is armed. */
@@ -62,6 +66,7 @@ export class App {
     for (const t of [
       new WallTool(), new RectangleTool(), new ShiftTool(),
       new PedestrianTool(), new GoalTool(), new TreeTool(), new SelectionTool(),
+      new BorderTool(),
     ]) {
       this.tools.set(t.id, t as Tool);
     }
@@ -100,6 +105,8 @@ export class App {
 
   private context: ToolContext = {
     addWall: (polygon) => this.addWall(polygon),
+    addWallShape: (polygons) => this.addWallShape(polygons),
+    settings: () => this.settings,
     addTree: (at) => { this.trees = [...this.trees, makeTree(at)]; this.touch(); },
     pedestrianBlock: (at) => this.pedestrianBlock(at),
     addPedestrians: (at) => {
@@ -275,41 +282,31 @@ export class App {
   // ---- simulation ---------------------------------------------------------
 
   /**
-   * Adds a shape, merging it with any wall it overlaps.
+   * Adds a shape as its own wall.
    *
-   * Ports Map.addWall: a new shape drawn on top of existing ones absorbs them
-   * into a single wall, so the convex hull is recomputed over the union and the
-   * navigation graph sees one obstacle instead of several overlapping ones.
-   * Pedestrians caught under the new shape are removed, and any heading for a
-   * wall that got absorbed are retargeted onto the merged wall.
+   * It used to absorb every wall it overlapped into one, ported from
+   * Map.addWall. That existed because the original navigated by a single convex
+   * hull per wall, so two overlapping walls had to become one for the hull to
+   * cover their union. Convex decomposition removed that requirement -- separate
+   * overlapping walls are already handled as independent obstacles -- and
+   * merging then only did harm: it cascaded, so drawing anything against an
+   * enclosure swallowed the enclosure, and it defeated the broad phase, since a
+   * single map-sized wall shell never rejects anything.
+   *
+   * Shapes that touch are still drawn under one outline; see groupWalls.
    */
   private addWall(polygon: Point[]): boolean {
-    if (polygon.length < 3) return false;
+    return this.addWallShape([polygon]);
+  }
 
-    const overlapping = this.walls.filter((w) => wallOverlapsPolygon(w, polygon));
-    const survivors = this.walls.filter((w) => !overlapping.includes(w));
+  /** Adds one wall built from several polygons, as the border tool needs. */
+  private addWallShape(polygons: Point[][]): boolean {
+    const usable = polygons.filter((p) => p.length >= 3);
+    if (usable.length === 0) return false;
 
-    // The merged wall keeps the colour and goal status of what it absorbed, so a
-    // goal does not silently stop being a goal because something was drawn on it.
-    const inherited = overlapping.find((w) => w.isGoal) ?? overlapping[0];
-    const merged = makeWall(
-      [polygon, ...overlapping.flatMap((w) => w.polygons)],
-      inherited?.color,
-    );
-    merged.isGoal = overlapping.some((w) => w.isGoal);
-    refreshHull(merged);
-
-    this.walls = [...survivors, merged];
-
-    // Retarget anything that was heading for an absorbed wall.
-    const absorbed = new Set(overlapping.map((w) => w.id));
-    for (let i = 0; i < this.agents.count; i++) {
-      if (absorbed.has(this.agents.goal[i])) {
-        this.agents.setGoal(i, merged.id, merged.color);
-      }
-    }
-    this.removeAgentsUnder(merged);
-
+    const wall = makeWall(usable);
+    this.walls = [...this.walls, wall];
+    this.removeAgentsUnder(wall);
     this.navDirty = true;
     this.touch();
     return true;
@@ -330,12 +327,14 @@ export class App {
    */
   private expandedHulls(): { points: Point[]; color: RGB; faint: boolean }[] {
     const byId = new Map(this.walls.map((w) => [w.id, w.color]));
-    // The whole-wall convex hull is the outline the original drew, and it is worth
-    // keeping: on a convex wall it is the only line you see, and on a concave one
-    // it frames the shape while the parts show what actually blocks.
-    const shells = this.nav.shells.map((sh) => ({
-      points: sh.hull,
-      color: byId.get(sh.wallId) ?? WHITE,
+
+    // The solid outline is drawn once per connected group rather than per wall,
+    // so shapes drawn against each other still read as one object -- the look
+    // merging used to give, without merging their identities. Navigation keeps
+    // its own per-wall shells, which are tighter and so a better broad phase.
+    const shells = this.groups().map((g) => ({
+      points: expandPolygon(g.hull, this.settings.pedestrianRadius),
+      color: byId.get(g.wallIds[0]) ?? WHITE,
       faint: false,
     }));
     const parts = this.nav.obstacles.map((ob) => ({
@@ -344,6 +343,16 @@ export class App {
       faint: true,
     }));
     return [...parts, ...shells];
+  }
+
+  /** Connected wall groups, recomputed only when the map changes. */
+  private groups(): WallGroup[] {
+    if (this.groupCache && this.groupCacheRevision === this.worldRevision) {
+      return this.groupCache;
+    }
+    this.groupCache = groupWalls(this.walls);
+    this.groupCacheRevision = this.worldRevision;
+    return this.groupCache;
   }
 
   /**
@@ -469,6 +478,8 @@ export class App {
       pendingWallPoints: preview.pendingWallPoints,
       pendingWallTracing: preview.pendingWallTracing,
       pendingRect: preview.pendingRect,
+      pendingPolygons: preview.pendingPolygons,
+      pendingPolygonsInvalid: preview.pendingPolygonsInvalid,
       selectionPolygon: preview.selectionPolygon,
       pendingPedestrians: preview.pendingPedestrians,
       pedestrianRadius: this.settings.pedestrianRadius,

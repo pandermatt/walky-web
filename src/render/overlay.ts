@@ -1,4 +1,4 @@
-import { toCss, WHITE, YELLOW, type RGB } from '../palette';
+import { toCss, RED, WHITE, YELLOW, type RGB } from '../palette';
 import type { Point } from '../sim/geometry';
 import type { Viewport } from './viewport';
 import type { CursorGhost, TargetLines } from '../tools/types';
@@ -36,6 +36,9 @@ export interface OverlayState {
   pendingWallTracing: boolean;
   /** Rectangle preview, as two world-space corners. */
   pendingRect: [Point, Point] | null;
+  /** Arbitrary outlines to preview, e.g. the bars of a border frame. */
+  pendingPolygons: Point[][];
+  pendingPolygonsInvalid: boolean;
   /** Free-form selection outline. */
   selectionPolygon: Point[] | null;
   /** Ghost dots showing where the pedestrian brush would place. */
@@ -77,6 +80,7 @@ export class Overlay {
     if (state.showConvexHull) this.drawConvexHulls(state.hulls);
     this.drawPendingWall(state.pendingWallPoints, state.mouseWorld, state.pendingWallTracing);
     this.drawPendingRect(state.pendingRect);
+    this.drawPendingPolygons(state.pendingPolygons, state.pendingPolygonsInvalid);
     this.drawSelection(state.selectionPolygon);
     this.drawPendingPedestrians(state.pendingPedestrians, state.pedestrianRadius);
     this.drawTargetLines(state);
@@ -254,6 +258,17 @@ export class Overlay {
         ctx.strokeRect(x, y, size, size);
         break;
       }
+      case 'frame': {
+        // A hollow square badge: the border tool makes an outline, not a fill.
+        const size = 14;
+        const gap = 3;
+        const bx = at[0] + gap;
+        const by = at[1] + gap;
+        ctx.strokeStyle = GHOST_BLUE;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(bx + 1.5, by + 1.5, size - 3, size - 3);
+        break;
+      }
       case 'squiggle': {
         // The freehand wall tool's badge, in the same spot and colour as the
         // rectangle tool's square: a hand-drawn wave for a hand-drawn polygon.
@@ -295,6 +310,26 @@ export class Overlay {
         ctx.stroke();
         break;
       }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Outlines a tool is about to commit. Drawn red when the tool has flagged them
+   * as unusable -- a border frame too small to hold anyone, say -- so it is clear
+   * why releasing will do nothing.
+   */
+  private drawPendingPolygons(polygons: Point[][], invalid: boolean): void {
+    if (polygons.length === 0) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.setLineDash(DASH);
+    ctx.strokeStyle = invalid ? toCss(RED) : toCss(WHITE);
+    ctx.lineWidth = invalid ? 2 : 1;
+    for (const poly of polygons) {
+      if (poly.length < 2) continue;
+      this.tracePath(poly, true);
+      ctx.stroke();
     }
     ctx.restore();
   }

@@ -5,10 +5,9 @@ import { pointInPolygon, segmentsCross, type Point } from '../sim/geometry';
 export interface Wall {
   id: number;
   /**
-   * The shapes making up this wall. A wall starts as one polygon and gains more
-   * when another shape is drawn overlapping it -- the original merged intersecting
-   * walls into a single Wall rather than leaving them as separate obstacles
-   * (Map.addWall / Wall.merge).
+   * The shapes making up this wall. Usually one; the border tool builds a frame
+   * from four overlapping bars as a single wall, so the frame is one object to
+   * select, colour and delete.
    */
   polygons: Point[][];
   /**
@@ -38,6 +37,7 @@ export interface Settings {
   preferredSpace: number;
   speed: number;
   brushSize: number;
+  borderThickness: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -53,10 +53,50 @@ export const DEFAULT_SETTINGS: Settings = {
   // display. Speed is now how many steps a pedestrian may buy per frame.
   speed: 4,
   brushSize: 1,
+  // Mostly cosmetic: what a pedestrian actually cannot cross is the bar expanded
+  // by its radius, so thickness changes how the wall looks far more than how it
+  // blocks. The original used 2, which is a hairline on a modern display.
+  borderThickness: 12,
 };
 
 export const SPEED_MIN = 1;
 export const SPEED_MAX = 20;
+
+/**
+ * The four bars of a border frame, overlapping at the corners.
+ *
+ * Ports BorderToolMouseListener.addBorderFrom. Extending every bar past the
+ * corner by the thickness is what seals the frame: bars that merely met at a
+ * shared corner point could leave a diagonal gap for a pedestrian to slip
+ * through, which is exactly the failure an enclosure must not have.
+ */
+export function borderFrame(a: Point, b: Point, thickness: number): Point[][] {
+  const t = Math.max(1, thickness);
+  const left = Math.min(a[0], b[0]);
+  const right = Math.max(a[0], b[0]);
+  const top = Math.min(a[1], b[1]);
+  const bottom = Math.max(a[1], b[1]);
+  return [
+    rectanglePolygon([left - t, top - t], [right + t, top + t]),
+    rectanglePolygon([left - t, bottom - t], [right + t, bottom + t]),
+    rectanglePolygon([left - t, top - t], [left + t, bottom + t]),
+    rectanglePolygon([right - t, top - t], [right + t, bottom + t]),
+  ];
+}
+
+/**
+ * Whether a frame would leave usable space inside.
+ *
+ * Navigation pushes each bar out by the pedestrian radius, so the interior a
+ * pedestrian's centre can occupy shrinks by thickness + radius on every side.
+ * Below that the box is sealed solid, and drawing one would look like it worked
+ * while being unusable.
+ */
+export function borderFits(a: Point, b: Point, thickness: number, radius: number): boolean {
+  const margin = 2 * (Math.max(1, thickness) + radius);
+  return Math.abs(b[0] - a[0]) > margin + 2 * radius
+    && Math.abs(b[1] - a[1]) > margin + 2 * radius;
+}
 
 let nextId = 1;
 
@@ -73,11 +113,6 @@ export function makeWall(polygons: Point[][], color: RGB = randomBrightColor()):
     isGoal: false,
     selected: false,
   };
-}
-
-/** Recompute the hull after the polygon set changes. */
-export function refreshHull(wall: Wall): void {
-  wall.hull = monotoneChainHull(wall.polygons.flat());
 }
 
 export function wallContains(wall: Wall, p: Point): boolean {
@@ -100,6 +135,11 @@ export function polygonsOverlap(a: Point[], b: Point[]): boolean {
 
 export function wallOverlapsPolygon(wall: Wall, poly: Point[]): boolean {
   return wall.polygons.some((p) => polygonsOverlap(p, poly));
+}
+
+/** Whether two walls share any area or crossing edge. */
+export function wallsOverlap(a: Wall, b: Wall): boolean {
+  return a.polygons.some((p) => wallOverlapsPolygon(b, p));
 }
 
 export function makeTree(position: Point, radius = 22): Tree {

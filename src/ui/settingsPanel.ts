@@ -22,6 +22,7 @@ const SLIDERS: SliderSpec[] = [
   { key: 'pedestrianRadius', label: 'Pedestrian radius', min: 3, max: 40, step: 1 },
   { key: 'preferredSpace', label: 'Preferred space', min: 0, max: 90, step: 1 },
   { key: 'brushSize', label: 'Brush size', min: 1, max: 8, step: 1 },
+  { key: 'borderThickness', label: 'Border thickness', min: 2, max: 60, step: 1 },
 ];
 
 const CSS = `

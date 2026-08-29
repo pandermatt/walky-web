@@ -1,4 +1,5 @@
 import type { Point } from '../sim/geometry';
+import type { Settings } from '../state/model';
 
 export type ToolId =
   | 'wall' | 'rectangle' | 'border' | 'pedestrian'
@@ -7,6 +8,10 @@ export type ToolId =
 /** What a tool is allowed to do to the world, kept narrow on purpose. */
 export interface ToolContext {
   addWall(polygon: Point[]): boolean;
+  /** Adds one wall made of several polygons, as a border frame is. */
+  addWallShape(polygons: Point[][]): boolean;
+  /** Current settings, for tools that need sizes at preview time. */
+  settings(): Readonly<Settings>;
   /** Legal positions in the brush block centred on `at`, for placement and preview. */
   pedestrianBlock(at: Point): Point[];
   addTree(at: Point): void;
@@ -45,7 +50,7 @@ export interface ToolContext {
  * always previews the real thing at the real size, the way the pedestrian brush
  * already did.
  */
-export type GhostKind = 'square' | 'squiggle' | 'tree' | 'target' | 'none';
+export type GhostKind = 'square' | 'squiggle' | 'frame' | 'tree' | 'target' | 'none';
 
 export interface CursorGhost {
   kind: GhostKind;
@@ -67,6 +72,10 @@ export interface ToolPreview {
   /** True while tracing freehand: draw as a closing outline, not placed vertices. */
   pendingWallTracing: boolean;
   pendingRect: [Point, Point] | null;
+  /** Arbitrary outlines to preview, e.g. the bars of a border frame. */
+  pendingPolygons: Point[][];
+  /** Draw the pending outlines as a warning: the shape would be unusable. */
+  pendingPolygonsInvalid: boolean;
   selectionPolygon: Point[] | null;
   /** Where pedestrians would land if the brush fired now. */
   pendingPedestrians: Point[];
@@ -78,6 +87,8 @@ export const EMPTY_PREVIEW: ToolPreview = {
   pendingWallPoints: [],
   pendingWallTracing: false,
   pendingRect: null,
+  pendingPolygons: [],
+  pendingPolygonsInvalid: false,
   selectionPolygon: null,
   pendingPedestrians: [],
   cursorGhost: null,

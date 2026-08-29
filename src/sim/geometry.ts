@@ -82,6 +82,17 @@ export function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
   return ((o1 > 0) !== (o2 > 0)) && ((o3 > 0) !== (o4 > 0));
 }
 
+/** Shortest distance between two segments; 0 when they cross. */
+export function segmentDistance(a: Point, b: Point, c: Point, d: Point): number {
+  if (segmentsCross(a, b, c, d)) return 0;
+  return Math.min(
+    pointSegmentDistance(a, b, c),
+    pointSegmentDistance(a, b, d),
+    pointSegmentDistance(c, d, a),
+    pointSegmentDistance(c, d, b),
+  );
+}
+
 export function pointInPolygon(poly: Point[], p: Point): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
