@@ -683,6 +683,11 @@ export class App {
       }
       this.recordingChip.update(elapsed);
     }, 1000);
+
+    // The overlay changes the moment the recording does -- the speed appears,
+    // the pointer previews go -- and neither edge is a frame the loop would
+    // otherwise owe anybody if the crowd has already arrived.
+    this.requestRender();
   }
 
   /**
@@ -753,6 +758,8 @@ export class App {
     } finally {
       this.recordBusy = false;
       this.toolbar.setEnabled('record', true);
+      // The other edge: the readout comes down and the previews come back.
+      this.requestRender();
     }
   }
 
@@ -1140,6 +1147,16 @@ export class App {
 
   private drawOverlay(): void {
     const preview = this.tool?.preview() ?? EMPTY_PREVIEW;
+    // A recording is a picture of the crowd, and everything that follows the
+    // pointer -- the tool's badge, the fan of goal lines, the brush's ghost dots
+    // -- is chrome about what *you* are doing, trailing the mouse across every
+    // frame. Withheld here rather than in the tools: they go on reporting a
+    // preview, so the state a click commits from is unaffected, and the one
+    // decision lives in one place. The rubber-band segment of a wall being drawn
+    // is deliberately not in this list: that is the shape itself, and dropping it
+    // would mean drawing blind.
+    const recording = this.recorder.active;
+    const targetLines = recording ? null : preview.targetLines;
     this.overlay.render({
       hulls: this.expandedHulls(),
       showDebug: this.settings.showDebug,
@@ -1152,16 +1169,20 @@ export class App {
       pendingPolygons: preview.pendingPolygons,
       pendingPolygonsInvalid: preview.pendingPolygonsInvalid,
       selectionPolygon: preview.selectionPolygon,
-      pendingPedestrians: preview.pendingPedestrians,
+      pendingPedestrians: recording ? [] : preview.pendingPedestrians,
       pedestrianRadius: this.settings.pedestrianRadius,
-      cursorGhost: preview.cursorGhost,
-      targetLines: preview.targetLines,
+      cursorGhost: recording ? null : preview.cursorGhost,
+      targetLines,
       // Only gathered when something is going to draw them, and only for the
       // pedestrians the goal would actually apply to.
-      agentPositions: preview.targetLines ? this.targetableAgents() : [],
-      agentColors: preview.targetLines ? this.targetableColors() : [],
+      agentPositions: targetLines ? this.targetableAgents() : [],
+      agentColors: targetLines ? this.targetableColors() : [],
       mouseWorld: this.mouseWorld,
       debugLines: this.debugLines(),
+      // The speed is the one thing about a recorded run that the recording
+      // cannot otherwise show: the same crowd at 2 and at 12 is the same crowd.
+      // Read live, so dragging the slider mid-take is visible in the take.
+      speedReadout: recording ? `Speed ×${this.settings.speed}` : null,
     });
   }
 

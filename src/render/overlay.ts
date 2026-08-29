@@ -115,6 +115,12 @@ export interface OverlayState {
   agentColors: RGB[];
   mouseWorld: Point | null;
   debugLines: string[];
+  /**
+   * The line to show in the top-right corner, or null for the usual nothing.
+   * Handed over as text rather than as a number and a reason, the same as
+   * debugLines: what this layer knows is where a string goes.
+   */
+  speedReadout: string | null;
 }
 
 export class Overlay {
@@ -148,6 +154,7 @@ export class Overlay {
     this.drawPendingPedestrians(state.pendingPedestrians, state.pedestrianRadius);
     this.drawTargetLines(state);
     this.drawCursorGhost(state.cursorGhost);
+    if (state.speedReadout) this.drawSpeed(state.speedReadout);
     if (state.showDebug) this.drawDebug(state.debugLines, state.toolbarBox);
   }
 
@@ -401,6 +408,32 @@ export class Overlay {
     ctx.lineWidth = 1;
     this.tracePath(poly, true);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * A single line in the top-right corner, which is what a recording is given to
+   * say how fast the crowd it is showing was walking.
+   *
+   * That corner because it is the one the chrome never wants: the toolbar is a
+   * column in the top-left in a browser and a bar across the bottom when
+   * installed, and the recording clock is top centre. Bigger than the debug
+   * readout because this one is written to be read back from a video file, which
+   * has been scaled down at least once by the time anybody watches it, and a
+   * shadow underneath because unlike the debug block it has no reserved corner
+   * and may well be sitting over a pale wall.
+   */
+  private drawSpeed(text: string): void {
+    const { ctx } = this;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.fillStyle = toCss(WHITE);
+    ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(text, this.canvas.width / dpr - DEBUG_MARGIN, DEBUG_MARGIN);
     ctx.restore();
   }
 
