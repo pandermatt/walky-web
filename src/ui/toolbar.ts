@@ -1,5 +1,6 @@
 import type { ToolId } from '../tools/types';
 import { TOUCH } from './appShell';
+import { injectStyle, installTheme } from './theme';
 
 export type ActionId =
   | 'start' | 'clear' | 'record' | 'reset_pedestrians' | 'reset_zoom' | 'settings';
@@ -16,10 +17,10 @@ interface ButtonSpec {
 /**
  * Button order and icons follow gui/ToolboxPanel.
  *
- * Its separators are groups here rather than divider elements, because the
- * installed app lays each group out as its own capsule and a rule cannot make
- * a bar out of buttons that only have a line drawn between them. On the desktop
- * strip the divider is still what a group boundary looks like.
+ * Its separators are groups here rather than divider elements: each group is
+ * laid out as its own capsule, and a rule cannot make a bar out of buttons that
+ * only have a line drawn between them. The gap between two capsules is what the
+ * separator was saying.
  *
  * The strip is light because the original icons were drawn for Swing's light
  * toolbar -- border.png in particular is a black outline that would vanish on a
@@ -50,7 +51,7 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
   {
     name: 'view',
     buttons: [
-      { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom', kind: 'action' },
+      { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom and position', kind: 'action' },
       { key: 'settings', icon: 'settings.png', title: 'Settings', kind: 'toggle' },
     ],
   },
@@ -58,7 +59,22 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
 
 const BUTTONS: ButtonSpec[] = GROUPS.flatMap((group) => group.buttons);
 
-const CSS = `
+export const TOOLBAR_CSS = `
+/*
+ * The strip: capsules of glass with the 2016 icons in them.
+ *
+ * It used to be a grey Swing box on a laptop and a row of glass capsules on a
+ * phone, which is two toolbars to keep in step and was never a decision anybody
+ * made -- the phone one came later and the first was simply left where it was.
+ * The look is one look now. What still follows the device is the *placement*,
+ * because that was a real argument: installed there is no browser chrome, so the
+ * top-left corner is the far end of the screen from the hand holding the phone,
+ * and iOS puts navigation at the bottom for that reason. A pointer wants it in
+ * the corner. So the strip moves and the buttons do not change.
+ *
+ * The cells themselves come from ui/theme.ts; what is left here is where the
+ * thing sits.
+ */
 #toolbar {
   position: absolute; z-index: 10;
   /* The insets are 0 today: without viewport-fit=cover iOS insets the web view
@@ -67,47 +83,63 @@ const CSS = `
      turned on, rather than sitting under a notch until someone notices. */
   top: calc(12px + env(safe-area-inset-top, 0px));
   left: calc(12px + env(safe-area-inset-left, 0px));
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 6px; border-radius: 8px;
-  background: #ECECEC; border: 1px solid #9A9A9A;
-  box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
   /* Thirteen buttons do not fit a short window; without this the lower tools,
-     settings among them, are simply unreachable. */
+     settings among them, are simply unreachable. A wheel over a capsule scrolls
+     this, since the capsule is what takes the pointer. */
   max-height: calc(100vh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   scrollbar-width: thin;
+  /* Between the capsules the bar is not there at all: only they take a tap, or
+     the map would go dead across a band it is still visible through. */
+  pointer-events: none;
 }
-#toolbar .group { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
-#toolbar button { flex: 0 0 auto; }
-#toolbar button {
-  width: 40px; height: 40px; padding: 5px; cursor: pointer;
-  background: #F7F7F7; border: 1px solid #B4B4B4; border-radius: 5px;
-  display: grid; place-items: center;
-}
-#toolbar button:hover { background: #FFFFFF; }
-#toolbar button[aria-pressed="true"] { background: #C3D9F0; border-color: #4A7EBB; }
-#toolbar button img { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
-#toolbar .sep { height: 1px; background: #B4B4B4; margin: 3px 1px; }
 
 /*
- * The installed app, on a touch device: the strip becomes a row of capsules
- * floating over the bottom of the map.
+ * Liquid glass: a pane that samples the map behind it rather than covering it,
+ * so a wall passing underneath still reads through the bar.
  *
- * Installed there is no browser chrome, so the top-left corner is the far end
- * of the screen from the hand holding it, and every tool switch is a reach
- * across the whole map. iOS puts navigation at the bottom for that reason.
+ * saturate(180%) is the half that does the work -- blur alone gives frosted
+ * plastic, greyed and flat, and pushing saturation back up is what makes the
+ * colours behind bloom through. The inset highlight is the specular line along
+ * the top edge.
+ *
+ * The fallback is not decoration: backdrop-filter is the whole effect, and
+ * without it the pane is 72% opaque with the map legible through it. Where the
+ * filter is unsupported the capsule goes fully opaque instead.
+ */
+#toolbar .group {
+  pointer-events: auto;
+  display: flex; flex-direction: column; flex: 0 0 auto;
+  flex-wrap: wrap; justify-content: center;
+  gap: 4px; padding: 6px;
+  border-radius: var(--wk-r-cell);
+  background: var(--wk-bar);
+  border: var(--wk-glass-edge);
+  box-shadow: var(--wk-glass-shadow);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  #toolbar .group {
+    background: rgba(236, 236, 236, .72);
+    -webkit-backdrop-filter: var(--wk-glass-blur);
+    backdrop-filter: var(--wk-glass-blur);
+  }
+}
+
+/*
+ * Installed on a touch device the strip becomes a bar across the bottom.
  *
  * \`pointer: coarse\` rather than a width breakpoint: this is about the hand,
- * not the viewport, and a phone in landscape is 844px wide while still being
- * a phone. An installed desktop window keeps the strip, which is where a
- * pointer wants it.
+ * not the viewport, and a phone in landscape is 844px wide while still being a
+ * phone. An installed desktop window keeps the corner, which is where a pointer
+ * wants it.
  *
- * One capsule per group, wrapping, so the layout follows the screen instead of
- * being told about it: portrait puts the seven tools on their own row nearest
- * the thumb with the six others above, and landscape fits all three side by
- * side. \`order\` is what moves the tools capsule last; the buttons stay in
- * ToolboxPanel's order for anything reading the document rather than looking
- * at it.
+ * The capsules wrap, so the layout follows the screen instead of being told
+ * about it: portrait puts the seven tools on their own row nearest the thumb
+ * with the six others above, and landscape fits all three side by side.
+ * \`order\` is what moves the tools capsule last; the buttons stay in
+ * ToolboxPanel's order for anything reading the document rather than looking at
+ * it.
  */
 @media ${TOUCH} {
   html[data-standalone] #toolbar {
@@ -117,64 +149,10 @@ const CSS = `
     bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     flex-direction: row; flex-wrap: wrap;
     justify-content: center; align-items: flex-end;
-    gap: 8px; padding: 0;
     max-height: none; overflow: visible;
-    background: none; border: 0; box-shadow: none;
-    /* The bar is a band across the map with gaps between its capsules; only the
-       capsules should take a tap, or the map goes dead wherever one is not.
-       Same split as #panels. */
-    pointer-events: none;
   }
-  html[data-standalone] #toolbar .sep { display: none; }
+  html[data-standalone] #toolbar .group { flex-direction: row; }
   html[data-standalone] #toolbar .group[data-group="tools"] { order: 1; }
-
-  /*
-   * Liquid glass: a pane that samples the map behind it rather than covering
-   * it, so a wall passing underneath still reads through the bar.
-   *
-   * saturate(180%) is the half that does the work -- blur alone gives frosted
-   * plastic, greyed and flat, and pushing saturation back up is what makes the
-   * colours behind bloom through. The inset highlight is the specular line
-   * along the top edge.
-   *
-   * The fallback is not decoration: backdrop-filter is the whole effect, and
-   * without it the pane is 72% opaque with the map legible through it. Where
-   * the filter is unsupported the capsule goes fully opaque instead.
-   */
-  html[data-standalone] #toolbar .group {
-    pointer-events: auto;
-    flex-direction: row; flex-wrap: wrap; justify-content: center;
-    gap: 4px; padding: 6px;
-    border-radius: 999px;
-    background: #ECECEC;
-    /* A hairline and a soft, wide shadow: a floating bar reads as sitting a
-       little above the content, not as an outlined box drawn on top of it. */
-    border: .5px solid rgba(0, 0, 0, .08);
-    box-shadow: inset 0 .5px 0 0 rgba(255, 255, 255, .7), 0 6px 20px rgba(0, 0, 0, .38);
-  }
-  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-    html[data-standalone] #toolbar .group {
-      background: rgba(236, 236, 236, .72);
-      -webkit-backdrop-filter: blur(20px) saturate(180%);
-      backdrop-filter: blur(20px) saturate(180%);
-    }
-  }
-
-  /* A cell, not a button: the capsule is the object, and only the armed tool
-     wears a pill. 44px is the tap target a thumb needs. */
-  html[data-standalone] #toolbar button {
-    width: 44px; height: 44px; padding: 7px;
-    border-radius: 999px;
-    background: none; border-color: transparent;
-    transition: background-color .15s ease;
-  }
-  html[data-standalone] #toolbar button:hover { background: none; }
-  /* Dimming, which is how iOS acknowledges a tap; the icons are artwork and
-     cannot be tinted, so the cell tints instead. */
-  html[data-standalone] #toolbar button:active { opacity: .4; }
-  html[data-standalone] #toolbar button[aria-pressed="true"] {
-    background: rgba(0, 122, 255, .16); border-color: transparent;
-  }
 }
 `;
 
@@ -192,19 +170,13 @@ export class Toolbar {
   ) {
     this.activeTool = initialTool;
 
-    const style = document.createElement('style');
-    style.textContent = CSS;
-    document.head.appendChild(style);
+    installTheme();
+    injectStyle('toolbar', TOOLBAR_CSS);
 
     this.root = document.createElement('div');
     this.root.id = 'toolbar';
 
-    for (const [index, group] of GROUPS.entries()) {
-      if (index > 0) {
-        const sep = document.createElement('div');
-        sep.className = 'sep';
-        this.root.appendChild(sep);
-      }
+    for (const group of GROUPS) {
       const box = document.createElement('div');
       box.className = 'group';
       box.dataset.group = group.name;
@@ -212,10 +184,17 @@ export class Toolbar {
       for (const spec of group.buttons) {
         const btn = document.createElement('button');
         btn.type = 'button';
+        btn.className = 'wk-btn wk-btn--cell';
         btn.title = spec.title;
         btn.setAttribute('aria-label', spec.title);
-        if (spec.kind !== 'action') {
+        // A tool starts pressed if it is the armed one; a toggle starts on its
+        // own state, which is off. Comparing a toggle's key against the initial
+        // *tool* used to give the right answer by accident, which is worse than
+        // giving the wrong one.
+        if (spec.kind === 'tool') {
           btn.setAttribute('aria-pressed', String(spec.key === initialTool));
+        } else if (spec.kind === 'toggle') {
+          btn.setAttribute('aria-pressed', 'false');
         }
         const img = document.createElement('img');
         img.src = `./icons/${spec.icon}`;

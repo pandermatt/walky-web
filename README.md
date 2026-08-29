@@ -34,6 +34,22 @@ Two details worth stating, because they are easy to get wrong:
   24% land pastel. The palette is genuinely mixed; the `#C419C0`-type colours are
   the third of the distribution that sticks in memory.
 
+The chrome's accent is derived from that table rather than picked next to it. A
+tint has to be the app's own colour, and the app's own colour is the one the path
+to a goal is drawn in — `ORANGE`, `#FFC800`. At full strength it is a fill: a
+switch that is on, the lead-in behind a slider knob, the circle under the armed
+tool. As *text* it is unreadable — 1.4:1 on white — so tinted text is that same
+orange under `shadowOf`, which is `Color.darker()` applied twice: the operation
+that already derives the background above and the shadow every wall casts. It
+comes out `#7C6200` and measures 5.8:1 on white. The accent is therefore one
+colour and its own shadow, not two colours that happen to sit near each other,
+and both halves are computed in `ui/theme.ts` rather than written down.
+
+The bright fills carry a hairline. WCAG asks 3:1 of a control whose meaning *is*
+its colour, and `#FFC800` on a white cell is 1.4:1 — an outline is what makes a
+bright fill legible without dimming it, and "is that switch on?" is not a
+question to leave people answering wrong.
+
 All toolbar icons are the original PNGs, unmodified — none needed redrawing, since
 they are 128–626px. The toolbar strip is light because the icons were drawn for
 Swing's light toolbar; `border.png` is a black outline that would vanish on a dark
@@ -281,10 +297,19 @@ inside the inner 80% so that a circular crop cannot take its head off.
 
 Installed there is no browser chrome, which makes the top-left corner the far
 end of the screen from the hand holding the phone — every tool switch a reach
-across the whole map. In that one case the strip becomes a row of glass capsules
-floating over the bottom of it, in the shape and for the reason iOS puts
-navigation there. The pattern, the glass recipe included, is lifted from the tab
-bar in [pandermatt/bern-hackt-2026](https://github.com/pandermatt/bern-hackt-2026).
+across the whole map. In that one case the strip moves: the same glass capsules
+become a row floating over the bottom of it, in the shape and for the reason iOS
+puts navigation there. The pattern, the glass recipe included, is lifted from the
+tab bar in [pandermatt/bern-hackt-2026](https://github.com/pandermatt/bern-hackt-2026).
+
+What moves is the *placement*, and only that. The capsules, the cells and the
+tint under the armed tool are the same object on a laptop as on a phone. They
+used not to be — the strip was a grey Swing box in a browser and glass when
+installed, which was two toolbars to keep in step and was never a decision
+anybody made; the phone one came later and the first was simply left where it
+was. The one thing that still follows the device is the tap target, 40px for a
+pointer and 44px for a thumb, because that is a fact about the hand and not about
+the look.
 
 The condition is `pointer: coarse` and not a width breakpoint, because this is a
 fact about the hand rather than the viewport: a phone in landscape is 844px wide
@@ -300,10 +325,11 @@ bloom through. Where `backdrop-filter` is unsupported the capsule goes fully
 opaque instead, since without the filter that pane is a 72%-opaque sheet with
 the map legible through it.
 
-The armed tool wears a tinted circle rather than the desktop strip's outlined
-blue box, and a tap dims the cell rather than filling it: iOS acknowledges a
-touch by dimming, and these icons are artwork that cannot be tinted, so the cell
-does it on their behalf.
+The armed tool wears a tinted circle, and a press dims the cell rather than
+filling it: iOS acknowledges a touch by dimming, and these icons are artwork that
+cannot be tinted, so the cell does it on their behalf. It used to be an outlined
+blue box in a browser and a tinted circle when installed; it is the circle in
+both now, in Walky's orange rather than the system blue it was borrowed at.
 
 One capsule per group, and the groups are the three separators ToolboxPanel
 already had: run, tools, view. They wrap, so the layout follows the screen
@@ -315,55 +341,94 @@ clear whatever it came out to. Between the capsules the bar is not there at all:
 only they take a tap, or the map would go dead across a band it is still visible
 through.
 
-Two deliberate differences from the bar this borrows from. The cells carry icons
-and no labels — Walky's toolbar has never had words in it, and the original 2016
-icons are the vocabulary the desktop strip already teaches. And the panels
-scroll: settings and a contextual panel open together are taller than a phone,
-which is the same problem the toolbar's own `max-height` was already solving one
-panel over.
+One deliberate difference from the bar this borrows from: the cells carry icons
+and no labels. Walky's toolbar has never had words in it, and the original 2016
+icons are the vocabulary the desktop strip already teaches.
 
-### And settings becomes a page
+### And settings is one sheet
 
-A 232px card floating in a corner is a desktop shape. On a phone it covers most
-of the map anyway, so installed it stops pretending and becomes the screen, in
-the shape iOS gives a settings screen: a title bar with the title centred and a
-tinted **Done** on the right, groups of white cells on `#F2F2F7`, separators
-that start at the text rather than the card's edge, switches instead of
-checkboxes, and sliders with a blue lead-in and a knob big enough to catch. The
-sizes and colours are the real ones — 51×31 for a switch, `#007AFF` and
-`#34C759`, 10px corners, 35px between groups — because the shape is only
-convincing at the values it actually uses.
+Settings is a modal, in the shape iOS gives a settings screen: a title bar with
+the title centred and a tinted **Done** on the right, groups of white cells on
+`#F2F2F7`, separators that start at the text rather than the card's edge,
+switches instead of checkboxes, and sliders with a knob big enough to catch. The
+sizes are the real ones — 51×31 for a switch, 10px corners, 35px between groups —
+because the shape is only convincing at the values it actually uses. The colours
+are Walky's; see the accent above.
 
-It is the same markup either way. Each run of controls is a section, the rule
-that used to divide them rides along inside it, and as a page the section
-becomes the card and the rules go away, since the card's edges already say what
-the line was saying. The controls themselves are matched on the panel rather
-than the page, so the contextual panel gets the same slider you just left; that
-panel is the other thing floating over the map, so it is made of the same glass
-as the bar. Only the settings screen opts out of the glass — it is a screen, not
-something floating.
+The shape follows the device, and nothing else does: a centred card where there
+is room around it, the screen itself where there is not. There used to be two
+surfaces here — a 232px card floating in a corner of a browser, and a full-screen
+page when installed — and neither of them was a modal, which is why two things
+could be open at once and why closing it was never quite reliable.
 
-The light appearance and not the dark one, deliberately. The chrome over the map
-has to be light because the toolbar icons are 2016 artwork drawn for a light
-Swing toolbar, and a dark sheet arriving over a light bar would be the odd one
-out.
+It is a `<dialog>` opened with `showModal()`, and that one call is doing most of
+the work. The dimmed backdrop, the focus trap, Escape, and everything behind it
+going inert all come with it, so "never two open at once" stops being something
+the app tries to arrange and becomes something it cannot violate: while the sheet
+is up the toolbar is untappable, which is also what retires the race described
+below. The top layer means it is no longer in the panel column at all, so there
+is no longer a `z-index` to lose.
 
-It arrives and leaves as a sheet does, sliding from the bottom on iOS's own
-curve. That is a `display` transition with `allow-discrete` and `@starting-style`
-rather than a class and a timer, so a browser that does not know the at-rule
-simply shows the page, which is what it did before; `prefers-reduced-motion`
-turns it off outright.
+It arrives and leaves as a sheet does, sliding from the bottom when installed and
+settling into place in a browser, on iOS's own curve. Arriving is
+`@starting-style` and a `display` transition under `allow-discrete`. Leaving
+needed more care: a dialog drops out of the top layer the instant `close()` runs,
+which cuts the exit dead, and the `overlay` property that would hold it there is
+Chromium's alone. So the sheet is never closed while it is still moving — it
+animates out under its own `[open]` attribute and closes at the end of that. Same
+exit on every engine, and installed iOS, the shape where the slide-out actually
+reads, keeps it. `prefers-reduced-motion` turns the whole thing off outright.
 
-Opening it also pushes a history entry, which is the part that makes it a page
-rather than a sheet: installed there is no browser chrome and no back button,
-and the edge-swipe gesture is the way out people reach for. It needs an entry to
-pop. Done pops the same one, so leaving by either route costs the same and the
-history does not grow a step per visit. The URL never changes — there is one
-page here, and going back from settings lands where you already are.
+Opening it also pushes a history entry, installed: there is no browser chrome and
+no back button, and the edge-swipe gesture is the way out people reach for. It
+needs an entry to pop. Done pops the same one, so leaving by either route costs
+the same and the history does not grow a step per visit. The URL never changes —
+there is one page here, and going back from settings lands where you already are.
 
-The contextual panels stay panels. They exist so you can change a value without
-leaving the tool in your hand, and a full screen is exactly the leaving they
-were built to avoid.
+What that entry is tracked *by* changed, though. `history.back()` is a request the
+browser answers later, and a flag saying "we pushed one" could not tell our own
+answer from the user's gesture: re-opening before the answer arrived hid the
+sheet that had just opened and left an entry orphaned on the stack, and the next
+back gesture then walked out of the app. The entry carries a token now, and a
+`popstate` is read for which entry it landed on rather than merely counted — so
+the question "is our entry still the current one" has an answer instead of a
+guess.
+
+The name is at the foot of it, where iOS puts one. Walky has more reason than
+most to say what you are looking at: it is a rewrite, and the people whose
+project this was belong on the last line of it. The version comes from
+`package.json` through Vite's `define`, so the number on screen cannot drift from
+the one that shipped.
+
+The contextual panel stays a panel, and deliberately not a modal. It is an
+inspector on the thing already in your hand: it has no way out of its own because
+leaving it is picking up a different tool, and taking the map away would be
+exactly the leaving it exists to avoid. It needs no coordination with the sheet
+either — `showModal()` inerts the whole document outside the sheet, so while
+settings is up the panel is untabbable and untouchable without containing a
+single line that knows sheets exist.
+
+### One button, four places
+
+Every button in the app is one of four roles — an icon cell in a bar, a tinted
+text button, the heavier one a title bar carries, and a row across a grouped card
+— and all four are defined once, in `ui/theme.ts`, on top of a set of custom
+properties.
+
+They were not. Three stylesheets defined eight button looks between them, and two
+of those looks were the same idea transcribed three times each: the Swing-grey
+cell with padding that had drifted to `5px`, `7px 10px` and `5px 10px`, and the
+tinted text button whose metrics had drifted the same way. The press dimmed to
+`.4` in the toolbar and `.3` in the other three places. None of that was a
+decision; it was four transcriptions of one, and the drift is what transcription
+does.
+
+The stylesheets are plain strings, which means the things that would otherwise
+only be visible in a browser are checkable without one:
+`src/__tests__/theme.test.ts` asserts that the retired colours have not crept
+back, that every `var(--wk-…)` in any of them resolves to a property that is
+actually declared — a misspelt custom property fails silently in CSS — and that
+every `:active` opacity comes from the one token.
 
 ## Performance
 

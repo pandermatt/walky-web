@@ -69,3 +69,57 @@ describe('Viewport.zoomByRatio', () => {
     expect(fingers.targetY).toBeCloseTo(wheel.targetY, 8);
   });
 });
+
+describe('Viewport.reset', () => {
+  it('brings the drawing back after panning away from it', () => {
+    const v = view();
+    const bounds = { minX: -50, minY: -40, maxX: 50, maxY: 40 };
+    v.zoomAt([200, 150], 6);
+    v.panBy(-4000, -3000);
+    expect(v.worldToScreen([0, 0])[0]).toBeLessThan(0); // the map is off screen
+
+    v.reset(bounds);
+
+    expect(v.zoomLevel).toBe(0);
+    expect(v.targetX).toBe(0);
+    expect(v.targetY).toBe(0);
+    const centre = v.worldToScreen([0, 0]);
+    expect(centre[0]).toBeCloseTo(v.width / 2, 8);
+    expect(centre[1]).toBeCloseTo(v.height / 2, 8);
+  });
+
+  it('centres on the drawing wherever it was made', () => {
+    const v = view();
+    v.reset({ minX: 900, minY: 400, maxX: 1000, maxY: 500 });
+    expect(v.zoomLevel).toBe(0);
+    expect(v.targetX).toBe(950);
+    expect(v.targetY).toBe(450);
+    const corner = v.worldToScreen([900, 400]);
+    expect(corner[0]).toBeGreaterThan(0);
+    expect(corner[1]).toBeGreaterThan(0);
+  });
+
+  it('zooms out far enough for a map too big for the starting zoom', () => {
+    const v = view();
+    const bounds = { minX: -600, minY: -450, maxX: 600, maxY: 450 };
+    v.reset(bounds);
+    expect(v.zoomLevel).toBeGreaterThan(0);
+    for (const corner of [[-600, -450], [600, 450]] as [number, number][]) {
+      const [sx, sy] = v.worldToScreen(corner);
+      expect(sx).toBeGreaterThanOrEqual(0);
+      expect(sx).toBeLessThanOrEqual(v.width);
+      expect(sy).toBeGreaterThanOrEqual(0);
+      expect(sy).toBeLessThanOrEqual(v.height);
+    }
+  });
+
+  it('goes to the origin at the starting zoom with nothing drawn', () => {
+    const v = view();
+    v.zoomAt([200, 150], -4);
+    v.panBy(500, 500);
+    v.reset(null);
+    expect(v.zoomLevel).toBe(0);
+    expect(v.targetX).toBe(0);
+    expect(v.targetY).toBe(0);
+  });
+});

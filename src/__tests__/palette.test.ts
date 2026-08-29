@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { javaDarker, shadowOf, randomBrightColor, BACKGROUND, toHex, type RGB } from '../palette';
+import {
+  javaDarker, shadowOf, randomBrightColor, BACKGROUND, toHex, withAlpha, relativeLuminance,
+  type RGB,
+} from '../palette';
 
 describe('javaDarker', () => {
   it('matches Java Color.darker() truncation on the brief\'s real examples', () => {
@@ -60,5 +63,18 @@ describe('randomBrightColor', () => {
       c.forEach((v, idx) => { if (v >= 150) seen.add(idx); });
     }
     expect(seen).toEqual(new Set([0, 1, 2]));
+  });
+});
+
+describe('withAlpha', () => {
+  it('keeps the channels and adds the alpha', () => {
+    expect(withAlpha([255, 200, 0], 0.28)).toBe('rgba(255,200,0,0.28)');
+  });
+});
+
+describe('relativeLuminance', () => {
+  it('runs from black to white', () => {
+    expect(relativeLuminance([0, 0, 0])).toBe(0);
+    expect(relativeLuminance([255, 255, 255])).toBeCloseTo(1, 10);
   });
 });
