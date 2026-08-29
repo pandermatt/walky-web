@@ -255,17 +255,26 @@ export class Agents {
   /**
    * Back to origin, as controller Resetable / Map.resetPedestrianLocation did.
    *
-   * The colour is drawn again rather than kept. A run leaves it saying what
-   * happened -- black for everyone who arrived -- and a crowd put back on its
-   * starting line still wearing the last run's result reads as a crowd that has
-   * already finished. A fresh colour makes it a fresh crowd, the same one `add`
-   * gives a pedestrian that has never walked anywhere.
+   * The colour is painted again rather than kept, because a run leaves it saying
+   * what happened -- black for everyone who arrived -- and a crowd put back on
+   * its starting line still wearing the last run's result reads as a crowd that
+   * has already finished.
+   *
+   * What it is painted is what the pedestrian is about to do: one still bound for
+   * a goal gets that goal's colour, exactly as `setGoal` gave it, so the crowd
+   * goes on matching the wall it is walking to. Only a pedestrian with nowhere to
+   * be has no such colour to take, and gets a fresh random bright one -- the same
+   * `add` gives a pedestrian that has never walked anywhere.
+   *
+   * `goalColors` maps wall id to colour; a goal missing from it -- a wall deleted
+   * since, or a caller that has none to offer -- is a pedestrian with nowhere to
+   * be, and is coloured as one.
    */
-  resetPositions(): void {
+  resetPositions(goalColors: ReadonlyMap<number, RGB> = new Map()): void {
     for (let i = 0; i < this.count; i++) {
       this.x[i] = this.originX[i];
       this.y[i] = this.originY[i];
-      this.color[i] = packRgb(randomBrightColor());
+      this.color[i] = packRgb(goalColors.get(this.goal[i]) ?? randomBrightColor());
       this.arrived[i] = 0;
       this.hasWaypoint[i] = 0;
       this.speedCounter[i] = 0;

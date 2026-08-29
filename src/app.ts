@@ -597,7 +597,7 @@ export class App {
         void this.toggleRecording();
         break;
       case 'reset_pedestrians':
-        this.agents.resetPositions();
+        this.agents.resetPositions(this.wallColors());
         this.touch();
         break;
       case 'settings':
@@ -886,6 +886,11 @@ export class App {
     }
   }
 
+  /** Every wall's colour by id, for the things that colour themselves after one. */
+  private wallColors(): ReadonlyMap<number, RGB> {
+    return new Map(this.walls.map((w) => [w.id, w.color]));
+  }
+
   /**
    * The outlines to draw, each grown by the pedestrian radius -- the boundary a
    * pedestrian's centre must stay outside of.
@@ -895,7 +900,7 @@ export class App {
    * was decomposed into. Off, a set costs nothing per frame.
    */
   private expandedHulls(): { points: Point[]; color: RGB; faint: boolean }[] {
-    const byId = new Map(this.walls.map((w) => [w.id, w.color]));
+    const byId = this.wallColors();
 
     // The solid outline is drawn once per connected group rather than per wall,
     // so shapes drawn against each other still read as one object -- the look

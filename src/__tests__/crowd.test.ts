@@ -333,9 +333,10 @@ describe('crowd state stays sound', () => {
     expect(Array.from(agents.trait.slice(0, agents.count))).toEqual(before);
   });
 
-  it('gives a reset crowd fresh colours instead of the last run\'s', () => {
+  it('puts a reset crowd back in the colour of the goal it is walking to', () => {
     // Arriving turns a pedestrian black. Reset puts it back at the start, so it
-    // must stop looking like one that has already finished.
+    // must stop looking like one that has already finished -- and it is still
+    // bound for the same wall, so it is that wall's colour it goes back to.
     const { nav, goal } = corridor();
     const agents = new Agents();
     const hash = new SpatialHash();
@@ -347,7 +348,34 @@ describe('crowd state stays sound', () => {
       new Array(agents.count).fill(black),
     );
 
-    agents.resetPositions();
+    agents.resetPositions(new Map([[goal.id, goal.color]]));
+    expect(Array.from(agents.color.slice(0, agents.count))).toEqual(
+      new Array(agents.count).fill(packRgb(goal.color)),
+    );
+  });
+
+  it('gives a reset pedestrian with nowhere to be a fresh colour', () => {
+    // Nothing to take a colour from, and the one it has says nothing about where
+    // it is going, so it starts over as a new pedestrian does.
+    const { goal } = corridor();
+    const agents = new Agents();
+    const i = agents.add([0, 0], [1, 2, 3]);
+    expect(agents.color[i]).toBe(packRgb([1, 2, 3]));
+
+    agents.resetPositions(new Map([[goal.id, goal.color]]));
+    expect(agents.color[i]).not.toBe(packRgb([1, 2, 3]));
+    expect(agents.color[i]).not.toBe(packRgb(goal.color));
+  });
+
+  it('treats a pedestrian whose goal wall is gone as one with nowhere to be', () => {
+    const { nav, goal } = corridor();
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 2, 2, 300, -60, 20);
+    for (let t = 0; t < 200; t++) agents.step(nav, hash, 4, R, 30);
+
+    agents.resetPositions(new Map());
+    const black = packRgb(BLACK);
     for (let i = 0; i < agents.count; i++) expect(agents.color[i]).not.toBe(black);
   });
 });
