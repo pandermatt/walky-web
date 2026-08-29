@@ -28,9 +28,15 @@ export const LABEL_MIN_PX = 5;
 /** Badge colours for the rectangle tool's cursor ghost. */
 const GHOST_BLUE = '#2D6FD4';
 const GHOST_BLUE_EDGE = '#1B4E9E';
-/** The eraser's, in the same pair: this badge takes away rather than adds. */
-const GHOST_RED = '#D43A2D';
-const GHOST_RED_EDGE = '#8E241B';
+/**
+ * The eraser's badge is the icon on its own cell, not a coloured block.
+ *
+ * White where the icon is black, because the two sit on opposite grounds: the
+ * strip is light and the map is dark. What carries across is the drawing --
+ * the leaning block with the seam across it -- which is what makes the thing
+ * under the pointer recognisably the thing that was clicked.
+ */
+const GHOST_ERASER_EDGE = '#1B1B1B';
 
 /** How far in from the edges the readout sits, as drawInformationString had it. */
 const DEBUG_MARGIN = 20;
@@ -488,23 +494,46 @@ export class Overlay {
         break;
       }
       case 'eraser': {
-        // The same badge as the drawing tools carry, leaning like the icon and
-        // red rather than blue -- the one tool on the strip that removes.
+        // The icon itself, in the same badge position the drawing tools use: the
+        // block leaning to the right with the seam across its used end, drawn
+        // white on the map the way it is drawn black on the strip.
         const size = 14;
         const gap = 3;
         const x = at[0] + gap;
         const y = at[1] + gap;
+        // The four corners of the leaning block, and the seam parallel to its
+        // ends -- the same proportions as the paths in icons/erase.svg.
+        const corners: Point[] = [
+          [x + size * 0.34, y + size],
+          [x, y + size * 0.66],
+          [x + size * 0.66, y],
+          [x + size, y + size * 0.34],
+        ];
         const block = new Path2D();
-        block.moveTo(x + size * 0.34, y + size);
-        block.lineTo(x, y + size * 0.66);
-        block.lineTo(x + size * 0.66, y);
-        block.lineTo(x + size, y + size * 0.34);
+        block.moveTo(corners[0][0], corners[0][1]);
+        for (const [cx, cy] of corners.slice(1)) block.lineTo(cx, cy);
         block.closePath();
-        ctx.fillStyle = GHOST_RED;
-        ctx.strokeStyle = GHOST_RED_EDGE;
+
+        const seam = new Path2D();
+        const along = 0.42;
+        seam.moveTo(
+          corners[1][0] + (corners[2][0] - corners[1][0]) * along,
+          corners[1][1] + (corners[2][1] - corners[1][1]) * along,
+        );
+        seam.lineTo(
+          corners[0][0] + (corners[3][0] - corners[0][0]) * along,
+          corners[0][1] + (corners[3][1] - corners[0][1]) * along,
+        );
+
+        ctx.fillStyle = toCss(WHITE);
+        ctx.strokeStyle = GHOST_ERASER_EDGE;
         ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
         ctx.fill(block);
         ctx.stroke(block);
+        // Dark on the white block, as it is on the white cell: the seam is the
+        // line that says which end of an eraser has been used.
+        ctx.stroke(seam);
         break;
       }
       case 'target': {
