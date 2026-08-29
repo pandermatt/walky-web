@@ -60,6 +60,17 @@ export class Agents {
   /** Consecutive steps spent standing still; patience that runs out. */
   waited: Float32Array;
   /**
+   * How hard the crowd behind is pressing on this pedestrian.
+   *
+   * The one genuinely physical quantity in the model. Everything else here is a
+   * pedestrian deciding something; this is a thing done to it. It accumulates from
+   * neighbours who want to be where it is standing and cannot get there, and it
+   * carries their pressure onward as well as their own, so it builds through a
+   * queue and is greatest at the front -- which is the whole point. Whoever is
+   * against the barrier feels the entire crowd, not just the person behind them.
+   */
+  pressure: Float32Array;
+  /**
    * A stable number in [0,1) that makes this pedestrian slightly its own person:
    * how much room it keeps and how briskly it walks are both scaled by it.
    *
@@ -74,6 +85,20 @@ export class Agents {
    * four things a map edit can actually change.
    */
   trait: Float32Array;
+  /**
+   * Where this pedestrian sits between giving way and getting on with it.
+   *
+   * Nought is somebody who keeps their distance, defers, and will stand and wait
+   * as long as it takes. One is somebody who walks close enough to make you move,
+   * leans on whoever is in front, and finds waiting intolerable.
+   *
+   * It is the one place personal space stops being symmetric, and that asymmetry
+   * is the whole point: an assertive pedestrian both wants less room for itself
+   * and takes up more of everyone else's, so two of them meeting is a scrum and
+   * two polite ones is an apology. A crowd of identical middling people has
+   * neither, and reads as machinery.
+   */
+  assertiveness: Float32Array;
   /**
    * The room this pedestrian actually kept on its last step, after its own
    * temperament and the crush around it. Read by the preferred-radius overlay, so
@@ -110,7 +135,9 @@ export class Agents {
     this.headingX = new Float32Array(capacity);
     this.headingY = new Float32Array(capacity);
     this.waited = new Float32Array(capacity);
+    this.pressure = new Float32Array(capacity);
     this.trait = new Float32Array(capacity);
+    this.assertiveness = new Float32Array(capacity);
     this.effectiveSpace = new Float32Array(capacity);
     this.costToGoal = new Float32Array(capacity).fill(Infinity);
     this.selected = new Uint8Array(capacity);
@@ -129,7 +156,9 @@ export class Agents {
     this.headingX[i] = 0;
     this.headingY[i] = 0;
     this.waited[i] = 0;
-    this.trait[i] = traitOf(at[0], at[1]);
+    this.pressure[i] = 0;
+    this.trait[i] = traitOf(at[0], at[1], SPACE_SEED);
+    this.assertiveness[i] = traitOf(at[0], at[1], NERVE_SEED);
     this.effectiveSpace[i] = 0;
     this.costToGoal[i] = Infinity;
     this.selected[i] = 0;
@@ -195,7 +224,9 @@ export class Agents {
     this.headingX[i] = this.headingX[last];
     this.headingY[i] = this.headingY[last];
     this.waited[i] = this.waited[last];
+    this.pressure[i] = this.pressure[last];
     this.trait[i] = this.trait[last];
+    this.assertiveness[i] = this.assertiveness[last];
     this.effectiveSpace[i] = this.effectiveSpace[last];
     this.costToGoal[i] = this.costToGoal[last];
     this.selected[i] = this.selected[last];
@@ -243,10 +274,14 @@ export class Agents {
     this.headingX.fill(0, 0, n);
     this.headingY.fill(0, 0, n);
     this.waited.fill(0, 0, n);
+    this.pressure.fill(0, 0, n);
     this.effectiveSpace.fill(0, 0, n);
     // Not derived from the tick but from the pedestrian: recomputed rather than
     // restored, so it comes back identical without being stored.
-    for (let i = 0; i < n; i++) this.trait[i] = traitOf(this.originX[i], this.originY[i]);
+    for (let i = 0; i < n; i++) {
+      this.trait[i] = traitOf(this.originX[i], this.originY[i], SPACE_SEED);
+      this.assertiveness[i] = traitOf(this.originX[i], this.originY[i], NERVE_SEED);
+    }
     this.costToGoal.fill(Infinity, 0, n);
     this.justArrived.length = 0;
     this.count = n;
@@ -281,6 +316,7 @@ export class Agents {
       this.headingX[i] = 0;
       this.headingY[i] = 0;
       this.waited[i] = 0;
+      this.pressure[i] = 0;
       this.effectiveSpace[i] = 0;
     }
   }
@@ -437,7 +473,9 @@ export class Agents {
     this.headingX = copy(this.headingX, (n) => new Float32Array(n));
     this.headingY = copy(this.headingY, (n) => new Float32Array(n));
     this.waited = copy(this.waited, (n) => new Float32Array(n));
+    this.pressure = copy(this.pressure, (n) => new Float32Array(n));
     this.trait = copy(this.trait, (n) => new Float32Array(n));
+    this.assertiveness = copy(this.assertiveness, (n) => new Float32Array(n));
     this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));
     this.costToGoal = copy(this.costToGoal, (n) => new Float32Array(n));
     this.selected = copy(this.selected, (n) => new Uint8Array(n));
@@ -446,14 +484,22 @@ export class Agents {
 }
 
 /**
+ * Two independent traits are drawn from one placement, so they need one seed each
+ * -- otherwise how much room somebody wants and how hard they press would be the
+ * same number, and the crowd would have one personality rather than two crossed.
+ */
+export const SPACE_SEED = 0x9e3779b9;
+export const NERVE_SEED = 0x85ebca6b;
+
+/**
  * A stable number in [0,1) from a placement, well spread for nearby inputs.
  *
  * The brush lays pedestrians on a regular pitch, so neighbouring origins differ by
  * a constant -- which a weaker mix would turn into a visible stripe of identical
  * temperaments across the crowd.
  */
-export function traitOf(ox: number, oy: number): number {
-  let h = Math.imul(Math.round(ox) | 0, 73856093) ^ Math.imul(Math.round(oy) | 0, 19349663);
+export function traitOf(ox: number, oy: number, seed: number): number {
+  let h = seed ^ Math.imul(Math.round(ox) | 0, 73856093) ^ Math.imul(Math.round(oy) | 0, 19349663);
   h = Math.imul(h ^ (h >>> 15), 2246822519);
   h = Math.imul(h ^ (h >>> 13), 3266489917);
   h ^= h >>> 16;

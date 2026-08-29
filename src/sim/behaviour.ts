@@ -143,6 +143,70 @@ const SPACE_SPREAD = 0.2;
  */
 const DENSITY_HALF = 3;
 const COMPRESS_FLOOR = 0.25;
+/**
+ * Crowd pressure: the part a pedestrian cannot decide its way out of.
+ *
+ * Density on its own is circular. A crowd holds the spacing it wants, so the
+ * density that would compress that spacing never arises, and a queue backed up by
+ * a hundred people stands as politely as a queue of three. What it misses is that
+ * being pressed is not the same as being near: the people behind you want to be
+ * where you are standing and cannot get there, and that is a load on you whether
+ * or not they have closed the distance yet.
+ *
+ * So a held-up pedestrian aimed at you leans on you, and passes on what is leaning
+ * on it as well as its own weight. The load builds along a queue and peaks at the
+ * front, against the barrier -- which is why crowd pressure is dangerous at the
+ * front of a crush and unremarkable at the back.
+ *
+ * PRESSURE_HALF is the load at which a pedestrian gives up half the room it
+ * wanted. What it will not give up whatever the load is COMPRESS_FLOOR, shared
+ * with density above, and the two are combined by taking whichever asks for less
+ * rather than by multiplying them.
+ *
+ * Multiplying them deadlocks, which is worth recording. Pressure closes a crowd
+ * up, closing it up raises the density, the density compresses it again, and the
+ * product runs to nothing in a few ticks: the crowd packs to body contact, where
+ * "no worse than now" has no move left to offer anybody, and a bottleneck arches
+ * over and stays that way. A 64-strong crowd at a gap went from all 64 through to
+ * 12 through and then nothing at all, for eighteen hundred further ticks. Real
+ * crowds do arch at a bottleneck; they do not do it permanently.
+ */
+const PRESSURE_HALF = 6;
+/**
+ * How far the assertive and the polite pull apart, on each of the things
+ * assertiveness touches.
+ *
+ * Personal space is symmetric everywhere else in this file -- I avoid you exactly
+ * as much as you avoid me -- and these are the numbers that break that. An
+ * assertive pedestrian commands more of the crowd's regard, leans harder on
+ * whoever is in front, and finds standing still dearer. A polite one does the
+ * reverse. Two assertive people meeting is a scrum; two polite ones is an apology.
+ *
+ * All of it points *outward*, at what this pedestrian is to everybody else, and
+ * that is a finding rather than a preference. Letting assertiveness point inward
+ * as well -- some of them simply minding the crowd less, or keeping a smaller
+ * bubble -- reads like the same idea and behaves like the opposite one. It varies
+ * the geometry the crowd packs into, and a narrow bottleneck then arches over and
+ * stays arched: a 64-strong crowd went from all through on every layout tried to
+ * as few as two, and no amount of the outward half rescued it.
+ *
+ * The outward half on its own does the reverse, and it is worth saying why. An
+ * arch is held up by everybody in it deferring equally; the deadlock is a
+ * symmetry. Unequal presence gives the arch a weak point, so it collapses instead
+ * of setting. The same bottleneck deadlocked on some layouts before this existed
+ * -- as few as 11 of 64 got through -- and now clears every one of them.
+ */
+/** How much of the crowd's regard it commands: 0.65 when polite, 1.35 when not. */
+const NERVE_PRESENCE = 0.2;
+/** What standing still costs it: 0.4x when polite, 1.6x when not. */
+const NERVE_IMPATIENCE = 1.2;
+/** How hard it leans on the person in front: 0.5x when polite, 1.5x when not. */
+const NERVE_LEAN = 1.0;
+
+/** How much of its own load a pressed pedestrian passes to the one in front. */
+const TRANSMIT = 0.8;
+/** A ceiling, so a deep enough crowd cannot run the figure away. */
+const PRESSURE_MAX = 40;
 /** Neighbours close by that count as room enough, before compression starts. */
 const FREE_NEIGHBOURS = 2;
 /**
@@ -225,8 +289,11 @@ export class Behaviour {
     const n = found.length;
     if (this.bodyIdx.length < n) this.bodyIdx = new Int32Array(n * 2);
 
-    // How much room this pedestrian is asking for: its own temperament, relaxed
-    // by how crowded it is here.
+    // How much room this pedestrian is asking for: its own temperament, relaxed by
+    // how crowded it is here, and given up under enough load from behind. The load
+    // is last step's -- it is measured by the same pass that would need it, and one
+    // tick at sixty a second is not something anyone can see.
+    const pressed = 1 / (1 + a.pressure[self] / PRESSURE_HALF);
     const densityWindow = DENSITY_WINDOW * radius;
     const densityWindow2 = densityWindow * densityWindow;
     let crowd = 0;
@@ -241,10 +308,25 @@ export class Behaviour {
       COMPRESS_FLOOR,
       1 / (1 + Math.max(0, crowd - FREE_NEIGHBOURS) / DENSITY_HALF),
     );
-    const space = preferred * (1 - SPACE_SPREAD * a.trait[self]) * compression;
+    // Two independent things: how much room this one likes, and how little it
+    // minds going without. An assertive pedestrian simply walks closer.
+    const wanted = preferred * (1 - SPACE_SPREAD * a.trait[self]);
+    const space = wanted * Math.max(COMPRESS_FLOOR, Math.min(compression, pressed));
+    // Being shoved from behind makes you tolerate the back of the person in front
+    // of you. It does not make you willing to walk into somebody coming the other
+    // way -- that is not a queue you are in, it is a collision you are having. So
+    // the crush only closes up the space kept from people going the same way, and
+    // whoever is oncoming is given the room they would have been given anyway.
+    //
+    // Without this split, pressure quietly dismantles lane formation: two streams
+    // that tolerate each other at close range interpenetrate instead of sorting,
+    // and counterflow arrivals fell by a third.
+    const openSpace = wanted * compression;
     a.effectiveSpace[self] = space;
     const personal = 2 * radius + space;
     const decay = Math.max(1, DECAY_FRACTION * personal);
+    const openPersonal = 2 * radius + openSpace;
+    const openDecay = Math.max(1, DECAY_FRACTION * openPersonal);
 
     const hx = a.headingX[self];
     const hy = a.headingY[self];
@@ -257,6 +339,8 @@ export class Behaviour {
     const costSelf = a.costToGoal[self];
 
     let bodies = 0;
+    let load = 0;
+    let carried = 0;
     let gx = 0;
     let gy = 0;
     let oncoming = 0;
@@ -283,10 +367,16 @@ export class Behaviour {
       const rx = trueX + a.headingX[j] * LOOKAHEAD;
       const ry = trueY + a.headingY[j] * LOOKAHEAD;
       const d = Math.hypot(rx, ry);
-      if (d < 1e-6 || d >= personal) continue;
+      const sameGoal = a.goal[j] === goalSelf;
+      const reachJ = sameGoal ? personal : openPersonal;
+      const decayJ = sameGoal ? decay : openDecay;
+      if (d < 1e-6 || d >= reachJ) continue;
 
       let w = costSelf < a.costToGoal[j] ? YIELD_LOW : 1;
-      if (a.goal[j] !== goalSelf) w *= OPPOSING;
+      if (!sameGoal) w *= OPPOSING;
+      // The other half of the asymmetry: somebody walking at you like they mean it
+      // is somebody you give way to, whatever you would have done for anyone else.
+      w *= 1 - NERVE_PRESENCE / 2 + NERVE_PRESENCE * a.assertiveness[j];
 
       const ux = rx / d;
       const uy = ry / d;
@@ -304,11 +394,34 @@ export class Behaviour {
         }
       }
 
-      const e = Math.exp((personal - d) / decay);
-      const scale = W_SPACE * w * e / decay;
+      const e = Math.exp((reachJ - d) / decayJ);
+      const scale = W_SPACE * w * e / decayJ;
       gx += scale * ux;
       gy += scale * uy;
+
+      // Is this one leaning on us? Only somebody held up counts -- a neighbour with
+      // room to go round is not pressing, it is walking. Judged on where it wants
+      // to be rather than where it is heading, the point being that it is not
+      // heading anywhere.
+      if (a.waited[j] <= 0) continue;
+      const wantX = a.hasWaypoint[j] ? a.waypointX[j] - a.x[j] : a.headingX[j];
+      const wantY = a.hasWaypoint[j] ? a.waypointY[j] - a.y[j] : a.headingY[j];
+      const wantLen = Math.hypot(wantX, wantY);
+      if (wantLen < 1e-6) continue;
+      // How squarely its way forward runs through us, and how near it already is.
+      const into = -(ux * wantX + uy * wantY) / wantLen;
+      if (into <= 0) continue;
+      const share = into * (1 - d / reachJ) * (1 - NERVE_LEAN / 2 + NERVE_LEAN * a.assertiveness[j]);
+      load += share;
+      carried += share * a.pressure[j];
     }
+
+    // Its own load, plus the mean of what its pushers are already carrying. The
+    // mean rather than the sum is what keeps a deep crowd bounded: the figure
+    // converges along a queue instead of doubling down it.
+    a.pressure[self] = load <= 0
+      ? 0
+      : Math.min(PRESSURE_MAX, load + TRANSMIT * (carried / load));
 
     this.bodyCount = bodies;
     this.hereOverlap = here;
@@ -387,7 +500,9 @@ export class Behaviour {
           // lacked, which is why a blocked pedestrian there could only jiggle. It
           // is also the reference point every other candidate is measured against,
           // so it carries no discomfort term of its own.
-          const cost = W_WAIT * (1 + a.waited[i] / PATIENCE);
+          const cost = W_WAIT
+            * (1 - NERVE_IMPATIENCE / 2 + NERVE_IMPATIENCE * a.assertiveness[i])
+            * (1 + a.waited[i] / PATIENCE);
           if (cost < bestCost) { bestCost = cost; bestDx = 0; bestDy = 0; bestLen = 0; }
           continue;
         }
