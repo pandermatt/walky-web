@@ -561,6 +561,73 @@ describe('pace in a crowd', () => {
   });
 });
 
+describe('walking together', () => {
+  it('keeps companions near each other and lets everyone else through', () => {
+    // Most people in a real crowd are not in one -- they are out in twos and
+    // threes -- and a crowd of strangers all moving independently is what reads as
+    // machinery however good the avoidance is. Who is with whom is the placement
+    // coarsened: whoever was painted within about a metre of each other arrived
+    // together, which is the only definition that survives undo and Reset without
+    // being stored.
+    const { nav, goal } = corridor();
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 10, 8, -420, -119, 34);
+
+    // Parties are a minority of the crowd and the size a real one is.
+    const sizes = new Map<number, number>();
+    for (let i = 0; i < agents.count; i++) {
+      if (agents.party[i] >= 0) sizes.set(agents.party[i], (sizes.get(agents.party[i]) ?? 0) + 1);
+    }
+    const together = [...sizes.values()].reduce((s, x) => s + x, 0);
+    expect(sizes.size).toBeGreaterThan(3);
+    expect(together / sizes.size).toBeGreaterThan(2);
+    expect(together).toBeLessThan(agents.count * 0.7);
+
+    let companionGap = 0;
+    let companionPairs = 0;
+    let anyGap = 0;
+    let anyPairs = 0;
+    for (let t = 0; t < 600; t++) {
+      agents.step(nav, hash, 4, R, 40);
+      if (t < 200 || t % 20) continue;
+      for (let i = 0; i < agents.count; i++) {
+        if (agents.arrived[i]) continue;
+        for (let j = i + 1; j < agents.count; j++) {
+          if (agents.arrived[j]) continue;
+          const d = Math.hypot(agents.x[i] - agents.x[j], agents.y[i] - agents.y[j]);
+          if (d > 400) continue; // the far half of a long corridor tells us nothing
+          anyGap += d;
+          anyPairs++;
+          if (agents.party[i] >= 0 && agents.party[i] === agents.party[j]) {
+            companionGap += d;
+            companionPairs++;
+          }
+        }
+      }
+    }
+    // Measured at 54px against 175px.
+    expect(companionGap / companionPairs).toBeLessThan((anyGap / anyPairs) * 0.7);
+    // And holding together costs nobody their arrival.
+    expect(arrivedCount(agents)).toBe(agents.count);
+  });
+
+  it('keeps a party together through undo and reset', () => {
+    const { nav, goal } = corridor();
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 4, 4, -400, -60, 40);
+    const before = Array.from(agents.party.slice(0, agents.count));
+
+    const snap = agents.snapshot();
+    for (let t = 0; t < 50; t++) agents.step(nav, hash, 4, R, 40);
+    agents.restore(snap);
+    expect(Array.from(agents.party.slice(0, agents.count))).toEqual(before);
+    agents.resetPositions(new Map());
+    expect(Array.from(agents.party.slice(0, agents.count))).toEqual(before);
+  });
+});
+
 describe('crowd state stays sound', () => {
   it('keeps every number finite and every heading a unit vector', () => {
     const run = walkCorridor(80, 400);

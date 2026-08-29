@@ -280,6 +280,20 @@ Two further departures, both aimed squarely at the same complaint:
   space is judged in, because a crowd that has settled into the spacing these rules
   give it sits *outside* arm's reach almost everywhere — counted there, a busy
   corridor and an empty one read the same.
+- **Most of them are not alone.** Real crowds are mostly twos and threes, and a
+  crowd of strangers all moving independently is what reads as machinery however
+  good the avoidance is. Who is with whom is the placement coarsened — whoever was
+  painted within about a metre of each other arrived together, which is as good a
+  definition as this model can have and the only one that survives undo, Reset and
+  a share link without being stored. Companions sit 54px apart against 171px for
+  any two pedestrians, and nobody's arrival is spent on it. Four things keep the
+  pull from fighting everything else: it is exactly nought inside the formation
+  distance, so it can never draw anybody towards contact; it is divided by how many
+  companions are in sight, so a party of six pulls each member towards where the
+  party is rather than six times as hard as a pair; it is capped well under the
+  weight of getting out of somebody's way; and it applies only between people bound
+  for the same place, since two painted side by side and sent to opposite walls are
+  not a party but a collision.
 - **A few of them simply push through.** The pushiest eighth need far less of a
   crush before they put a shoulder in. Everything that makes them pushy points
   *outward*, at what they are to everybody else; nothing points inward. A bully

@@ -350,6 +350,22 @@ function gripOf(a: Agents, j: number): number {
   return PIN_FLOOR + (1 - PIN_FLOOR) * blended;
 }
 
+/**
+ * How hard a party holds together, and how close is close enough.
+ *
+ * Four things keep this from fighting everything else in the file. It is exactly
+ * nought inside the formation distance -- not small, nought -- so it can never draw
+ * anybody towards contact and the spacing rules have that range to themselves. It
+ * is divided by how many companions are in sight, so a party of six pulls each
+ * member towards where the party is rather than six times as hard as a pair does.
+ * It is capped well under the weight of getting out of somebody's way. And it only
+ * applies between people bound for the same place: two painted side by side and
+ * then sent to opposite walls are not a party, they are a collision, and pulling
+ * them together would fight the very lane formation the opposing weight produces.
+ */
+const W_PARTY = 1.0;
+const FORMATION = 0.5;
+
 /** How much of its own load a pressed pedestrian passes to the one in front. */
 const TRANSMIT = 0.8;
 /** A ceiling, so a deep enough crowd cannot run the figure away. */
@@ -527,6 +543,11 @@ export class Behaviour {
     let pushY = 0;
     let gx = 0;
     let gy = 0;
+    let px2 = 0;
+    let py2 = 0;
+    let companions = 0;
+    const party = a.party[self];
+    const formation = 2 * radius + FORMATION * personalSpace;
     let oncoming = 0;
     let here = 0;
     let worst = 0;
@@ -588,6 +609,14 @@ export class Behaviour {
       gx += scale * ux;
       gy += scale * uy;
 
+      // Keeping up with whoever you came in with.
+      if (party >= 0 && sameGoal && a.party[j] === party && trueD > formation) {
+        const pull = Math.min(1, (trueD - formation) / formation);
+        px2 += pull * (trueX / trueD);
+        py2 += pull * (trueY / trueD);
+        companions++;
+      }
+
       // Is this one leaning on us? Only somebody held up counts -- a neighbour with
       // room to go round is not pressing, it is walking. Judged on where it wants
       // to be rather than where it is heading, the point being that it is not
@@ -624,6 +653,11 @@ export class Behaviour {
     // whether this one is being carried or merely crushed.
     a.pushX[self] = loadRaw > 0 ? pushX / loadRaw : 0;
     a.pushY[self] = loadRaw > 0 ? pushY / loadRaw : 0;
+
+    if (companions > 0) {
+      gx -= W_PARTY * px2 / companions;
+      gy -= W_PARTY * py2 / companions;
+    }
 
     this.bodyCount = bodies;
     this.hereOverlap = here;

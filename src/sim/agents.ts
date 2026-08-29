@@ -119,6 +119,20 @@ export class Agents {
    */
   assertiveness: Float32Array;
   /**
+   * Who this one came onto the map with, or -1 for somebody walking alone.
+   *
+   * Most people in a real crowd are not in one: they are out in twos and threes,
+   * and a crowd of strangers all moving independently is the thing that reads as
+   * machinery however good the avoidance is. Membership is the placement coarsened
+   * -- whoever was painted within about a metre of each other arrived together,
+   * which is as good a definition as this model can have and the only one that
+   * survives undo and Reset without being stored.
+   *
+   * Called a party rather than a group because a group here already means a
+   * connected set of walls, and one word for two things is one too few.
+   */
+  party: Int32Array;
+  /**
    * The room this pedestrian actually kept on its last step, after its own
    * temperament and the crush around it. Read by the personalSpace-radius overlay, so
    * the rings visibly tighten as a crowd packs.
@@ -166,6 +180,7 @@ export class Agents {
     this.density = new Float32Array(capacity);
     this.trait = new Float32Array(capacity);
     this.assertiveness = new Float32Array(capacity);
+    this.party = new Int32Array(capacity);
     this.effectiveSpace = new Float32Array(capacity);
     this.costToGoal = new Float32Array(capacity).fill(Infinity);
     this.selected = new Uint8Array(capacity);
@@ -190,6 +205,7 @@ export class Agents {
     this.density[i] = 0;
     this.trait[i] = traitOf(at[0], at[1], SPACE_SEED);
     this.assertiveness[i] = traitOf(at[0], at[1], NERVE_SEED);
+    this.party[i] = partyOf(at[0], at[1]);
     this.effectiveSpace[i] = 0;
     this.costToGoal[i] = Infinity;
     this.selected[i] = 0;
@@ -261,6 +277,7 @@ export class Agents {
     this.density[i] = this.density[last];
     this.trait[i] = this.trait[last];
     this.assertiveness[i] = this.assertiveness[last];
+    this.party[i] = this.party[last];
     this.effectiveSpace[i] = this.effectiveSpace[last];
     this.costToGoal[i] = this.costToGoal[last];
     this.selected[i] = this.selected[last];
@@ -318,6 +335,7 @@ export class Agents {
     for (let i = 0; i < n; i++) {
       this.trait[i] = traitOf(this.originX[i], this.originY[i], SPACE_SEED);
       this.assertiveness[i] = traitOf(this.originX[i], this.originY[i], NERVE_SEED);
+      this.party[i] = partyOf(this.originX[i], this.originY[i]);
     }
     this.costToGoal.fill(Infinity, 0, n);
     this.justArrived.length = 0;
@@ -385,6 +403,7 @@ export class Agents {
     // time anybody pressed undo -- `restore` recomputes from the origin.
     this.trait[i] = traitOf(a.originX, a.originY, SPACE_SEED);
     this.assertiveness[i] = traitOf(a.originX, a.originY, NERVE_SEED);
+    this.party[i] = partyOf(a.originX, a.originY);
     this.goal[i] = a.goal;
     this.arrived[i] = a.arrived ? 1 : 0;
     return i;
@@ -529,6 +548,7 @@ export class Agents {
     this.density = copy(this.density, (n) => new Float32Array(n));
     this.trait = copy(this.trait, (n) => new Float32Array(n));
     this.assertiveness = copy(this.assertiveness, (n) => new Float32Array(n));
+    this.party = copy(this.party, (n) => new Int32Array(n));
     this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));
     this.costToGoal = copy(this.costToGoal, (n) => new Float32Array(n));
     this.selected = copy(this.selected, (n) => new Uint8Array(n));
@@ -543,6 +563,27 @@ export class Agents {
  */
 export const SPACE_SEED = 0x9e3779b9;
 export const NERVE_SEED = 0x85ebca6b;
+export const PARTY_SEED = 0x27d4eb2f;
+
+/**
+ * How near two pedestrians had to be painted to count as out together, in pixels,
+ * and how much of a crowd is with somebody at all.
+ *
+ * A constant rather than a multiple of the radius on purpose: the radius is a
+ * setting, and deriving who is with whom from it would silently re-shuffle every
+ * party on the map the moment somebody moved a slider. Company has to survive that,
+ * the same way a temperament survives undo.
+ */
+const PARTY_CELL = 60;
+const PARTY_SHARE = 0.45;
+
+/** Which party a pedestrian belongs to, or -1 for one walking alone. */
+export function partyOf(ox: number, oy: number): number {
+  const cx = Math.floor(ox / PARTY_CELL);
+  const cy = Math.floor(oy / PARTY_CELL);
+  if (traitOf(cx, cy, PARTY_SEED) >= PARTY_SHARE) return -1;
+  return (Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663)) >>> 1;
+}
 
 /**
  * A stable number in [0,1) from a placement, well spread for nearby inputs.
