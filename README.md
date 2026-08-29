@@ -147,6 +147,15 @@ Bugs found while porting, all with regression tests:
   colour of the wall underneath — a port of `drawMarkTargetLine`, which used
   yellow. Since pedestrians wear their goal's colour, it previews what the crowd
   is about to become.
+- **The route is drawn as soon as the goal is marked**, not once the simulation
+  runs. The orange path overlay reads each pedestrian's current waypoint, and a
+  pedestrian only gets one on its first step, so the map stayed bare until play
+  was pressed — exactly when the question "where will they go?" is still open.
+  Paused, the first waypoint is now chosen the same way the first step would
+  choose it and the rest of the route read off the same Dijkstra predecessors, so
+  the line drawn before play is the line walked after it. It is one graph scan per
+  pedestrian, so the result is cached until the map, the crowd or the goal
+  changes, and a running crowd still reads its waypoints as before.
 
 ### Overlapping walls are no longer merged
 
