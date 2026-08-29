@@ -7,24 +7,38 @@ import {
 import { injectStyle } from './theme';
 
 /**
- * Ports gui/GUISettings and gui/PedestrianSettingsPanel: the debug overlays the
- * original could toggle, plus the pedestrian parameters it exposed. show3DEffect
- * is gone with the fake-3D.
+ * The overlays gui/GUISettings could draw, which is all this group has ever
+ * been: they are the ones you turn on to see why the crowd is doing what it is
+ * doing, and they are no use to anyone who is not asking that. show3DEffect is
+ * gone with the fake-3D.
+ *
+ * Arrival sound used to be the seventh row here, for no better reason than
+ * being the seventh switch. It is a preference, not an overlay, so it has gone
+ * to live with the pedestrians it belongs to.
  */
-const TOGGLES: ToggleSpec[] = [
+const DEBUG_TOGGLES: ToggleSpec[] = [
   { key: 'showConvexHull', label: 'Convex hulls' },
   { key: 'showConvexParts', label: 'Convex parts' },
   { key: 'showVisibleLines', label: 'Visibility rays' },
   { key: 'showLineToTarget', label: 'Path to goal' },
   { key: 'showPersonalSpace', label: 'Space rings' },
   { key: 'showDebug', label: 'Debug info' },
-  { key: 'sound', label: 'Arrival sound' },
 ];
 
-const SLIDER_ORDER: (keyof Settings)[] = [
-  'speed', 'pedestrianRadius', 'personalSpace', 'brushSize', 'borderThickness',
-  'labelSize', 'labelWeight',
-];
+/** A pedestrian plops when it arrives; see plops.ts. */
+const SOUND_TOGGLE: ToggleSpec = { key: 'sound', label: 'Arrival sound' };
+
+/*
+ * Two sliders, where there were seven.
+ *
+ * Speed, brush size, preferred space and the two text axes all left, because
+ * the contextual panel already offers each of them at the moment it matters --
+ * beside the tool in your hand, with the map still in front of you. A second
+ * copy in here was the worse of the two: further away, and behind a modal that
+ * covers the thing you are adjusting. These are the two nothing else offers.
+ */
+const PEDESTRIAN_SLIDERS: (keyof Settings)[] = ['pedestrianRadius'];
+const DRAWING_SLIDERS: (keyof Settings)[] = ['borderThickness'];
 
 export const SHEET_CSS = `
 /*
@@ -178,6 +192,29 @@ export const SHEET_CSS = `
 }
 .wk-sheet .row { min-height: var(--wk-tap); }
 
+/*
+ * The name over a group.
+ *
+ * The blocks were unlabelled, which left the sheet grouped by what a control
+ * happens to be -- every slider, then every switch -- rather than by what it is
+ * for. That is how a JSON dump for a bug report ended up filed next to the
+ * share link and the arrival sound ended up among the debug overlays: with
+ * nothing named, nothing was obviously in the wrong place. Naming them is what
+ * makes "this block is debug only" a thing the sheet says rather than a thing
+ * you infer.
+ *
+ * It sits outside the block, in the note's typeface and colour, so a heading
+ * above a group and a sentence below one read as the same voice talking about
+ * it -- and so the block itself stays one uninterrupted shape.
+ */
+.wk-sheet .group-title {
+  margin: 18px 0 6px; padding: 0 18px;
+  font-size: 13px; font-weight: 600; letter-spacing: -.01em;
+  color: var(--wk-ink-dim);
+}
+/* The head already leaves 14px under the title; the first heading needs no more. */
+.wk-sheet .body > .group-title:first-child { margin-top: 4px; }
+
 /* The sentence under a group, in iOS's footnote place and colour: close under
    the card it belongs to, and carrying the gap to the next thing itself. */
 .wk-sheet .group:has(+ .note) { margin-bottom: 6px; }
@@ -185,6 +222,9 @@ export const SHEET_CSS = `
   margin: 0 0 12px; padding: 0 18px;
   font-size: 13px; color: var(--wk-ink-dim); min-height: 16px;
 }
+/* A note already carries its own gap down to whatever follows, so a heading
+   after one takes the note's 12px rather than adding its own 18 to it. */
+.wk-sheet .note + .group-title { margin-top: 6px; }
 
 /*
  * The name at the foot of it.
@@ -249,7 +289,16 @@ let sequence = 0;
 export class SettingsSheet {
   private root: HTMLDialogElement;
   private syncers: (() => void)[] = [];
-  private note: HTMLParagraphElement;
+  /**
+   * The footnote under each of the two groups that has a button in it.
+   *
+   * One note used to serve both, on the grounds that only one of them can have
+   * been pressed last. That stopped being true of the *place* when the buttons
+   * went to opposite ends of the sheet: an answer about the link has no business
+   * appearing under the debug block, and vice versa.
+   */
+  private shareNote: HTMLParagraphElement;
+  private debugNote: HTMLParagraphElement;
   /**
    * The id of the history entry we pushed, or null when we have none.
    *
@@ -297,51 +346,64 @@ export class SettingsSheet {
     this.root.append(head, body);
 
     /*
-     * Each run of controls is a grouped card, the way iOS groups a settings
-     * list; the card's edges say what a dividing rule used to say.
+     * Each run of controls is a grouped card under its name, the way iOS groups
+     * a settings list; the card's edges say what a dividing rule used to say,
+     * and the name says which of these lists you are in.
+     *
+     * The heading is a real one and the section points at it, so a screen
+     * reader announces the block as "Debug, group" rather than reading six
+     * unattributed switches -- the caption is the whole reason for the regroup,
+     * and it would be a shame for it to be visual only.
      */
-    const group = () => {
+    let groups = 0;
+    const group = (title: string) => {
+      const heading = document.createElement('h3');
+      heading.className = 'group-title';
+      heading.id = `wk-sheet-group-${++groups}`;
+      heading.textContent = title;
       const section = document.createElement('section');
       section.className = 'group';
-      body.appendChild(section);
+      section.setAttribute('aria-labelledby', heading.id);
+      body.append(heading, section);
       return section;
     };
 
-    const sliders = group();
-    for (const key of SLIDER_ORDER) {
-      const spec = SLIDERS[key as string];
-      if (!spec) continue;
-      const { el, sync } = buildSlider(spec, settings, onChange);
-      this.syncers.push(sync);
-      sliders.appendChild(el);
-    }
+    const sliders = (into: HTMLElement, keys: (keyof Settings)[]) => {
+      for (const key of keys) {
+        const spec = SLIDERS[key as string];
+        if (!spec) continue;
+        const { el, sync } = buildSlider(spec, settings, onChange);
+        this.syncers.push(sync);
+        into.appendChild(el);
+      }
+    };
 
-    const toggles = group();
-    for (const spec of TOGGLES) {
+    const toggle = (into: HTMLElement, spec: ToggleSpec) => {
       const { el, sync } = buildToggle(spec, settings, onChange);
       this.syncers.push(sync);
-      toggles.appendChild(el);
-    }
+      into.appendChild(el);
+    };
 
-    this.note = document.createElement('p');
-    this.note.className = 'note';
-    this.note.setAttribute('role', 'status');
+    const note = () => {
+      const el = document.createElement('p');
+      el.className = 'note';
+      el.setAttribute('role', 'status');
+      return el;
+    };
+
+    this.shareNote = note();
+    this.debugNote = note();
 
     /*
-     * Both ways of handing this map to somebody, sharing first.
+     * A button that puts the map on the clipboard and says what it put there.
      *
-     * They answer different questions. The link reopens the map, which is what
-     * you want when you are showing someone something; the JSON describes it,
-     * including which pedestrians are stuck, which is what you want when you are
-     * reporting something. They share the note under the group, because only one
-     * of them can have been pressed last.
-     *
-     * `busy` is not decoration: encoding a large crowd takes long enough to press
-     * twice, and two encodes racing to write one note is two answers and one
-     * winner.
+     * `busy` is not decoration: encoding a large crowd takes long enough to
+     * press twice, and two encodes racing to write a note is two answers and
+     * one winner. It is still one flag across both buttons, because it is the
+     * encode that is slow and there is only one map to encode.
      */
     let busy = false;
-    const handOver = (label: string, run: () => Promise<string>) => {
+    const handOver = (label: string, into: HTMLElement, run: () => Promise<string>) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'wk-btn wk-btn--row';
@@ -350,9 +412,9 @@ export class SettingsSheet {
         if (busy) return;
         busy = true;
         try {
-          this.note.textContent = await run();
+          into.textContent = await run();
         } catch {
-          this.note.textContent = 'Clipboard blocked by the browser';
+          into.textContent = 'Clipboard blocked by the browser';
         } finally {
           busy = false;
         }
@@ -360,12 +422,36 @@ export class SettingsSheet {
       return button;
     };
 
-    const sharing = group();
-    sharing.appendChild(handOver('Copy link to this map', () => this.onCopyLink()));
-    sharing.appendChild(handOver('Copy map to clipboard', () => this.onCopyMap()));
+    /*
+     * Sharing at the top, because handing the map to someone is the one thing
+     * in here you come to the sheet specifically to do -- everything else is a
+     * value you adjust while you are already looking at something.
+     *
+     * Only the link. The two used to sit together on the strength of both being
+     * a copy, but they answer different questions to different people: the link
+     * reopens the map, which is what you want when you are showing someone
+     * something. The JSON describes it, down to which pedestrians are stuck,
+     * which is what you want when you are reporting a bug -- so that one has
+     * gone to the bottom of the sheet with the rest of the debugging.
+     */
+    const sharing = group('Sharing');
+    sharing.appendChild(handOver('Copy link to this map', this.shareNote, () => this.onCopyLink()));
     // The note sits outside the card: it is the grey footnote under a group,
     // which is where iOS puts the sentence about one.
-    body.appendChild(this.note);
+    body.appendChild(this.shareNote);
+
+    // The crowd itself: how big one of them is, and whether you hear it arrive.
+    const pedestrians = group('Pedestrians');
+    sliders(pedestrians, PEDESTRIAN_SLIDERS);
+    toggle(pedestrians, SOUND_TOGGLE);
+
+    sliders(group('Drawing'), DRAWING_SLIDERS);
+
+    const debug = group('Debug');
+    for (const spec of DEBUG_TOGGLES) toggle(debug, spec);
+    debug.appendChild(handOver('Copy map to clipboard', this.debugNote, () => this.onCopyMap()));
+    body.appendChild(this.debugNote);
+
     body.appendChild(this.buildAbout());
 
     // The sheet is a modal in the top layer, so it belongs to the document
@@ -495,7 +581,8 @@ export class SettingsSheet {
     window.clearTimeout(this.exitTimer);
     this.root.removeEventListener('transitionend', this.onExitEnd);
     this.root.classList.remove('wk-leaving');
-    this.note.textContent = '';
+    this.shareNote.textContent = '';
+    this.debugNote.textContent = '';
     this.root.close();
     // Only now: a modal dialog holds focus, so handing it back before the close
     // would simply be refused.
