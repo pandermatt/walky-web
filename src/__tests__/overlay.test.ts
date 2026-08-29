@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { debugTextOrigin } from '../render/overlay';
+import { debugTextOrigin, labelBox } from '../render/overlay';
 
 /**
  * The placement is a pure function over rectangles so that "the readout is not
@@ -42,5 +42,31 @@ describe('debugTextOrigin', () => {
 
   it('has nothing to place when there are no lines', () => {
     expect(debugTextOrigin(0, 0, COLUMN)).toEqual([20, 20]);
+  });
+});
+
+/**
+ * The other half of pointing at a label: the eraser has to know where a word is
+ * before it can offer to rub it out, and the anchor is not the corner of it.
+ */
+describe('the box a label fills', () => {
+  it('runs forward from the anchor and sits centred on it', () => {
+    // Drawn textAlign start, textBaseline middle: rightwards from the anchor,
+    // half its height either side.
+    expect(labelBox([100, 50], 80, 28)).toEqual({
+      minX: 100, minY: 36, maxX: 180, maxY: 64,
+    });
+  });
+
+  it('grows by the clearance an outline is drawn with', () => {
+    expect(labelBox([0, 0], 40, 20, 4)).toEqual({
+      minX: -4, minY: -14, maxX: 44, maxY: 14,
+    });
+  });
+
+  it('is still a box when the word is empty, so a caret can be pointed at', () => {
+    const box = labelBox([10, 10], 0, 30);
+    expect(box.maxX).toBe(10);
+    expect(box.maxY - box.minY).toBe(30);
   });
 });

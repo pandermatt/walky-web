@@ -23,7 +23,7 @@ export const FAT_DASH = [21, 9, 3, 9];
  * dark enough to be mistaken for something on the map. Nothing is the honest
  * picture of a word too small to read.
  */
-const LABEL_MIN_PX = 5;
+export const LABEL_MIN_PX = 5;
 
 /** Badge colours for the rectangle tool's cursor ghost. */
 const GHOST_BLUE = '#2D6FD4';
@@ -71,6 +71,29 @@ function labelFamily(): string {
  */
 function labelFont(px: number, weight: number): string {
   return `${weight} ${px}px ${labelFamily()}`;
+}
+
+/**
+ * The box a label fills, in world units, given the width its text measures.
+ *
+ * Pure, and separate from the measuring, because the arithmetic is the part that
+ * can be wrong: a label is drawn from its anchor rightwards and centred on it
+ * vertically (textAlign start, textBaseline middle), so the box runs forward in
+ * x and half its height either side in y. The measuring needs a canvas and a
+ * loaded font; this needs neither.
+ *
+ * `pad` is world units of clearance, for an outline that should sit clear of the
+ * glyphs rather than clipping them.
+ */
+export function labelBox(
+  at: Point, width: number, size: number, pad = 0,
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  return {
+    minX: at[0] - pad,
+    minY: at[1] - size / 2 - pad,
+    maxX: at[0] + width + pad,
+    maxY: at[1] + size / 2 + pad,
+  };
 }
 
 /** A box of screen, in CSS pixels. `DOMRect` satisfies it, which is the point. */
@@ -166,6 +189,12 @@ export interface OverlayState {
   speedReadout: string | null;
   /** The words written on the map, and the one being typed if there is one. */
   labels: Label[];
+  /**
+   * The label the eraser is over, faded the way a wall under it is faded on the
+   * layer below -- the outline says what would go, and the fade says it is this
+   * one and not the word beside it.
+   */
+  fadedLabel: number | null;
   editingLabel: EditingLabel | null;
   /** How the one being typed is written: what the sliders are set to. */
   editingLabelStyle: LabelStyle;
@@ -224,7 +253,7 @@ export class Overlay {
 
     // First, under everything: a label is part of the map, not chrome over it,
     // so a rubber-band line or a lasso crosses it rather than passing beneath.
-    this.drawLabels(state.labels, state.editingLabel, state.editingLabelStyle);
+    this.drawLabels(state.labels, state.editingLabel, state.editingLabelStyle, state.fadedLabel);
     this.drawConvexHulls(state.hulls);
     this.drawPendingWall(state.pendingWallPoints, state.mouseWorld, state.pendingWallTracing);
     this.drawPendingRect(state.pendingRect);
@@ -536,7 +565,12 @@ export class Overlay {
    * somebody put on the map on purpose, and a caption the recording drops is a
    * caption nobody can see in the file it was written for.
    */
-  private drawLabels(labels: Label[], editing: EditingLabel | null, editingStyle: LabelStyle): void {
+  private drawLabels(
+    labels: Label[],
+    editing: EditingLabel | null,
+    editingStyle: LabelStyle,
+    faded: number | null,
+  ): void {
     if (labels.length === 0 && !editing) return;
     const { ctx } = this;
     ctx.save();
@@ -556,9 +590,11 @@ export class Overlay {
       // as something on the map. Nothing is the honest picture of it.
       if (px < LABEL_MIN_PX) continue;
       ctx.font = labelFont(px, label.weight);
+      ctx.globalAlpha = label.id === faded ? 0.35 : 1;
       const at = this.viewport.worldToScreen(label.at);
       ctx.fillText(label.text, at[0], at[1]);
     }
+    ctx.globalAlpha = 1;
 
     if (editing) {
       // The one being typed is drawn however small it is: it is not a word on
@@ -572,6 +608,24 @@ export class Overlay {
       ctx.fillRect(caret, at[1] - half, Math.max(1, px * 0.06), half * 2);
     }
     ctx.restore();
+  }
+
+  /**
+   * Where a label sits in the world, for anything that has to point at one.
+   *
+   * The measurement is this class's to give: it is the only place that knows
+   * which font the label is drawn in, and a box guessed from the character count
+   * would be wrong by a word. Measured at the label's own size, which is in world
+   * units, so the width comes back in world units too and does not move with the
+   * camera.
+   */
+  labelBounds(label: Label, pad = 0): { minX: number; minY: number; maxX: number; maxY: number } {
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = labelFont(label.size, label.weight);
+    const width = ctx.measureText(label.text).width;
+    ctx.restore();
+    return labelBox(label.at, width, label.size, pad);
   }
 
   private drawSpeed(text: string, anchor: ScreenRect | null): void {

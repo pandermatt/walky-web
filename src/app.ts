@@ -1,9 +1,9 @@
 import { Scene, type SceneState } from './render/scene';
-import { Overlay, type EditingLabel, type RecordFrame, type ScreenRect } from './render/overlay';
+import { LABEL_MIN_PX, Overlay, type EditingLabel, type RecordFrame, type ScreenRect } from './render/overlay';
 import { Viewport, type Bounds } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
-  DEFAULT_SETTINGS, makeLabel, makeWall, wallContains,
+  DEFAULT_SETTINGS, makeLabel, makeWall, rectanglePolygon, wallContains,
   type Label, type LabelStyle, type Settings, type Wall, type WallOptions,
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
@@ -1182,6 +1182,28 @@ export class App {
    * Tested against the raw polygons rather than the expanded hulls, because
    * this answers "what did I click", and what you can see is the wall itself.
    */
+  /**
+   * The label under a point, topmost first, or null.
+   *
+   * Only the ones actually on screen: below a few pixels a label is not drawn at
+   * all (see LABEL_MIN_PX), and something you cannot see is not something you
+   * can be said to be pointing at. The box comes from the overlay, which is the
+   * only thing that knows the font the word was drawn in; the clearance matches
+   * the outline the eraser previews, so anywhere the red box is drawn is
+   * somewhere a click lands.
+   */
+  private pickLabel(at: Point): Label | null {
+    for (let i = this.labels.length - 1; i >= 0; i--) {
+      const label = this.labels[i];
+      if (label.size * this.viewport.scale < LABEL_MIN_PX) continue;
+      const box = this.overlay.labelBounds(label, 4 / this.viewport.scale);
+      if (at[0] >= box.minX && at[0] <= box.maxX && at[1] >= box.minY && at[1] <= box.maxY) {
+        return label;
+      }
+    }
+    return null;
+  }
+
   private pickWall(at: Point): Wall | null {
     for (let i = this.walls.length - 1; i >= 0; i--) {
       if (wallContains(this.walls[i], at)) return this.walls[i];
@@ -1202,6 +1224,15 @@ export class App {
 
   /** What the eraser would take at a point, outlined for the preview. */
   private eraseTargetAt(at: Point): EraseTarget | null {
+    // Labels first: they are painted on the overlay, above everything the deck
+    // canvas draws, so a word under the pointer is the thing being pointed at.
+    const label = this.pickLabel(at);
+    if (label) {
+      const box = this.overlay.labelBounds(label, 4 / this.viewport.scale);
+      return { kind: 'label', id: label.id, outlines: [rectanglePolygon(
+        [box.minX, box.minY], [box.maxX, box.maxY],
+      )] };
+    }
     // Pedestrians are painted over the walls, so one under the pointer is what
     // you are pointing at -- the same order clicking already answers in.
     const reach = this.eraseReach();
@@ -1233,6 +1264,14 @@ export class App {
    * @returns false when there was nothing there.
    */
   private eraseAt(at: Point, sameStroke: boolean): boolean {
+    const label = this.pickLabel(at);
+    if (label) {
+      if (!sameStroke) this.checkpoint();
+      this.labels = this.labels.filter((l) => l !== label);
+      this.touch();
+      return true;
+    }
+
     const i = this.agents.indexAt(at, this.eraseReach());
     if (i >= 0) {
       if (!sameStroke) this.checkpoint();
@@ -1546,6 +1585,7 @@ export class App {
       agentColors: targetLines ? this.targetableColors() : [],
       mouseWorld: this.mouseWorld,
       labels: this.labels,
+      fadedLabel: preview.erasing?.kind === 'label' ? preview.erasing.id : null,
       editingLabel: this.editingLabel,
       // The settings rather than anything stored: the label being typed is the
       // next one, and the next one is what the sliders are set to.

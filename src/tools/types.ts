@@ -8,14 +8,18 @@ export type ToolId =
 /**
  * What the eraser would take away at a point.
  *
- * Whole objects only: one drawn shape, one border frame, one pedestrian. There
- * is no half a wall -- a shape is what one draw action made, and rubbing a
- * corner off one would mean re-cutting geometry the navigation graph, the group
- * outlines and the undo snapshots are all built from.
+ * Whole objects only: one drawn shape, one border frame, one pedestrian, one
+ * label. There is no half a wall -- a shape is what one draw action made, and
+ * rubbing a corner off one would mean re-cutting geometry the navigation graph,
+ * the group outlines and the undo snapshots are all built from. A label is the
+ * same bargain in miniature: a word is what one act of typing made.
  */
 export interface EraseTarget {
-  kind: 'wall' | 'pedestrian';
-  /** The wall's id, or the pedestrian's index -- whichever `kind` says. */
+  kind: 'wall' | 'pedestrian' | 'label';
+  /**
+   * The wall's or label's id, or the pedestrian's index -- whichever `kind`
+   * says. A pedestrian has no id of its own; the rest are stable.
+   */
   id: number;
   /** Outlines of what would go, for the preview. A border frame is four bars. */
   outlines: Point[][];
