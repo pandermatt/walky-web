@@ -13,7 +13,7 @@ import { SpatialHash } from '../src/sim/spatialHash.ts';
 import { makeWall, rectanglePolygon } from '../src/state/model.ts';
 
 const RADIUS = 13;
-const PREFERRED = 30;
+const PERSONAL_SPACE = 40; // the shipped default
 const SPEED = 4;
 
 function percentile(values: number[], p: number): number {
@@ -47,12 +47,12 @@ function run(count: number) {
     }
   }
 
-  for (let w = 0; w < 20; w++) agents.step(nav, hash, SPEED, RADIUS, PREFERRED);
+  for (let w = 0; w < 20; w++) agents.step(nav, hash, SPEED, RADIUS, PERSONAL_SPACE);
 
   const frames: number[] = [];
   for (let f = 0; f < 120; f++) {
     const t0 = performance.now();
-    agents.step(nav, hash, SPEED, RADIUS, PREFERRED);
+    agents.step(nav, hash, SPEED, RADIUS, PERSONAL_SPACE);
     frames.push(performance.now() - t0);
   }
   return { p50: percentile(frames, 0.5), p95: percentile(frames, 0.95) };
