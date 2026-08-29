@@ -32,6 +32,7 @@ import type { Point } from '../src/sim/geometry.ts';
 import { makeWall, rectanglePolygon, type Wall } from '../src/state/model.ts';
 import { DASH } from '../src/render/overlay.ts';
 import { BACKGROUND, ORANGE, WHITE, toCss, type RGB } from '../src/palette.ts';
+import { LIME, MAGENTA, RUST, SKY, TEAL } from './brand.ts';
 
 /**
  * Seeds Math.random for the whole script.
@@ -107,16 +108,12 @@ const TICKS = 320;
  */
 const PATH_LIMIT = 22;
 
-/**
- * Wall colours, all legal under randomBrightColor's rule: at least one channel in
- * 150-255, the other two free. The magenta is the #C419C0 the README names as the
- * shade that sticks in memory.
- */
-const GAP_TOP: RGB = [214, 66, 39];
-const GAP_BOTTOM: RGB = [66, 158, 214];
-const DETOUR: RGB = [168, 214, 66];
-const GOAL_UPPER: RGB = [196, 25, 192];
-const GOAL_LOWER: RGB = [41, 214, 168];
+/** Wall colours, from the shared brand palette so the card and the icons agree. */
+const GAP_TOP = RUST;
+const GAP_BOTTOM = SKY;
+const DETOUR = LIME;
+const GOAL_UPPER = MAGENTA;
+const GOAL_LOWER = TEAL;
 
 function buildWorld(): { walls: Wall[]; nav: Navigation; goals: Wall[] } {
   // Two walls leaving a gap in the middle of the frame: the crowd cannot reach

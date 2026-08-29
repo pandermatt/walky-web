@@ -534,10 +534,27 @@ Two things the manifest does not cover:
   `env(safe-area-inset-*)` offsets stay in the layout anyway, where they resolve
   to 0, so nothing lands under a notch if cover is ever turned on.
 
-The app icons are derived from `images/icon.png` — the original's own pedestrian
-glyph — painted white on `#1E1E1E`, since a black glyph on transparency
-disappears against a dark home screen. The maskable variant keeps the figure
-inside the inner 80% so that a circular crop cannot take its head off.
+The app icons are the app's own pedestrian: a filled dot in its goal's colour
+with a white ring, which is what `PedestrianPanel.drawPedestrian` has always
+drawn. They are generated from primitives by `tools/appIcons.ts`, not traced from
+a pictogram, so there is no artwork here whose provenance has to be taken on
+trust — and the mark is the thing you actually look at while the simulation runs,
+which a walking-man glyph is not.
+
+```bash
+npx vite-node tools/appIcons.ts
+```
+
+Two sizes of one idea. A crowd of three reads as "many pedestrians, going
+somewhere" and carries the home screen; at 16px a cluster silts up into a single
+blob, so the browser tab gets one pedestrian instead. The ground stays `#1E1E1E`
+rather than transparent, because a white ring vanishes on a light tab strip and a
+dark dot vanishes on a dark one — an opaque tile is legible in both.
+
+The touch icon and the maskable variant are left square: iOS applies its own
+squircle and a launcher applies its own shape, so rounding them here would round
+an already-rounded corner and leave the ground showing outside it. The maskable
+art stays well inside the inner 80%, so a circular crop cannot clip the rings.
 
 ### Installed on a phone, the toolbar moves to the thumb
 
