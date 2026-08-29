@@ -30,6 +30,11 @@ export interface Obstacle {
  * A whole wall's convex hull, expanded by the radius: the shape the original drew
  * dashed. Kept as a broad phase -- anything that misses the shell cannot touch any
  * of the wall's convex parts, so the per-part work is skipped entirely.
+ *
+ * Not every wall has one: a wall that opts out of the convex hull calculation
+ * (Wall.hulled false, i.e. anything the freehand tool drew) contributes no shell,
+ * and its group is simply tested part by part. That is the same answer, only
+ * without the early reject.
  */
 export interface WallShell {
   wallId: number;
@@ -160,6 +165,8 @@ export function buildVisibilityGraph(walls: Wall[], radius: number): VisibilityG
   const nodeRings: Point[][] = [];
 
   for (const wall of walls) {
+    // No hull means no broad phase for this wall, never a missing obstacle: the
+    // parts below come from the polygons themselves.
     if (wall.hull.length >= 3) {
       const shellHull = expandPolygon(wall.hull, radius);
       shells.push({ wallId: wall.id, hull: shellHull, bbox: bboxOf(shellHull) });

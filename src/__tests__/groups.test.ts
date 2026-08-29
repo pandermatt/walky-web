@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { groupWalls } from '../state/groups';
 import { makeWall, rectanglePolygon, borderFrame } from '../state/model';
 import { pointInPolygon, type Point } from '../sim/geometry';
+import { monotoneChainHull } from '../sim/convexHull';
 
 describe('groupWalls', () => {
   it('puts overlapping shapes in one group', () => {
@@ -59,5 +60,21 @@ describe('groupWalls', () => {
 
   it('handles an empty map', () => {
     expect(groupWalls([])).toEqual([]);
+  });
+
+  it('leaves a wall that opts out of hulling with no outline of its own', () => {
+    const freehand = makeWall([rectanglePolygon([0, 0], [100, 100])], { hulled: false });
+    expect(freehand.hull).toEqual([]);
+    expect(groupWalls([freehand])).toEqual([]);
+  });
+
+  it('does not let a wall that opts out drag a neighbour into its outline', () => {
+    const solid = makeWall([rectanglePolygon([0, 0], [100, 100])]);
+    const freehand = makeWall([rectanglePolygon([90, 90], [400, 400])], { hulled: false });
+    const groups = groupWalls([solid, freehand]);
+    // The two touch, so grouping them would stretch one outline over both.
+    expect(groups).toHaveLength(1);
+    expect(groups[0].wallIds).toEqual([solid.id]);
+    expect(groups[0].hull).toEqual(monotoneChainHull(solid.polygons.flat()));
   });
 });

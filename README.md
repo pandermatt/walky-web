@@ -73,7 +73,8 @@ Supporting changes:
   while leaving real cavities open. A rectangle stays 1 part, an L becomes 2, a U
   becomes 3.
 - **The whole-wall hull** is still drawn, and still earns its keep as a broad phase:
-  anything that misses it cannot touch any of that wall's parts.
+  anything that misses it cannot touch any of that wall's parts. Freehand walls opt
+  out of it entirely — see below.
 
 ### Crowd behaviour
 
@@ -165,6 +166,26 @@ Shapes now keep their own identity, and the dashed outline is drawn once per
 *connected group* of touching shapes instead of per wall — the same picture
 merging gave, without fusing anything. Grouping is recomputed from the current
 walls whenever the map changes, so unlike merging it can never accumulate.
+
+### Freehand walls are not hulled
+
+A convex hull is a summary, and it only reads as one when the shape it summarises
+is roughly convex already: a rectangle, a frame, a blocky building. A freehand
+trace is the opposite — an S, a spiral, a room drawn by hand — and its hull is a
+blob with no resemblance to what was drawn. Worse, the dashed outline is drawn per
+*connected group*, so one traced squiggle laid against a building stretched that
+building's outline over both.
+
+So the wall tool's shapes are left out of the convex hull calculation: they get no
+hull of their own, and they take no part in grouping, so they cannot enlarge
+anyone else's outline. Every other tool still hulls, because everything else makes
+a shape a hull describes.
+
+Nothing about navigation changes. Obstacles come from the convex *decomposition*
+of each polygon, never from the whole-wall hull, so a traced shape blocks and is
+walked around exactly as before; all that is given up is the broad-phase early
+reject for that one wall, and the per-part test that replaces it gives the same
+answer.
 
 ### Deliberate divergences
 

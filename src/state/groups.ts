@@ -11,6 +11,10 @@ import { polygonsOverlap, type Wall } from './model';
  * enclosure is swallowed. Grouping gives the same picture while every shape keeps
  * its own identity, colour and (eventually) deletability -- the grouping is
  * recomputed from scratch whenever walls change, so it can never accumulate.
+ *
+ * Walls with `hulled` false -- freehand traces -- take no part in this: they are
+ * neither hulled themselves nor allowed to pull a neighbour's outline out to
+ * cover them. See Wall.hulled.
  */
 export interface WallGroup {
   wallIds: number[];
@@ -39,7 +43,8 @@ function wallsTouchWithin(a: Wall, b: Wall, tolerance: number): boolean {
   return false;
 }
 
-export function groupWalls(walls: Wall[], tolerance = GROUP_TOLERANCE): WallGroup[] {
+export function groupWalls(input: Wall[], tolerance = GROUP_TOLERANCE): WallGroup[] {
+  const walls = input.filter((w) => w.hulled);
   const n = walls.length;
   if (n === 0) return [];
 

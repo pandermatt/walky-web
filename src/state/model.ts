@@ -11,11 +11,26 @@ export interface Wall {
    */
   polygons: Point[][];
   /**
-   * Convex hull over every point of every polygon -- drawn dashed, and the source
-   * of the navigation graph's nodes. Recomputed whenever the polygons change, so
-   * merging two overlapping shapes yields one hull wrapping both.
+   * Convex hull over every point of every polygon -- drawn dashed, and the broad
+   * phase for navigation. Recomputed whenever the polygons change, so merging two
+   * overlapping shapes yields one hull wrapping both. Empty when `hulled` is
+   * false, which is the freehand wall tool's case.
    */
   hull: Point[];
+  /**
+   * Whether this wall takes part in the convex hull calculation at all.
+   *
+   * A hull is a summary, and it only reads as one when the shape it summarises is
+   * roughly convex to begin with: a rectangle, a frame, a blocky building. A
+   * freehand trace is the opposite -- an S, a spiral, a coastline -- and hulling
+   * it draws a dashed outline that has nothing to do with what was drawn, and
+   * pulls every wall it touches into the same misleading blob.
+   *
+   * Opting out costs nothing but the broad phase: navigation is built from the
+   * convex *decomposition* of each polygon, never from this hull, so the wall
+   * blocks and is walked around exactly as before.
+   */
+  hulled: boolean;
   color: RGB;
   isGoal: boolean;
   selected: boolean;
@@ -104,11 +119,19 @@ export function allPoints(wall: Wall): Point[] {
   return wall.polygons.flat();
 }
 
-export function makeWall(polygons: Point[][], color: RGB = randomBrightColor()): Wall {
+export interface WallOptions {
+  color?: RGB;
+  /** False to leave this wall out of the convex hull calculation; see Wall.hulled. */
+  hulled?: boolean;
+}
+
+export function makeWall(polygons: Point[][], options: WallOptions = {}): Wall {
+  const { color = randomBrightColor(), hulled = true } = options;
   return {
     id: nextId++,
     polygons,
-    hull: monotoneChainHull(polygons.flat()),
+    hull: hulled ? monotoneChainHull(polygons.flat()) : [],
+    hulled,
     color,
     isGoal: false,
     selected: false,
