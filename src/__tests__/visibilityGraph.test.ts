@@ -33,14 +33,14 @@ describe('isVisible', () => {
   });
 });
 
-describe('walls kept out of a group\'s shared outline', () => {
+describe('walls that are not outlined on their own', () => {
   const U: Point[] = [[0, 0], [200, 0], [200, 60], [60, 60], [60, 200], [200, 200], [200, 260], [0, 260]];
 
   it('navigate exactly like any other wall: shell, obstacles, nodes and blocking', () => {
     const shared = buildVisibilityGraph([makeWall([U])], RADIUS);
-    const freehand = buildVisibilityGraph([makeWall([U], { sharesOutline: false })], RADIUS);
+    const freehand = buildVisibilityGraph([makeWall([U], { outlinedAlone: false })], RADIUS);
 
-    // Whether a wall joins a *drawn* group outline says nothing about navigation.
+    // Whether a wall is *drawn* with an outline says nothing about navigation.
     expect(shared.shells).toHaveLength(1);
     expect(freehand.shells).toHaveLength(1);
     expect(freehand.shells[0].hull).toEqual(shared.shells[0].hull);
@@ -55,7 +55,7 @@ describe('walls kept out of a group\'s shared outline', () => {
     // radius alone. The shell is only a broad-phase reject, so it has to contain
     // every part or a segment through one is wrongly waved through.
     const needle: Point[] = [[0, 0], [400, 6], [400, 12], [0, 30], [200, 15]];
-    const g = buildVisibilityGraph([makeWall([needle], { sharesOutline: false })], RADIUS);
+    const g = buildVisibilityGraph([makeWall([needle], { outlinedAlone: false })], RADIUS);
     const shell = g.shells[0].hull;
     for (const ob of g.obstacles) {
       for (const p of ob.hull) {

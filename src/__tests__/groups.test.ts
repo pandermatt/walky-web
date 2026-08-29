@@ -62,57 +62,51 @@ describe('groupWalls', () => {
     expect(groupWalls([])).toEqual([]);
   });
 
-  it('gives a wall that shares no outline a hull of its own', () => {
+  it('leaves a shape that is not outlined alone without an outline', () => {
     const trace: Point[] = [[0, 0], [100, 0], [100, 100], [40, 60], [0, 100]];
-    const freehand = makeWall([trace], { sharesOutline: false });
-    const groups = groupWalls([freehand]);
-
-    expect(groups).toHaveLength(1);
-    expect(groups[0].wallIds).toEqual([freehand.id]);
-    expect(groups[0].hullWallIds).toEqual([freehand.id]);
-    expect(groups[0].hull).toEqual(monotoneChainHull(trace));
+    const freehand = makeWall([trace], { outlinedAlone: false });
+    // Touching nothing, there is no group for the outline to summarise.
+    expect(groupWalls([freehand])).toEqual([]);
   });
 
-  it('groups a wall that shares no outline, but keeps it out of the shared hull', () => {
+  it('outlines it once it touches something, points and all', () => {
     const solid = makeWall([rectanglePolygon([0, 0], [100, 100])]);
-    const freehand = makeWall([rectanglePolygon([90, 90], [400, 400])], { sharesOutline: false });
+    const freehand = makeWall([rectanglePolygon([90, 90], [400, 400])], { outlinedAlone: false });
     const groups = groupWalls([solid, freehand]);
 
-    // Two outlines: the rectangle's, and the traced shape's own.
-    expect(groups).toHaveLength(2);
-    const shared = groups.find((g) => g.hullWallIds.includes(solid.id))!;
-    const own = groups.find((g) => g.hullWallIds.includes(freehand.id))!;
-
-    // Both are members of the shared outline's group -- they touch -- but only
-    // the rectangle's points shape it.
-    expect(shared.wallIds).toEqual([solid.id, freehand.id].sort((a, b) => a - b));
-    expect(shared.hullWallIds).toEqual([solid.id]);
-    expect(shared.hull).toEqual(monotoneChainHull(solid.polygons.flat()));
-
-    expect(own.wallIds).toEqual([freehand.id]);
-    expect(own.hull).toEqual(monotoneChainHull(freehand.polygons.flat()));
+    expect(groups).toHaveLength(1);
+    expect(groups[0].wallIds).toEqual([solid.id, freehand.id].sort((a, b) => a - b));
+    // The outline is the group's, so the trace shapes it like any other member.
+    expect(groups[0].hull).toEqual(monotoneChainHull([
+      ...solid.polygons.flat(), ...freehand.polygons.flat(),
+    ]));
   });
 
-  it('lets a wall that shares no outline join two shapes under one', () => {
+  it('outlines two traces that touch each other', () => {
+    const left = makeWall([rectanglePolygon([0, 0], [100, 100])], { outlinedAlone: false });
+    const right = makeWall([rectanglePolygon([100, 0], [200, 100])], { outlinedAlone: false });
+    const groups = groupWalls([left, right]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].hull).toEqual(monotoneChainHull([
+      ...left.polygons.flat(), ...right.polygons.flat(),
+    ]));
+    // Apart, neither is worth an outline.
+    expect(groupWalls([left])).toEqual([]);
+  });
+
+  it('lets a trace join two shapes under one outline', () => {
     const left = makeWall([rectanglePolygon([0, 0], [100, 100])]);
     const right = makeWall([rectanglePolygon([300, 0], [400, 100])]);
-    // A traced shape bridging the gap, reaching well below both rectangles.
-    const bridge = makeWall([[[90, 40], [310, 40], [310, 400], [90, 400]] as Point[]],
-      { sharesOutline: false });
+    const bridge = makeWall([[[90, 40], [310, 40], [310, 200], [90, 200]] as Point[]],
+      { outlinedAlone: false });
 
     expect(groupWalls([left, right])).toHaveLength(2);
     const groups = groupWalls([left, right, bridge]);
-    const group = groups.find((g) => g.hullWallIds.includes(left.id))!;
-    expect(group.wallIds).toHaveLength(3);
-    expect(group.hullWallIds).toEqual([left.id, right.id].sort((a, b) => a - b));
-    // One hull over both rectangles, and it stops where they do: the bridge's
-    // own reach down to y = 400 is not part of it.
-    expect(group.hull).toEqual(monotoneChainHull([
-      ...left.polygons.flat(), ...right.polygons.flat(),
+    expect(groups).toHaveLength(1);
+    expect(groups[0].wallIds).toHaveLength(3);
+    expect(groups[0].hull).toEqual(monotoneChainHull([
+      ...left.polygons.flat(), ...right.polygons.flat(), ...bridge.polygons.flat(),
     ]));
-    expect(Math.max(...group.hull.map((p) => p[1]))).toBe(100);
-    // The bridge is still outlined -- on its own, around what was drawn.
-    const own = groups.find((g) => g.hullWallIds.includes(bridge.id))!;
-    expect(own.hull).toEqual(monotoneChainHull(bridge.polygons.flat()));
   });
 });

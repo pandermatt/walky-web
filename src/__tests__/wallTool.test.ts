@@ -46,7 +46,7 @@ function at(world: Point, buttons = 1): PointerInfo {
 }
 
 describe('WallTool', () => {
-  it('commits a traced shape that is hulled on its own, not with a group', () => {
+  it('commits a traced shape that is not outlined until it touches something', () => {
     const { ctx, walls } = stubContext();
     const tool = new WallTool();
     tool.onPointerDown(at([0, 0]));
@@ -54,10 +54,10 @@ describe('WallTool', () => {
     tool.onPointerUp(at([0, 10], 0), ctx);
 
     expect(walls).toHaveLength(1);
-    expect(walls[0].options?.sharesOutline).toBe(false);
+    expect(walls[0].options?.outlinedAlone).toBe(false);
   });
 
-  it('keeps out of a group\'s shared outline in click mode too', () => {
+  it('leaves a click-placed shape unoutlined alone too', () => {
     const { ctx, walls } = stubContext();
     const tool = new WallTool();
     for (const p of [[0, 0], [100, 0], [100, 100]] as Point[]) {
@@ -67,10 +67,10 @@ describe('WallTool', () => {
     tool.onDoubleClick(at([0, 100]), ctx);
 
     expect(walls).toHaveLength(1);
-    expect(walls[0].options?.sharesOutline).toBe(false);
+    expect(walls[0].options?.outlinedAlone).toBe(false);
   });
 
-  it('does not hold the rectangle tool out: a box is a shape a group hull describes', () => {
+  it('outlines a rectangle on its own: a box is a shape a hull describes', () => {
     const { ctx, walls } = stubContext();
     const tool = new RectangleTool();
     tool.onPointerDown(at([0, 0]));
@@ -78,6 +78,6 @@ describe('WallTool', () => {
     tool.onPointerUp(at([100, 80], 0), ctx);
 
     expect(walls).toHaveLength(1);
-    expect(walls[0].options?.sharesOutline).not.toBe(false);
+    expect(walls[0].options?.outlinedAlone).not.toBe(false);
   });
 });

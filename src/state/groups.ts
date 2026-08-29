@@ -12,27 +12,17 @@ import { polygonsOverlap, type Wall } from './model';
  * its own identity, colour and (eventually) deletability -- the grouping is
  * recomputed from scratch whenever walls change, so it can never accumulate.
  *
- * Walls with `sharesOutline` false -- freehand traces -- still group like any
- * other shape, so a squiggle laid across two buildings still puts them under one
- * outline. What they do not do is contribute points to that outline: the shared
- * hull is taken over the group's sharing members only, so a traced shape never
- * stretches the outline out to cover itself.
- *
- * Such a wall is not left without an outline, though. It gets a group of its own
- * holding nothing but itself, hulled over its own points, so the convex-hull view
- * shows a hull for every shape drawn -- the trace's hull simply describes the
- * trace rather than everything it happens to touch. See Wall.sharesOutline.
+ * Walls with `outlinedAlone` false -- freehand traces -- group like any other
+ * shape and shape the group's hull like any other member; a squiggle laid across
+ * two buildings puts all three under one outline. What they do not get is an
+ * outline while they are on their own: a hull around a single trace is a blob
+ * that describes nothing. So a group of one is only outlined if that one wall is
+ * worth outlining alone. See Wall.outlinedAlone.
  */
 export interface WallGroup {
   /** Every wall in the group, lowest id first. */
   wallIds: number[];
-  /**
-   * The members the hull was built from, lowest id first. Never empty. For a
-   * connected group that is its sharing members; for a wall that shares no
-   * outline it is that wall alone.
-   */
-  hullWallIds: number[];
-  /** Convex hull over every point of every wall in `hullWallIds`. */
+  /** Convex hull over every point of every wall in the group. */
   hull: Point[];
 }
 
@@ -85,36 +75,21 @@ export function groupWalls(walls: Wall[], tolerance = GROUP_TOLERANCE): WallGrou
   }
 
   // Sorted so the lowest id is first: the outline's colour comes from the first
-  // wall the hull was built from, and must not change as unrelated shapes are
-  // added elsewhere on the map.
+  // member, and must not change as unrelated shapes are added elsewhere.
   const byId = (a: number, b: number) => a - b;
 
   const groups: WallGroup[] = [];
   for (const members of byRoot.values()) {
-    // Only sharing members shape the group's outline; the rest are in the group
-    // but invisible to it, which is what keeps a traced shape from bloating it.
-    const sharing = members.filter((i) => walls[i].sharesOutline);
-    if (sharing.length > 0) {
-      const points: Point[] = [];
-      for (const i of sharing) points.push(...walls[i].polygons.flat());
-      groups.push({
-        wallIds: members.map((i) => walls[i].id).sort(byId),
-        hullWallIds: sharing.map((i) => walls[i].id).sort(byId),
-        hull: monotoneChainHull(points),
-      });
-    }
-
-    // Everything held out of that outline is hulled on its own, so a traced shape
-    // still gets a hull -- one that describes the trace and nothing else. That is
-    // the wall's own hull, which is exactly this hull of one member.
-    for (const i of members) {
-      if (walls[i].sharesOutline) continue;
-      groups.push({
-        wallIds: [walls[i].id],
-        hullWallIds: [walls[i].id],
-        hull: walls[i].hull.map((p) => [p[0], p[1]] as Point),
-      });
-    }
+    // Touching nothing, a shape is outlined only if it is worth outlining alone.
+    // Once it touches something the outline is about the group, so every member
+    // shapes it, traces included.
+    if (members.length === 1 && !walls[members[0]].outlinedAlone) continue;
+    const points: Point[] = [];
+    for (const i of members) points.push(...walls[i].polygons.flat());
+    groups.push({
+      wallIds: members.map((i) => walls[i].id).sort(byId),
+      hull: monotoneChainHull(points),
+    });
   }
-  return groups.sort((a, b) => a.hullWallIds[0] - b.hullWallIds[0]);
+  return groups.sort((a, b) => a.wallIds[0] - b.wallIds[0]);
 }

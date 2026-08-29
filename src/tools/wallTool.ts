@@ -31,17 +31,16 @@ const SIMPLIFY_TOLERANCE_PX = 2.5;
 const DRAG_THRESHOLD_PX = 5;
 
 /**
- * Shapes from this tool are hulled on their own, never as part of a group.
+ * Shapes from this tool are not outlined until they touch something.
  *
- * The dashed outline is drawn per connected group of touching shapes, which reads
- * well for the shapes a hull describes -- a rectangle, a frame, a blocky building.
- * What this tool makes is a freehand outline: an S, a spiral, a room traced by
- * hand. Letting one into a group's hull drags every wall it touches into a blob
- * that follows wherever the trace wandered, so it stays out of that shared
- * outline and gets one of its own instead -- its own convex hull, around its own
- * shape. See Wall.sharesOutline.
+ * The dashed outline is a summary of a connected group of shapes, which reads for
+ * the shapes a hull describes -- a rectangle, a frame, a blocky building. What
+ * this tool makes is a freehand outline: an S, a spiral, a room traced by hand,
+ * whose hull on its own is a blob with no resemblance to what was drawn and
+ * nothing to summarise. Drawn against other shapes it is a member like any other,
+ * and its points shape the group's outline. See Wall.outlinedAlone.
  */
-const OWN_OUTLINE = { sharesOutline: false } as const;
+const ALONE_UNOUTLINED = { outlinedAlone: false } as const;
 
 export class WallTool implements Tool {
   readonly id = 'wall' as const;
@@ -97,7 +96,7 @@ export class WallTool implements Tool {
 
   onDoubleClick(e: PointerInfo, ctx: ToolContext): void {
     this.addPoint(e.world, true);
-    if (this.points.length >= 3) ctx.addWall(this.points, OWN_OUTLINE);
+    if (this.points.length >= 3) ctx.addWall(this.points, ALONE_UNOUTLINED);
     this.cancel();
     ctx.requestRender();
   }
@@ -126,7 +125,7 @@ export class WallTool implements Tool {
     const tolerance = SIMPLIFY_TOLERANCE_PX * ctx.worldPerPixel();
     const simplified = simplifyClosed(this.stroke, tolerance)
       .map((p) => [Math.round(p[0]), Math.round(p[1])] as Point);
-    if (simplified.length >= 3) ctx.addWall(simplified, OWN_OUTLINE);
+    if (simplified.length >= 3) ctx.addWall(simplified, ALONE_UNOUTLINED);
     this.cancel();
     ctx.requestRender();
   }
