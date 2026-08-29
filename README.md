@@ -156,6 +156,16 @@ Bugs found while porting, all with regression tests:
   the line drawn before play is the line walked after it. It is one graph scan per
   pedestrian, so the result is cached until the map, the crowd or the goal
   changes, and a running crowd still reads its waypoints as before.
+- **Arrivals plop.** Every pedestrian that reaches its goal makes a short water-drop
+  sound, panned to where it landed on screen. It is synthesised — a sine whose pitch
+  falls by two thirds in a tenth of a second — so there is no asset to load and no
+  decode. The interesting part is a crowd: a thousand pedestrians crossing the line
+  together would be a thousand voices stacked into one clipped thud, so a batch is
+  capped at four, each spread 35ms from the last and scaled by 1/√n, and a steady
+  stream is allowed to queue no more than a quarter second ahead before plops are
+  dropped rather than delayed. The result is popcorn instead of noise. The audio
+  context is started from the Start click, since a context created anywhere but a
+  user gesture begins suspended and plays nothing. Toggle it off in Settings.
 
 ### Overlapping walls are no longer merged
 

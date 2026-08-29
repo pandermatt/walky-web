@@ -22,6 +22,7 @@ import { GoalTool } from './tools/goalTool';
 import { TreeTool } from './tools/treeTool';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb } from './sim/agents';
+import { Plops } from './audio/plops';
 import { SpatialHash } from './sim/spatialHash';
 import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolId } from './tools/types';
 
@@ -39,6 +40,7 @@ export class App {
   private nav = new Navigation();
   private agents = new Agents();
   private hash = new SpatialHash();
+  private plops = new Plops();
   private running = false;
   private navDirty = true;
   private groupCache: WallGroup[] | null = null;
@@ -300,6 +302,10 @@ export class App {
         break;
       case 'start':
         this.running = !this.running;
+        // Here rather than at the first arrival: an audio context only starts
+        // unsuspended when it is created inside a user gesture, and this click is
+        // the one gesture guaranteed to precede every plop.
+        if (this.running) this.plops.arm();
         this.toolbar.setRunning(this.running);
         this.updateContextPanel();
         if (this.running) this.tick();
@@ -474,10 +480,29 @@ export class App {
       this.nav, this.hash,
       this.settings.speed, this.settings.pedestrianRadius, this.settings.preferredSpace,
     );
+    this.playArrivals();
     this.agentRevision++;
     this.render();
     requestAnimationFrame(this.tick);
   };
+
+  /**
+   * One plop per pedestrian that reached its goal this tick, panned by where it
+   * landed on screen -- arrivals on the left are heard on the left. Offscreen
+   * arrivals still sound, pinned to the side they went off.
+   */
+  private playArrivals(): void {
+    const arrivals = this.agents.justArrived;
+    if (!this.settings.sound || arrivals.length === 0) return;
+
+    const half = this.viewport.width / 2;
+    const pans = arrivals.map((i) => {
+      const screen = this.viewport.worldToScreen([this.agents.x[i], this.agents.y[i]]);
+      // Held short of a hard left/right, which sounds detached from the picture.
+      return Math.max(-0.8, Math.min(0.8, ((screen[0] - half) / half) * 0.8));
+    });
+    this.plops.play(pans);
+  }
 
   /** Record a world change and schedule a repaint. */
   private touch(): void {
