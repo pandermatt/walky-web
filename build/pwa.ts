@@ -29,8 +29,12 @@ export function pwa(publicDir = 'public'): Plugin {
       const files = buildPrecacheList(Object.keys(bundle), publicFiles);
 
       // Hash what is actually served. Bundle names already encode their own
-      // content; public files do not, so their bytes go in instead.
+      // content; public files do not, so their bytes go in instead. The worker
+      // is served too, and a change to how it caches is as much a new snapshot
+      // as a change to what it caches -- its code goes in while the
+      // placeholders below still stand, so the hash does not depend on itself.
       const digest = createHash('sha256');
+      digest.update(worker.code);
       for (const path of files) {
         digest.update(path);
         digest.update('\0');

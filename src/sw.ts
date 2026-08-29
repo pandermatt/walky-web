@@ -29,12 +29,40 @@ const BASE = new URL('./', sw.location.href);
 sw.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    // `reload` skips the HTTP cache, so an install can never bake a stale copy
-    // of an unhashed file (an icon, the manifest) into the offline snapshot.
-    await cache.addAll(PRECACHE.map((path) => new Request(new URL(path, BASE), { cache: 'reload' })));
+    await Promise.all(PRECACHE.map((path) => precache(cache, path)));
     await sw.skipWaiting();
   })());
 });
+
+/**
+ * Fetches one file of the build and stores it under its own path.
+ *
+ * `cache.addAll` would say this in a line, but it keeps whatever redirect trail
+ * the fetch picked up, and a navigation may not be answered from a response
+ * that carries one -- the host serves the shell at `/` and answers
+ * `/index.html` with a redirect to it, so the precached shell arrives marked as
+ * redirected and every visit afterwards fails with "Response served by service
+ * worker has redirections". Copying the body into a fresh response drops that
+ * trail; what lands in the cache is a plain 200 for the URL we asked for.
+ */
+async function precache(cache: Cache, path: string): Promise<void> {
+  const url = new URL(path, BASE);
+  // `reload` skips the HTTP cache, so an install can never bake a stale copy
+  // of an unhashed file (an icon, the manifest) into the offline snapshot.
+  const response = await fetch(new Request(url, { cache: 'reload' }));
+  if (!response.ok) throw new Error(`precache: ${path} returned ${response.status}`);
+  await cache.put(url, detach(response));
+}
+
+/** The same response, minus any record of how the fetch got there. */
+function detach(response: Response): Response {
+  if (!response.redirected) return response;
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
 
 sw.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
@@ -69,7 +97,10 @@ async function serveShell(request: Request): Promise<Response> {
   const cache = await caches.open(CACHE);
   const shell = await cache.match(new URL('index.html', BASE));
   if (shell) return shell;
-  return fetch(request);
+  // Before the first install finishes there is nothing to serve but the
+  // network, and its answer reaches the page through us -- so it has to be as
+  // free of redirections as the precached copy.
+  return detach(await fetch(request));
 }
 
 async function serveAsset(request: Request): Promise<Response> {
@@ -83,7 +114,7 @@ async function serveAsset(request: Request): Promise<Response> {
   // Anything reached at runtime joins the snapshot, so the next visit needs it
   // no more than this one did.
   if (response.ok && response.type === 'basic') {
-    await cache.put(request, response.clone());
+    await cache.put(request, detach(response.clone()));
   }
   return response;
 }
