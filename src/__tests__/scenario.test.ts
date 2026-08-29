@@ -3,7 +3,7 @@ import {
   SCENARIO_VERSION, buildWorld, clampSettings, scenarioToJson, serializeCore, serializeScenario,
   type ScenarioCore, type SerializedAgent,
 } from '../state/scenario';
-import { DEFAULT_SETTINGS, makeTree, makeWall, rectanglePolygon, type Settings } from '../state/model';
+import { DEFAULT_SETTINGS, makeWall, rectanglePolygon, type Settings } from '../state/model';
 import { BLACK } from '../palette';
 
 function agent(over: Partial<SerializedAgent> = {}): SerializedAgent {
@@ -16,7 +16,6 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
     settings: { ...DEFAULT_SETTINGS },
     view: { targetX: 0, targetY: 0, zoomLevel: 0 },
     walls: [],
-    trees: [],
     agents: [],
     ...over,
   };
@@ -29,12 +28,10 @@ describe('the snapshot', () => {
       settings: DEFAULT_SETTINGS,
       view: { targetX: 1.239, targetY: -4.005, zoomLevel: 0 },
       walls: [wall],
-      trees: [makeTree([3.456, 7.891], 22)],
       agents: [agent({ x: 1.239, y: 2.341 })],
     });
     expect(out.walls[0].polygons[0][0]).toEqual([0.13, 0.12]);
     expect(out.view.targetX).toBe(1.24);
-    expect(out.trees[0]).toEqual({ x: 3.46, y: 7.89, radius: 22 });
     expect(out.agents[0].x).toBe(1.24);
   });
 
@@ -45,7 +42,6 @@ describe('the snapshot', () => {
       settings: DEFAULT_SETTINGS,
       view: { targetX: 0, targetY: 0, zoomLevel: 0 },
       walls: [goal, makeWall([rectanglePolygon([20, 0], [30, 10])])],
-      trees: [],
       agents: [agent({ arrived: true }), agent(), agent()],
       stuck: [false, true, false],
     });
@@ -59,7 +55,6 @@ describe('the snapshot', () => {
       settings: DEFAULT_SETTINGS,
       view: { targetX: 0, targetY: 0, zoomLevel: 0 },
       walls: [],
-      trees: [],
       agents: [agent({ color: [9, 8, 7] })],
     });
     expect(out.agents[0].color).toEqual([9, 8, 7]);
@@ -70,7 +65,6 @@ describe('the snapshot', () => {
       settings: DEFAULT_SETTINGS,
       view: { targetX: 0, targetY: 0, zoomLevel: 0 },
       walls: [],
-      trees: [],
       agents: [agent()],
     });
     expect(out).not.toHaveProperty('created');
@@ -126,7 +120,6 @@ describe('building a world out of a snapshot', () => {
       { id: 100, polygons: [rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false, outlinedAlone: false },
       { id: 101, polygons: [rectanglePolygon([20, 0], [30, 10])], color: [255, 190, 0], isGoal: true, outlinedAlone: true },
     ],
-    trees: [{ x: 5, y: 5, radius: 17 }],
     agents: [
       agent({ x: 1, y: 1, goal: 101, color: [255, 190, 0] }),
       agent({ x: 2, y: 2, goal: 100, color: [1, 2, 3] }),
@@ -188,9 +181,4 @@ describe('building a world out of a snapshot', () => {
     expect(agents[0]).toMatchObject({ x: 90, y: 90, originX: 10, originY: 10 });
   });
 
-  it('puts the trees back at the size they were', () => {
-    const { trees } = buildWorld(snapshot());
-    expect(trees[0].position).toEqual([5, 5]);
-    expect(trees[0].radius).toBe(17);
-  });
 });

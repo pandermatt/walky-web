@@ -36,12 +36,6 @@ export interface Wall {
   selected: boolean;
 }
 
-export interface Tree {
-  id: number;
-  position: Point;
-  radius: number;
-}
-
 export interface Settings {
   showVisibleLines: boolean;
   showLineToTarget: boolean;
@@ -195,10 +189,6 @@ export function wallOverlapsPolygon(wall: Wall, poly: Point[]): boolean {
 /** Whether two walls share any area or crossing edge. */
 export function wallsOverlap(a: Wall, b: Wall): boolean {
   return a.polygons.some((p) => wallOverlapsPolygon(b, p));
-}
-
-export function makeTree(position: Point, radius = 22): Tree {
-  return { id: nextId++, position, radius };
 }
 
 export function rectanglePolygon(a: Point, b: Point): Point[] {

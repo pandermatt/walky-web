@@ -155,9 +155,8 @@ Bugs found while porting, all with regression tests:
 ### Quality-of-life additions
 
 - **Copy link to this map** (in Settings). The whole scenario — walls, goals,
-  trees, the crowd with its origins and colours, the camera and the settings —
-  packed into the URL itself, so a map can be handed to someone by pasting a
-  link. There is no backend to upload it to and no account to save it under: the
+  the crowd with its origins and colours, the camera and the settings — packed
+  into the URL itself, so a map can be handed to someone by pasting a link. There is no backend to upload it to and no account to save it under: the
   map travels inside the fragment, which is never sent to a server, so nothing
   about it leaves the device it was drawn on.
 
@@ -304,9 +303,13 @@ whether or not anything is drawn.
 
 - **No fake 3D.** The original's "shadow" was `draw3DEffect`, a perspective
   extrusion away from the viewport centre. Walls are flat 2D fills.
-- **No OpenStreetMap import.** Out of scope for this version. The wall model is a
-  plain list of polygons, so a converter can be added without touching the
-  simulation.
+- **No OpenStreetMap import, and no trees.** The import is out of scope for this
+  version, and trees came with it: in the original they only ever arrived as
+  `natural=tree` nodes, never drawn by hand. Without the import they were a tool
+  with no button on the toolbar, placing decorations that nothing could walk into
+  — the navigation graph is built from walls alone, so a tree was never an
+  obstacle, only a picture. They are gone. The wall model is still a plain list of
+  polygons, so a converter can be added without touching the simulation.
 - **Rays are opt-in.** The original drew visibility rays for every pedestrian,
   which is unusable past a few hundred.
 - **Graph nodes sit 2 units outside the blocking hull.** On the boundary,

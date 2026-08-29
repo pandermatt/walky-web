@@ -28,8 +28,8 @@ import type { Settings } from './model';
  *   already a whole number -- the tools round on commit (wallTool.ts:127,
  *   rectangleTool.ts:84, borderTool.ts:101), the brush rounds (app.ts:607), and
  *   a step is one lattice square -- so storing them as integers is exact rather
- *   than merely close enough. Only tree centres and the camera are fractional,
- *   and each gets just enough sub-unit precision to be invisible.
+ *   than merely close enough. Only the camera is fractional, and it gets just
+ *   enough sub-unit precision to be invisible.
  *
  * Because there is no float on the wire, NaN and Infinity are unrepresentable:
  * a whole class of bad input cannot be expressed, let alone decoded.
@@ -48,12 +48,16 @@ const MAGIC = 0x57;
  * report can gain a descriptive field without invalidating every link already
  * pasted, and the byte layout can change without renumbering the report.
  *
- * Unknown versions are rejected outright rather than tolerated. Over a delta
- * stream there is no other option -- a field whose length you do not know cannot
- * be skipped -- so additive changes go in the flags byte instead, where a bit
- * announces a block an older build can refuse by name.
+ * Unknown versions are rejected outright rather than tolerated -- in either
+ * direction, since a payload from before a field was dropped misreads exactly as
+ * badly as one from after a field was added. Over a delta stream there is no
+ * other option: a field whose length you do not know cannot be skipped. So
+ * additive changes go in the flags byte instead, where a bit announces a block an
+ * older build can refuse by name.
+ *
+ * Version 2 dropped the tree block along with trees themselves.
  */
-export const CODEC_VERSION = 1;
+export const CODEC_VERSION = 2;
 
 /** The body is deflate-raw rather than the bytes written here. Set by shareLink.ts. */
 export const FLAG_DEFLATED = 1;
@@ -61,8 +65,7 @@ export const FLAG_DEFLATED = 1;
 /** Every bit that means something. Anything else set is a payload from the future. */
 const KNOWN_FLAGS = FLAG_DEFLATED;
 
-/** Sub-unit precision for the two things in a map that are not whole numbers. */
-const TREE_QUANTUM = 4;   // a tree radius is 22; a quarter unit is nothing
+/** Sub-unit precision for the one thing in a map that is not a whole number. */
 const VIEW_QUANTUM = 16;  // at the deepest zoom a 16th of a unit is under 4px
 const ZOOM_QUANTUM = 256; // a pinch lands between the wheel's whole notches
 
@@ -85,7 +88,6 @@ export const LIMITS = {
   maxPolygonsPerWall: 64,   // a border frame is four bars
   maxPointsPerPolygon: 4_096,
   maxTotalPoints: 20_000,
-  maxTrees: 10_000,
   maxAgents: 100_000,
   /** Well inside the range where a Float32Array still holds integers exactly. */
   maxCoord: 1 << 22,
@@ -101,7 +103,7 @@ export class ScenarioLinkError extends Error {
 
 const TRUNCATED = 'that link is cut short or damaged';
 const NOT_WALKY = 'that does not look like a Walky link';
-const NEWER = 'that link was made by a newer version of Walky';
+const WRONG_VERSION = 'that link was made by a different version of Walky';
 
 // ---- bytes in, bytes out ---------------------------------------------------
 
@@ -234,9 +236,9 @@ export function scenarioHeader(flags: number): Uint8Array {
 export function readHeader(bytes: Uint8Array): { flags: number; body: Uint8Array } {
   if (bytes.length < 3) throw new ScenarioLinkError(TRUNCATED);
   if (bytes[0] !== MAGIC) throw new ScenarioLinkError(NOT_WALKY);
-  if (bytes[1] !== CODEC_VERSION) throw new ScenarioLinkError(NEWER);
+  if (bytes[1] !== CODEC_VERSION) throw new ScenarioLinkError(WRONG_VERSION);
   const flags = bytes[2];
-  if ((flags & ~KNOWN_FLAGS) !== 0) throw new ScenarioLinkError(NEWER);
+  if ((flags & ~KNOWN_FLAGS) !== 0) throw new ScenarioLinkError(WRONG_VERSION);
   return { flags, body: bytes.subarray(3) };
 }
 
@@ -265,8 +267,8 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
   w.zigzag(Math.round(core.view.targetY * VIEW_QUANTUM));
   w.zigzag(Math.round(core.view.zoomLevel * ZOOM_QUANTUM));
 
-  // One cursor for every vertex of every shape of every wall. A map drawn at
-  // x=3000 costs the 3000 once, not once per ring.
+  // One cursor for every vertex of every shape of every wall, and a second one
+  // for the crowd. A map drawn at x=3000 costs the 3000 once, not once per ring.
   w.varint(core.walls.length);
   let cx = 0;
   let cy = 0;
@@ -293,19 +295,6 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
       }
     }
   });
-
-  w.varint(core.trees.length);
-  let tx = 0;
-  let ty = 0;
-  for (const tree of core.trees) {
-    const x = Math.round(tree.x * TREE_QUANTUM);
-    const y = Math.round(tree.y * TREE_QUANTUM);
-    w.zigzag(x - tx);
-    w.zigzag(y - ty);
-    w.varint(tree.radius);
-    tx = x;
-    ty = y;
-  }
 
   // Goals travel as the wall's index in this payload, not its id: an index is a
   // smaller number, and remapping onto fresh ids is the importer's job anyway.
@@ -411,16 +400,6 @@ export function decodeScenarioBody(bytes: Uint8Array): ScenarioCore {
     });
   }
 
-  const treeCount = r.count(LIMITS.maxTrees, 'trees');
-  const trees: ScenarioCore['trees'] = [];
-  let tx = 0;
-  let ty = 0;
-  for (let i = 0; i < treeCount; i++) {
-    tx = r.step(tx);
-    ty = r.step(ty);
-    trees.push({ x: tx / TREE_QUANTUM, y: ty / TREE_QUANTUM, radius: r.varint() });
-  }
-
   const agentCount = r.count(LIMITS.maxAgents, 'pedestrians');
   const agents: SerializedAgent[] = [];
   let ax = 0;
@@ -458,7 +437,6 @@ export function decodeScenarioBody(bytes: Uint8Array): ScenarioCore {
     settings: clampSettings(settings),
     view,
     walls,
-    trees,
     agents,
   };
 }

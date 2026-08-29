@@ -16,7 +16,6 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
     settings: { ...DEFAULT_SETTINGS },
     view: { targetX: 0, targetY: 0, zoomLevel: 0 },
     walls: [],
-    trees: [],
     agents: [],
     ...over,
   };
@@ -59,7 +58,6 @@ function richScenario(): ScenarioCore {
         { outlinedAlone: false, color: [12, 240, 60] }),
       wall(9, [box(900, 400)], { isGoal: true, color: [255, 200, 0] }),
     ],
-    trees: [{ x: 120.25, y: 60.75, radius: 22 }, { x: 340, y: 210.5, radius: 14 }],
     agents: [
       agent(50, 50, { goal: 9, color: [255, 200, 0] }),
       agent(64, 50, { goal: 9, color: [255, 200, 0], originX: 60, originY: 44 }),
@@ -90,7 +88,6 @@ function realisticScenario(): ScenarioCore {
   return core({
     view: { targetX: 300, targetY: 200, zoomLevel: 1 },
     walls,
-    trees: [{ x: 120.5, y: 300.25, radius: 22 }, { x: 480, y: 220, radius: 18 }],
     agents,
   });
 }
@@ -120,14 +117,9 @@ describe('the scenario codec', () => {
     expect(decodeScenario(encodeScenario(before)).walls[0].polygons[0][0]).toEqual([10, 21]);
   });
 
-  it('keeps a tree within a quarter unit and the camera within a sixteenth', () => {
-    const before = core({
-      view: { targetX: 812.53, targetY: -344.29, zoomLevel: -3.51 },
-      trees: [{ x: 120.3, y: 60.8, radius: 22 }],
-    });
+  it('keeps the camera within a sixteenth of a unit, and the zoom finer still', () => {
+    const before = core({ view: { targetX: 812.53, targetY: -344.29, zoomLevel: -3.51 } });
     const after = decodeScenario(encodeScenario(before));
-    expect(Math.abs(after.trees[0].x - 120.3)).toBeLessThanOrEqual(0.25);
-    expect(Math.abs(after.trees[0].y - 60.8)).toBeLessThanOrEqual(0.25);
     expect(Math.abs(after.view.targetX - 812.53)).toBeLessThanOrEqual(1 / 16);
     expect(Math.abs(after.view.targetY - -344.29)).toBeLessThanOrEqual(1 / 16);
     expect(Math.abs(after.view.zoomLevel - -3.51)).toBeLessThanOrEqual(1 / 256);
@@ -198,16 +190,21 @@ describe('a link the codec will not accept', () => {
     expect(() => decodeScenario(bytes)).toThrow(/does not look like a Walky link/);
   });
 
-  it('refuses a version it does not know', () => {
-    const bytes = encodeScenario(core());
-    bytes[1] = CODEC_VERSION + 1;
-    expect(() => decodeScenario(bytes)).toThrow(/newer version of Walky/);
+  it('refuses a version it does not know, in either direction', () => {
+    // Older matters as much as newer: a payload written before a field was
+    // dropped misreads exactly as badly as one written after a field was added,
+    // and there is no skipping an unknown field in a delta stream.
+    for (const version of [CODEC_VERSION + 1, CODEC_VERSION - 1]) {
+      const bytes = encodeScenario(core());
+      bytes[1] = version;
+      expect(() => decodeScenario(bytes)).toThrow(/different version of Walky/);
+    }
   });
 
   it('refuses a flag it does not know', () => {
     const bytes = encodeScenario(core());
     bytes[2] = 0x40;
-    expect(() => decodeScenario(bytes)).toThrow(/newer version of Walky/);
+    expect(() => decodeScenario(bytes)).toThrow(/different version of Walky/);
   });
 
   it('sends a deflated payload to the link reader rather than guessing at it', () => {

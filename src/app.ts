@@ -3,8 +3,8 @@ import { Overlay } from './render/overlay';
 import { Viewport, type Bounds } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
-  DEFAULT_SETTINGS, makeWall, makeTree, wallContains,
-  type Settings, type Tree, type Wall, type WallOptions,
+  DEFAULT_SETTINGS, makeWall, wallContains,
+  type Settings, type Wall, type WallOptions,
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { groupWalls, type WallGroup } from './state/groups';
@@ -23,7 +23,6 @@ import { RectangleTool } from './tools/rectangleTool';
 import { ShiftTool } from './tools/shiftTool';
 import { PedestrianTool } from './tools/pedestrianTool';
 import { GoalTool } from './tools/goalTool';
-import { TreeTool } from './tools/treeTool';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb } from './sim/agents';
 import { Plops } from './audio/plops';
@@ -39,7 +38,6 @@ export class App {
   private contextPanel: ContextPanel;
 
   private walls: Wall[] = [];
-  private trees: Tree[] = [];
   private settings: Settings = { ...DEFAULT_SETTINGS };
   private nav = new Navigation();
   private agents = new Agents();
@@ -67,7 +65,7 @@ export class App {
   /** Set once the pinch has taken the gesture, until the last finger lifts. */
   private gestureTaken = false;
   private frameRequested = false;
-  /** Bumped on map edits only -- walls and trees. */
+  /** Bumped on map edits only -- the walls. */
   private worldRevision = 0;
   /** Bumped every simulation tick -- agents, rays, paths. */
   private agentRevision = 0;
@@ -92,7 +90,7 @@ export class App {
 
     for (const t of [
       new WallTool(), new RectangleTool(), new ShiftTool(),
-      new PedestrianTool(), new GoalTool(), new TreeTool(), new SelectionTool(),
+      new PedestrianTool(), new GoalTool(), new SelectionTool(),
       new BorderTool(),
     ]) {
       this.tools.set(t.id, t as Tool);
@@ -151,7 +149,6 @@ export class App {
     addWall: (polygon, options) => this.addWall(polygon, options),
     addWallShape: (polygons, options) => this.addWallShape(polygons, options),
     settings: () => this.settings,
-    addTree: (at) => { this.trees = [...this.trees, makeTree(at)]; this.touch(); },
     pedestrianBlock: (at) => this.pedestrianBlock(at),
     addPedestrians: (at) => {
       const spots = this.pedestrianBlock(at);
@@ -410,7 +407,7 @@ export class App {
   }
 
   /**
-   * Box around everything drawn -- walls, trees and pedestrians -- or null when
+   * Box around everything drawn -- walls and pedestrians -- or null when
    * the map is empty. What reset-zoom aims the camera at.
    */
   private contentBounds(): Bounds | null {
@@ -424,10 +421,6 @@ export class App {
     for (const wall of this.walls) {
       for (const polygon of wall.polygons) for (const p of polygon) add(p[0], p[1]);
     }
-    for (const tree of this.trees) {
-      add(tree.position[0] - tree.radius, tree.position[1] - tree.radius);
-      add(tree.position[0] + tree.radius, tree.position[1] + tree.radius);
-    }
     for (let i = 0; i < this.agents.count; i++) add(this.agents.x[i], this.agents.y[i]);
     return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
   }
@@ -439,7 +432,6 @@ export class App {
    */
   private resetWorld(): void {
     this.walls = [];
-    this.trees = [];
     this.agents.clear();
     this.running = false;
     this.toolbar.setRunning(false);
@@ -698,7 +690,6 @@ export class App {
       worldRevision: this.worldRevision,
       agentRevision: this.agentRevision,
       walls: this.walls,
-      trees: this.trees,
       agents: this.agentViews(),
       rays: [],
       paths: this.settings.showLineToTarget ? this.goalPaths() : [],
@@ -869,7 +860,6 @@ export class App {
         zoomLevel: this.viewport.zoomLevel,
       },
       walls: this.walls,
-      trees: this.trees,
       agents,
       stuck,
     });
@@ -930,9 +920,8 @@ export class App {
 
     Object.assign(this.settings, clampSettings(core.settings));
 
-    const { walls, trees, agents } = buildWorld(core);
+    const { walls, agents } = buildWorld(core);
     this.walls = walls;
-    this.trees = trees;
     for (const agent of agents) this.agents.restore(agent);
 
     this.viewport.targetX = core.view.targetX;

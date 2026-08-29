@@ -295,12 +295,6 @@ export class Overlay {
         ctx.stroke(wave);
         break;
       }
-      case 'tree':
-        ctx.globalAlpha = 0.5;
-        ctx.beginPath();
-        ctx.arc(at[0], at[1], r, 0, Math.PI * 2);
-        ctx.stroke();
-        break;
       case 'target': {
         // A ring with a cross through it, echoing the goal icon.
         ctx.beginPath();

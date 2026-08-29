@@ -3,7 +3,7 @@ import type { Settings, WallOptions } from '../state/model';
 
 export type ToolId =
   | 'wall' | 'rectangle' | 'border' | 'pedestrian'
-  | 'goal' | 'select' | 'shift' | 'tree';
+  | 'goal' | 'select' | 'shift';
 
 /** What a tool is allowed to do to the world, kept narrow on purpose. */
 export interface ToolContext {
@@ -14,7 +14,6 @@ export interface ToolContext {
   settings(): Readonly<Settings>;
   /** Legal positions in the brush block centred on `at`, for placement and preview. */
   pedestrianBlock(at: Point): Point[];
-  addTree(at: Point): void;
   addPedestrians(at: Point): void;
   setGoalAt(at: Point): void;
   /** Select the pedestrian under a point (or clear, if there is none). */
@@ -50,7 +49,7 @@ export interface ToolContext {
  * always previews the real thing at the real size, the way the pedestrian brush
  * already did.
  */
-export type GhostKind = 'square' | 'squiggle' | 'frame' | 'tree' | 'target' | 'none';
+export type GhostKind = 'square' | 'squiggle' | 'frame' | 'target' | 'none';
 
 export interface CursorGhost {
   kind: GhostKind;

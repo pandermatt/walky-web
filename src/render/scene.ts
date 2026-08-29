@@ -1,5 +1,5 @@
 import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
-import { SolidPolygonLayer, ScatterplotLayer, LineLayer, PathLayer, IconLayer } from '@deck.gl/layers';
+import { SolidPolygonLayer, ScatterplotLayer, LineLayer, PathLayer } from '@deck.gl/layers';
 import { BLUE, ORANGE, RED, WHITE, YELLOW, type RGB } from '../palette';
 
 export type Point = [number, number];
@@ -15,11 +15,6 @@ export interface Wall {
 interface WallPiece {
   polygon: Point[];
   color: RGB;
-}
-
-export interface Tree {
-  position: Point;
-  radius: number;
 }
 
 export interface Ray {
@@ -41,14 +36,13 @@ export interface SceneState {
    * onto the same array -- leaves it convinced nothing happened and it keeps the
    * stale GPU buffers. These revisions drive updateTriggers so in-place edits show.
    *
-   * They are split deliberately. Walls and trees change only when the map is
-   * edited, while agents move every tick; sharing one counter re-tesselated every
+   * They are split deliberately. Walls change only when the map is edited, while
+   * agents move every tick; sharing one counter re-tesselated every
    * wall polygon on every frame, which alone cost about 800ms a frame.
    */
   worldRevision: number;
   agentRevision: number;
   walls: Wall[];
-  trees: Tree[];
   agents: Agent[];
   rays: Ray[];
   paths: Point[][];
@@ -111,7 +105,7 @@ export class Scene {
   }
 
   private buildLayers(state: SceneState) {
-    const { worldRevision, agentRevision, walls, trees, agents, rays, paths, showPreferredRadius } = state;
+    const { worldRevision, agentRevision, walls, agents, rays, paths, showPreferredRadius } = state;
 
     return [
       // Walls are flat 2D fills -- no shadow copy, no extrusion. A merged wall
@@ -123,16 +117,6 @@ export class Scene {
         getFillColor: (piece) => piece.color as unknown as [number, number, number],
         filled: true,
         updateTriggers: { getPolygon: worldRevision, getFillColor: worldRevision },
-      }),
-
-      new IconLayer<Tree>({
-        id: 'trees',
-        data: trees,
-        getPosition: (t) => t.position,
-        getSize: (t) => t.radius * 2,
-        sizeUnits: 'common',
-        getIcon: () => ({ url: './images/tree.png', width: 256, height: 256, anchorX: 128, anchorY: 128 }),
-        updateTriggers: { getPosition: worldRevision, getSize: worldRevision },
       }),
 
       new LineLayer<Ray>({

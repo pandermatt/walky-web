@@ -1,8 +1,8 @@
 import { BLACK, type RGB } from '../palette';
 import type { Point } from '../sim/geometry';
 import {
-  DEFAULT_SETTINGS, SETTING_RANGES, makeTree, makeWall,
-  type NumericSetting, type Settings, type Tree, type Wall,
+  DEFAULT_SETTINGS, SETTING_RANGES, makeWall,
+  type NumericSetting, type Settings, type Wall,
 } from './model';
 
 /**
@@ -13,10 +13,10 @@ import {
  * positions, goals and settings involved and is otherwise near-impossible to
  * describe. Also the basis for saving and loading, and for the shared link.
  *
- * Version 2 added the pedestrian colour. A pedestrian takes the colour of the
- * goal it is heading for, so a snapshot without it describes a map that looks
- * different from the one it was taken of -- which matters now that a snapshot
- * can be opened again rather than only read.
+ * Version 2 added the pedestrian colour and dropped the trees. The colour
+ * matters now that a snapshot can be opened again rather than only read: a
+ * pedestrian takes the colour of the goal it is heading for, so a snapshot
+ * without it describes a map that looks different from the one it was taken of.
  */
 export const SCENARIO_VERSION = 2;
 
@@ -70,7 +70,6 @@ export interface ScenarioCore {
   settings: Settings;
   view: { targetX: number; targetY: number; zoomLevel: number };
   walls: SerializedWall[];
-  trees: { x: number; y: number; radius: number }[];
   agents: SerializedAgent[];
 }
 
@@ -94,7 +93,6 @@ export interface ScenarioInput {
   settings: Settings;
   view: { targetX: number; targetY: number; zoomLevel: number };
   walls: Wall[];
-  trees: Tree[];
   agents: SerializedAgent[];
 }
 
@@ -115,7 +113,6 @@ export function serializeCore(input: ScenarioInput): ScenarioCore {
       isGoal: w.isGoal,
       outlinedAlone: w.outlinedAlone,
     })),
-    trees: input.trees.map((t) => ({ x: round(t.position[0]), y: round(t.position[1]), radius: t.radius })),
     agents: input.agents.map((a) => ({
       x: round(a.x),
       y: round(a.y),
@@ -209,7 +206,7 @@ export interface RestoredAgent {
  * Shapes with fewer than three points are dropped, matching what
  * App.addWallShape already refuses to accept from a tool.
  */
-export function buildWorld(core: ScenarioCore): { walls: Wall[]; trees: Tree[]; agents: RestoredAgent[] } {
+export function buildWorld(core: ScenarioCore): { walls: Wall[]; agents: RestoredAgent[] } {
   const walls: Wall[] = [];
   const idMap = new Map<number, number>();
   for (const sw of core.walls) {
@@ -220,8 +217,6 @@ export function buildWorld(core: ScenarioCore): { walls: Wall[]; trees: Tree[]; 
     walls.push(wall);
     idMap.set(sw.id, wall.id);
   }
-
-  const trees = core.trees.map((t) => makeTree([t.x, t.y], t.radius));
 
   const agents: RestoredAgent[] = core.agents.map((a) => {
     // A goal naming a wall that did not survive is simply no goal: an
@@ -240,5 +235,5 @@ export function buildWorld(core: ScenarioCore): { walls: Wall[]; trees: Tree[]; 
     };
   });
 
-  return { walls, trees, agents };
+  return { walls, agents };
 }
