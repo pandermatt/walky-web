@@ -58,7 +58,7 @@ export class Navigation {
   }
 
   get obstacles(): Obstacle[] { return this.graph.obstacles; }
-  /** Whole-wall convex hulls, expanded -- the drawn outline and the broad phase. */
+  /** Whole-wall convex hulls, expanded: the broad phase in front of the parts. */
   get shells(): WallShell[] { return this.graph.shells; }
   get blockers(): Blockers { return this.graph; }
   get nodes(): Point[] { return this.graph.nodes; }

@@ -492,12 +492,13 @@ export class App {
 
     // The solid outline is drawn once per connected group rather than per wall,
     // so shapes drawn against each other still read as one object -- the look
-    // merging used to give, without merging their identities. Navigation keeps
-    // its own per-wall shells, which are tighter and so a better broad phase.
+    // merging used to give, without merging their identities. A wall that shares
+    // no outline is its own group, so it still gets a hull, drawn around itself.
+    // Navigation keeps its own per-wall shells, which serve a different purpose.
     const shells = this.groups().map((g) => ({
       points: expandPolygon(g.hull, this.settings.pedestrianRadius),
-      // From the first wall the hull was actually built from: a member that opts
-      // out of hulling contributes no outline, so it should not colour one.
+      // From the first wall the hull was actually built from: a member held out
+      // of the shared outline contributes no points, so it should not colour it.
       color: byId.get(g.hullWallIds[0]) ?? WHITE,
       faint: false,
     }));

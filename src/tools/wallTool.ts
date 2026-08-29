@@ -31,18 +31,17 @@ const SIMPLIFY_TOLERANCE_PX = 2.5;
 const DRAG_THRESHOLD_PX = 5;
 
 /**
- * Shapes from this tool are left out of the convex hull calculation.
+ * Shapes from this tool are hulled on their own, never as part of a group.
  *
- * The hull is a summary that only reads as one for a roughly convex shape. What
- * this tool makes is a freehand outline -- an S, a spiral, a room traced by hand
- * -- and its hull is a blob that bears no resemblance to what was drawn, and that
- * drags every wall it touches into the same blob, since the dashed outline is
- * drawn per connected group. The shape still groups with what it touches; it
- * simply contributes no points to the group's hull. Navigation is unaffected: it
- * runs on the convex decomposition of the polygon, not on this hull, so the shape
- * blocks and is walked around exactly as before. See Wall.hulled.
+ * The dashed outline is drawn per connected group of touching shapes, which reads
+ * well for the shapes a hull describes -- a rectangle, a frame, a blocky building.
+ * What this tool makes is a freehand outline: an S, a spiral, a room traced by
+ * hand. Letting one into a group's hull drags every wall it touches into a blob
+ * that follows wherever the trace wandered, so it stays out of that shared
+ * outline and gets one of its own instead -- its own convex hull, around its own
+ * shape. See Wall.sharesOutline.
  */
-const NOT_HULLED = { hulled: false } as const;
+const OWN_OUTLINE = { sharesOutline: false } as const;
 
 export class WallTool implements Tool {
   readonly id = 'wall' as const;
@@ -98,7 +97,7 @@ export class WallTool implements Tool {
 
   onDoubleClick(e: PointerInfo, ctx: ToolContext): void {
     this.addPoint(e.world, true);
-    if (this.points.length >= 3) ctx.addWall(this.points, NOT_HULLED);
+    if (this.points.length >= 3) ctx.addWall(this.points, OWN_OUTLINE);
     this.cancel();
     ctx.requestRender();
   }
@@ -127,7 +126,7 @@ export class WallTool implements Tool {
     const tolerance = SIMPLIFY_TOLERANCE_PX * ctx.worldPerPixel();
     const simplified = simplifyClosed(this.stroke, tolerance)
       .map((p) => [Math.round(p[0]), Math.round(p[1])] as Point);
-    if (simplified.length >= 3) ctx.addWall(simplified, NOT_HULLED);
+    if (simplified.length >= 3) ctx.addWall(simplified, OWN_OUTLINE);
     this.cancel();
     ctx.requestRender();
   }
