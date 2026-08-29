@@ -1,6 +1,6 @@
 import { randomBrightColor, BLACK, type RGB } from '../palette';
 import { distance, type Point } from './geometry';
-import { Behaviour, SQRT2, interactionReach } from './behaviour';
+import { Behaviour, SQRT2, interactionReach, paceScale } from './behaviour';
 import type { Navigation } from './navigation';
 import type { SpatialHash } from './spatialHash';
 
@@ -58,6 +58,27 @@ export class Agents {
   headingY: Float32Array;
   /** Consecutive steps spent standing still; patience that runs out. */
   waited: Float32Array;
+  /**
+   * A stable number in [0,1) that makes this pedestrian slightly its own person:
+   * how much room it keeps and how briskly it walks are both scaled by it.
+   *
+   * A crowd where everyone wants exactly the same space and moves at exactly the
+   * same pace behaves like a lattice -- it locks into ranks, and nobody ever has
+   * a reason to overtake. Real variation is what makes a crowd fan out, form
+   * lanes and thin at the edges.
+   *
+   * Derived from where the pedestrian was placed rather than stored, because a
+   * trait has to survive undo and Reset, and its origin is the one piece of
+   * identity it already carries through both. That keeps the undo snapshot to the
+   * four things a map edit can actually change.
+   */
+  trait: Float32Array;
+  /**
+   * The room this pedestrian actually kept on its last step, after its own
+   * temperament and the crush around it. Read by the preferred-radius overlay, so
+   * the rings visibly tighten as a crowd packs.
+   */
+  effectiveSpace: Float32Array;
   /** Remaining distance to the goal; lower means higher priority in a crowd. */
   costToGoal: Float32Array;
   /** Lassoed by the selection tool; the mark-goal tool acts on these alone. */
@@ -88,6 +109,8 @@ export class Agents {
     this.headingX = new Float32Array(capacity);
     this.headingY = new Float32Array(capacity);
     this.waited = new Float32Array(capacity);
+    this.trait = new Float32Array(capacity);
+    this.effectiveSpace = new Float32Array(capacity);
     this.costToGoal = new Float32Array(capacity).fill(Infinity);
     this.selected = new Uint8Array(capacity);
   }
@@ -105,6 +128,8 @@ export class Agents {
     this.headingX[i] = 0;
     this.headingY[i] = 0;
     this.waited[i] = 0;
+    this.trait[i] = traitOf(at[0], at[1]);
+    this.effectiveSpace[i] = 0;
     this.costToGoal[i] = Infinity;
     this.selected[i] = 0;
     return i;
@@ -149,6 +174,8 @@ export class Agents {
     this.headingX[i] = this.headingX[last];
     this.headingY[i] = this.headingY[last];
     this.waited[i] = this.waited[last];
+    this.trait[i] = this.trait[last];
+    this.effectiveSpace[i] = this.effectiveSpace[last];
     this.costToGoal[i] = this.costToGoal[last];
     this.selected[i] = this.selected[last];
   }
@@ -195,6 +222,10 @@ export class Agents {
     this.headingX.fill(0, 0, n);
     this.headingY.fill(0, 0, n);
     this.waited.fill(0, 0, n);
+    this.effectiveSpace.fill(0, 0, n);
+    // Not derived from the tick but from the pedestrian: recomputed rather than
+    // restored, so it comes back identical without being stored.
+    for (let i = 0; i < n; i++) this.trait[i] = traitOf(this.originX[i], this.originY[i]);
     this.costToGoal.fill(Infinity, 0, n);
     this.justArrived.length = 0;
     this.count = n;
@@ -211,6 +242,7 @@ export class Agents {
       this.headingX[i] = 0;
       this.headingY[i] = 0;
       this.waited[i] = 0;
+      this.effectiveSpace[i] = 0;
     }
   }
 
@@ -257,8 +289,12 @@ export class Agents {
       // then lurch forward once freed) but raised to the speed itself, so the
       // setting actually controls how far a pedestrian gets per frame. At speed 1
       // this is exactly the original's sqrt(2).
-      const cap = Math.max(speed, SQRT2);
-      this.speedCounter[i] = Math.min(this.speedCounter[i] + speed, cap);
+      // Not everyone walks at the setting. Slower neighbours give the brisker ones
+      // someone to overtake, which is most of what makes a crowd look like a crowd
+      // rather than a block sliding across the map.
+      const own = speed * paceScale(this.trait[i]);
+      const cap = Math.max(own, SQRT2);
+      this.speedCounter[i] = Math.min(this.speedCounter[i] + own, cap);
 
       let stepTaken = true;
       while (this.speedCounter[i] >= 1 && stepTaken) {
@@ -341,10 +377,27 @@ export class Agents {
     this.headingX = copy(this.headingX, (n) => new Float32Array(n));
     this.headingY = copy(this.headingY, (n) => new Float32Array(n));
     this.waited = copy(this.waited, (n) => new Float32Array(n));
+    this.trait = copy(this.trait, (n) => new Float32Array(n));
+    this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));
     this.costToGoal = copy(this.costToGoal, (n) => new Float32Array(n));
     this.selected = copy(this.selected, (n) => new Uint8Array(n));
     this.capacity = next;
   }
+}
+
+/**
+ * A stable number in [0,1) from a placement, well spread for nearby inputs.
+ *
+ * The brush lays pedestrians on a regular pitch, so neighbouring origins differ by
+ * a constant -- which a weaker mix would turn into a visible stripe of identical
+ * temperaments across the crowd.
+ */
+export function traitOf(ox: number, oy: number): number {
+  let h = Math.imul(Math.round(ox) | 0, 73856093) ^ Math.imul(Math.round(oy) | 0, 19349663);
+  h = Math.imul(h ^ (h >>> 15), 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 3266489917);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
 }
 
 export function packRgb(c: RGB): number {

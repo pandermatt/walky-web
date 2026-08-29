@@ -107,6 +107,53 @@ const PATIENCE = 10;
 const LOOKAHEAD = 4;
 /** How fast the smoothed heading follows the steps actually taken. */
 const HEADING_SMOOTH = 0.35;
+/**
+ * How much brisker than the speed setting the briskest pedestrian walks.
+ *
+ * The variation goes upwards rather than around the setting because the budget
+ * has to buy a whole lattice step within one tick: scaled below 1, a pedestrian at
+ * speed 1 cannot afford a step on the tick it is offered one, and only moves every
+ * other tick -- which at the lowest setting is most of the crowd stuttering.
+ */
+const PACE_SPREAD = 0.15;
+
+/** A pedestrian's pace, as a multiple of the speed setting. */
+export function paceScale(trait: number): number {
+  return 1 + PACE_SPREAD * trait;
+}
+/**
+ * A pedestrian's share of the preferred-space setting: between 0.8 and 1 of it.
+ *
+ * The setting is the room the most private person in the crowd wants, and the
+ * rest want a little less -- rather than a mean everyone scatters around, which
+ * would let an agent demand more space than the setting and quietly invalidate
+ * the query reach built from it.
+ */
+const SPACE_SPREAD = 0.2;
+/**
+ * Neighbours within reach at which personal space has halved, and the floor it
+ * cannot compress past.
+ *
+ * People accept less room as it gets crowded -- the fundamental diagram. This is
+ * the direct answer to a preferred space set high: rather than a crowd trying to
+ * hold 90px apart in a corridor that cannot give it and shoving over the
+ * shortfall, the requirement itself relaxes, and the crowd compresses and queues.
+ * The setting stops being a lever that blows the crowd apart and becomes what it
+ * says: the room people take when there is room to take.
+ */
+const DENSITY_HALF = 3;
+const COMPRESS_FLOOR = 0.25;
+/** Neighbours close by that count as room enough, before compression starts. */
+const FREE_NEIGHBOURS = 2;
+/**
+ * The window density is judged in, as a multiple of the body radius.
+ *
+ * Deliberately not the interaction reach. That grows with the preferred-space
+ * setting, so counting neighbours inside it would find more of them exactly when
+ * the setting was raised -- compressing precisely as hard as the setting had
+ * loosened, and leaving the dial doing nothing at all.
+ */
+const DENSITY_WINDOW = 3;
 
 /**
  * How far a pedestrian can be influenced from: its own body, its personal space,
@@ -121,7 +168,7 @@ const HEADING_SMOOTH = 0.35;
  * block of cells when they agree, and a wider sweep when they do not.
  */
 export function interactionReach(radius: number, preferred: number, speed: number): number {
-  return 2 * radius + preferred + LOOKAHEAD + Math.max(0, speed);
+  return 2 * radius + preferred + LOOKAHEAD + Math.max(0, speed) * (1 + PACE_SPREAD);
 }
 
 export interface StepResult {
@@ -171,11 +218,33 @@ export class Behaviour {
    * constant part is shared by all nine and cancels out of the comparison. That
    * turns nine passes over the neighbours into one.
    */
-  private survey(self: number, radius: number, personal: number, decay: number, reach: number): void {
+  private survey(self: number, radius: number, preferred: number): void {
     const a = this.agents;
+    const reach = interactionReach(radius, preferred, this.speed);
     const found = this.hash.query(a.x[self], a.y[self], reach, self, a.x, a.y);
     const n = found.length;
     if (this.bodyIdx.length < n) this.bodyIdx = new Int32Array(n * 2);
+
+    // How much room this pedestrian is asking for: its own temperament, relaxed
+    // by how crowded it is here.
+    const densityWindow = DENSITY_WINDOW * radius;
+    const densityWindow2 = densityWindow * densityWindow;
+    let crowd = 0;
+    for (let k = 0; k < n; k++) {
+      const j = found[k];
+      if (a.arrived[j]) continue;
+      const cx = a.x[j] - a.x[self];
+      const cy = a.y[j] - a.y[self];
+      if (cx * cx + cy * cy < densityWindow2) crowd++;
+    }
+    const compression = Math.max(
+      COMPRESS_FLOOR,
+      1 / (1 + Math.max(0, crowd - FREE_NEIGHBOURS) / DENSITY_HALF),
+    );
+    const space = preferred * (1 - SPACE_SPREAD * a.trait[self]) * compression;
+    a.effectiveSpace[self] = space;
+    const personal = 2 * radius + space;
+    const decay = Math.max(1, DECAY_FRACTION * personal);
 
     const hx = a.headingX[self];
     const hy = a.headingY[self];
@@ -292,10 +361,8 @@ export class Behaviour {
     const x = a.x[i];
     const y = a.y[i];
     const budget = a.speedCounter[i];
-    const personal = 2 * radius + preferred;
-    const decay = Math.max(1, DECAY_FRACTION * personal);
 
-    this.survey(i, radius, personal, decay, interactionReach(radius, preferred, this.speed));
+    this.survey(i, radius, preferred);
 
     const distHere = Math.hypot(target[0] - x, target[1] - y);
     const hx = a.headingX[i];
@@ -497,9 +564,7 @@ export class Behaviour {
     if (dx === 0 && dy === 0) return NO_STEP;
     const nx = a.x[i] + dx;
     const ny = a.y[i] + dy;
-    const personal = 2 * radius + preferred;
-    this.survey(i, radius, personal, Math.max(1, DECAY_FRACTION * personal),
-      interactionReach(radius, preferred, this.speed));
+    this.survey(i, radius, preferred);
     if (!this.isLegal(nx, ny, radius)) return NO_STEP;
     return this.commit(i, [nx, ny], stepLengthOf(dx, dy), true);
   }
