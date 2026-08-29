@@ -1,8 +1,8 @@
 import { BLACK, type RGB } from '../palette';
 import type { Point } from '../sim/geometry';
 import {
-  DEFAULT_SETTINGS, SETTING_RANGES, makeWall,
-  type NumericSetting, type Settings, type Wall,
+  DEFAULT_SETTINGS, SETTING_RANGES, makeLabel, makeWall,
+  type Label, type NumericSetting, type Settings, type Wall,
 } from './model';
 
 /**
@@ -18,9 +18,11 @@ import {
  * pedestrian takes the colour of the goal it is heading for, so a snapshot
  * without it describes a map that looks different from the one it was taken of.
  * Version 3 added the border flag, for the same reason: a frame reopened as an
- * ordinary wall would swallow every outline on the map.
+ * ordinary wall would swallow every outline on the map. Version 4 added the
+ * labels: a map that says which door is which is a different map from one that
+ * does not.
  */
-export const SCENARIO_VERSION = 3;
+export const SCENARIO_VERSION = 4;
 
 /**
  * A pedestrian as it is stored: where it is, where it started, and what it is
@@ -50,6 +52,15 @@ export interface ReportedAgent extends SerializedAgent {
   stuck: boolean;
 }
 
+/** A label as it is stored: where the word sits, the word, and how big it is. */
+export interface SerializedLabel {
+  at: Point;
+  text: string;
+  /** World-unit height and font weight, as the sliders were set when it was written. */
+  size: number;
+  weight: number;
+}
+
 export interface SerializedWall {
   id: number;
   polygons: Point[][];
@@ -73,6 +84,12 @@ export interface ScenarioCore {
   view: { targetX: number; targetY: number; zoomLevel: number };
   walls: SerializedWall[];
   agents: SerializedAgent[];
+  /**
+   * Optional, and read with a default everywhere: a payload written before
+   * labels existed has no field here, and that is a map with nothing written on
+   * it rather than a map that failed to load.
+   */
+  labels?: SerializedLabel[];
 }
 
 /** A core plus the descriptive extras the JSON report carries. */
@@ -86,16 +103,23 @@ export interface Scenario extends ScenarioCore {
     agents: number;
     arrived: number;
     stuck: number;
+    labels: number;
   };
 }
 
 const round = (v: number) => Math.round(v * 100) / 100;
+
+/** A number from a payload, or the default when it is not one. */
+const number = (v: unknown, fallback: number) => (
+  typeof v === 'number' && Number.isFinite(v) ? v : fallback
+);
 
 export interface ScenarioInput {
   settings: Settings;
   view: { targetX: number; targetY: number; zoomLevel: number };
   walls: Wall[];
   agents: SerializedAgent[];
+  labels: Label[];
 }
 
 /** The map itself, with every coordinate rounded to two decimals. */
@@ -124,6 +148,12 @@ export function serializeCore(input: ScenarioInput): ScenarioCore {
       arrived: a.arrived,
       color: a.color,
     })),
+    labels: input.labels.map((l) => ({
+      at: [round(l.at[0]), round(l.at[1])] as Point,
+      text: l.text,
+      size: l.size,
+      weight: l.weight,
+    })),
   };
 }
 
@@ -147,6 +177,7 @@ export function serializeScenario(input: ScenarioInput & { stuck: boolean[] }): 
       agents: agents.length,
       arrived: agents.filter((a) => a.arrived).length,
       stuck: agents.filter((a) => a.stuck).length,
+      labels: core.labels?.length ?? 0,
     },
   };
 }
@@ -208,7 +239,9 @@ export interface RestoredAgent {
  * Shapes with fewer than three points are dropped, matching what
  * App.addWallShape already refuses to accept from a tool.
  */
-export function buildWorld(core: ScenarioCore): { walls: Wall[]; agents: RestoredAgent[] } {
+export function buildWorld(
+  core: ScenarioCore,
+): { walls: Wall[]; agents: RestoredAgent[]; labels: Label[] } {
   const walls: Wall[] = [];
   const idMap = new Map<number, number>();
   for (const sw of core.walls) {
@@ -239,5 +272,16 @@ export function buildWorld(core: ScenarioCore): { walls: Wall[]; agents: Restore
     };
   });
 
-  return { walls, agents };
+  const labels = (core.labels ?? [])
+    .filter((l) => typeof l.text === 'string' && l.text !== '' && Array.isArray(l.at))
+    // Fresh ids like the walls, and a style clamped like a slider's: a label out
+    // of a link is untrusted input, and makeLabel holds both numbers to the same
+    // ranges the controls offer. A payload missing either is one written by
+    // hand, and takes the default rather than a zero-height or weightless word.
+    .map((l) => makeLabel([l.at[0], l.at[1]], l.text, {
+      size: number(l.size, DEFAULT_SETTINGS.labelSize),
+      weight: number(l.weight, DEFAULT_SETTINGS.labelWeight),
+    }));
+
+  return { walls, agents, labels };
 }

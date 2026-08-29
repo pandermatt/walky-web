@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CODEC_VERSION, FLAG_DEFLATED, LIMITS, ScenarioLinkError,
+  CODEC_VERSION, FLAG_DEFLATED, FLAG_LABELS, LIMITS, ScenarioLinkError,
   base64UrlToBytes, bytesToBase64Url,
   decodeScenario, decodeScenarioBody, encodeScenario, encodeScenarioBody,
   scenarioHeader,
@@ -17,6 +17,7 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
     view: { targetX: 0, targetY: 0, zoomLevel: 0 },
     walls: [],
     agents: [],
+    labels: [],
     ...over,
   };
 }
@@ -175,6 +176,58 @@ describe('the scenario codec', () => {
     expect(after.settings.pedestrianRadius).toBe(3);
     expect(after.settings.borderThickness).toBe(60);
     expect(after.view.zoomLevel).toBe(-50);
+  });
+});
+
+describe('labels, which ride in the flags rather than in the version', () => {
+  const written = () => core({
+    labels: [
+      { at: [10, -20], text: 'Main hall', size: 28, weight: 1000 },
+      { at: [400, 90], text: 'Fire exit — north', size: 64, weight: 300 },
+    ],
+  });
+
+  it('round trips the words, where they were put, and how they were written', () => {
+    expect(decodeScenario(encodeScenario(written())).labels).toEqual([
+      { at: [10, -20], text: 'Main hall', size: 28, weight: 1000 },
+      { at: [400, 90], text: 'Fire exit — north', size: 64, weight: 300 },
+    ]);
+  });
+
+  it('announces itself in the header, and only when there is something to announce', () => {
+    // The promise to every link already pasted somewhere: a map with nothing
+    // written on it encodes exactly as it did before labels existed, so an
+    // older build goes on opening it.
+    expect(encodeScenario(core())[2]).toBe(0);
+    expect(encodeScenario(written())[2]).toBe(FLAG_LABELS);
+  });
+
+  it('is not read at all when the header did not promise it', () => {
+    const bytes = encodeScenario(written());
+    bytes[2] = 0;
+    // The block is still there, so a reader told to ignore it has bytes left
+    // over -- which is the truncation check doing its job rather than a map
+    // quietly missing its labels.
+    expect(() => decodeScenario(bytes)).toThrow(/cut short or damaged/);
+  });
+
+  it('refuses more labels than it could hold, without allocating them', () => {
+    const bytes = encodeScenario(written());
+    // The count is the first byte of the block, which a two-label payload puts
+    // one byte from the end of everything the labels themselves wrote.
+    const body = [...encodeScenarioBody(core()), 0x80, 0x80, 0x80, 0x02];
+    const forged = new Uint8Array(body.length + 3);
+    forged.set([bytes[0], bytes[1], FLAG_LABELS], 0);
+    forged.set(body, 3);
+    expect(() => decodeScenario(forged)).toThrow(/more labels than Walky can hold/);
+  });
+
+  it('refuses a label longer than it could hold', () => {
+    const long = core({
+      labels: [{ at: [0, 0], size: 28, weight: 1000, text: 'x'.repeat(LIMITS.maxLabelBytes + 10) }],
+    });
+    const bytes = encodeScenario(long);
+    expect(() => decodeScenario(bytes)).toThrow(/longer label than Walky can hold/);
   });
 });
 

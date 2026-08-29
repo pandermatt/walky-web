@@ -3,7 +3,7 @@ import {
   SCENARIO_VERSION, buildWorld, clampSettings, scenarioToJson, serializeCore, serializeScenario,
   type ScenarioCore, type SerializedAgent, type SerializedWall,
 } from '../state/scenario';
-import { DEFAULT_SETTINGS, makeWall, rectanglePolygon, type Settings } from '../state/model';
+import { DEFAULT_SETTINGS, SETTING_RANGES, makeWall, rectanglePolygon, type Settings } from '../state/model';
 import { BLACK } from '../palette';
 
 function agent(over: Partial<SerializedAgent> = {}): SerializedAgent {
@@ -29,6 +29,7 @@ describe('the snapshot', () => {
       view: { targetX: 1.239, targetY: -4.005, zoomLevel: 0 },
       walls: [wall],
       agents: [agent({ x: 1.239, y: 2.341 })],
+      labels: [],
     });
     expect(out.walls[0].polygons[0][0]).toEqual([0.13, 0.12]);
     expect(out.view.targetX).toBe(1.24);
@@ -43,9 +44,10 @@ describe('the snapshot', () => {
       view: { targetX: 0, targetY: 0, zoomLevel: 0 },
       walls: [goal, makeWall([rectanglePolygon([20, 0], [30, 10])])],
       agents: [agent({ arrived: true }), agent(), agent()],
+      labels: [],
       stuck: [false, true, false],
     });
-    expect(scenario.summary).toEqual({ walls: 2, goals: 1, agents: 3, arrived: 1, stuck: 1 });
+    expect(scenario.summary).toEqual({ walls: 2, goals: 1, agents: 3, arrived: 1, stuck: 1, labels: 0 });
     expect(scenario.agents.map((a) => a.stuck)).toEqual([false, true, false]);
     expect(JSON.parse(scenarioToJson(scenario)).summary.walls).toBe(2);
   });
@@ -56,6 +58,7 @@ describe('the snapshot', () => {
       view: { targetX: 0, targetY: 0, zoomLevel: 0 },
       walls: [],
       agents: [agent({ color: [9, 8, 7] })],
+      labels: [],
     });
     expect(out.agents[0].color).toEqual([9, 8, 7]);
   });
@@ -66,6 +69,7 @@ describe('the snapshot', () => {
       view: { targetX: 0, targetY: 0, zoomLevel: 0 },
       walls: [],
       agents: [agent()],
+      labels: [],
     });
     expect(out).not.toHaveProperty('created');
     expect(out).not.toHaveProperty('summary');
@@ -177,6 +181,7 @@ describe('building a world out of a snapshot', () => {
         { id: 2, polygons: [[[0, 0]], rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false, isBorder: false },
       ],
       agents: [agent({ goal: 1 })],
+      labels: [],
     }));
     expect(world.walls).toHaveLength(1);
     expect(world.walls[0].polygons).toHaveLength(1);
@@ -187,8 +192,48 @@ describe('building a world out of a snapshot', () => {
   it('keeps a pedestrian that has moved away from where it started', () => {
     const { agents } = buildWorld(core({
       agents: [agent({ x: 90, y: 90, originX: 10, originY: 10 })],
+      labels: [],
     }));
     expect(agents[0]).toMatchObject({ x: 90, y: 90, originX: 10, originY: 10 });
   });
 
+});
+
+describe('labels out of a snapshot', () => {
+  it('keeps the word, the place and the style it was written in', () => {
+    const { labels } = buildWorld(core({
+      labels: [{ at: [12, -8], text: 'Main hall', size: 64, weight: 300 }],
+    }));
+    expect(labels).toHaveLength(1);
+    expect(labels[0].at).toEqual([12, -8]);
+    expect(labels[0].text).toBe('Main hall');
+    expect(labels[0].size).toBe(64);
+    expect(labels[0].weight).toBe(300);
+  });
+
+  it('holds a size out of a link to the range the slider offers', () => {
+    const { labels } = buildWorld(core({
+      labels: [
+        { at: [0, 0], text: 'vast', size: 100_000, weight: 9_000 },
+        { at: [0, 0], text: 'nothing', size: 0, weight: 0 },
+      ],
+    }));
+    expect(labels[0].size).toBe(SETTING_RANGES.labelSize.max);
+    expect(labels[0].weight).toBe(SETTING_RANGES.labelWeight.max);
+    expect(labels[1].size).toBe(SETTING_RANGES.labelSize.min);
+    expect(labels[1].weight).toBe(SETTING_RANGES.labelWeight.min);
+  });
+
+  it('gives a hand-written label with no style the default rather than none', () => {
+    const { labels } = buildWorld(core({
+      labels: [{ at: [0, 0], text: 'typed by hand' } as never],
+    }));
+    expect(labels[0].size).toBe(DEFAULT_SETTINGS.labelSize);
+    expect(labels[0].weight).toBe(DEFAULT_SETTINGS.labelWeight);
+  });
+
+  it('drops a label with nothing written in it', () => {
+    const { labels } = buildWorld(core({ labels: [{ at: [0, 0], text: '', size: 28, weight: 1000 }] }));
+    expect(labels).toHaveLength(0);
+  });
 });

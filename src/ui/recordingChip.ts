@@ -39,6 +39,11 @@ export const RECORDING_CSS = `
 }
 #wk-recording[hidden] { display: none; }
 
+/* Framing: the chip is saying what to do, not how long it has been doing it. A
+   dot that pulses like a recording light while nothing is being recorded would
+   be the one part of the screen telling the truth backwards. */
+#wk-recording[data-mode="hint"] .dot { display: none; }
+
 /* Walky's own orange rather than a borrowed recording red. The accent is a fill
    and never text (see ui/theme.ts), and a dot is nothing but fill. */
 #wk-recording .dot {
@@ -78,6 +83,18 @@ export class RecordingChip {
   /** Shows the chip, or moves the clock on if it is already up. */
   update(ms: number): void {
     this.readout.textContent = formatElapsed(ms);
+    this.root.dataset.mode = 'clock';
+    this.root.hidden = false;
+  }
+
+  /**
+   * The same chip carrying a sentence instead of a clock, for the moment before
+   * a recording when the frame is being chosen. Same glass in the same place:
+   * what is about to be a readout starts out as the instructions for it.
+   */
+  hint(message: string): void {
+    this.readout.textContent = message;
+    this.root.dataset.mode = 'hint';
     this.root.hidden = false;
   }
 

@@ -2,6 +2,7 @@ import { toCss, RED, WHITE, YELLOW, type RGB } from '../palette';
 import type { Point } from '../sim/geometry';
 import type { Viewport } from './viewport';
 import type { CursorGhost, TargetLines } from '../tools/types';
+import type { Label, LabelStyle } from '../state/model';
 
 /**
  * The 2D layer that sits on top of deck.gl: dashed outlines, in-progress tool
@@ -14,6 +15,15 @@ import type { CursorGhost, TargetLines } from '../tools/types';
  */
 export const DASH = [9, 9];
 export const FAT_DASH = [21, 9, 3, 9];
+
+/**
+ * The size below which a label is not drawn at all.
+ *
+ * Zoomed far enough out a caption is a two-pixel smudge -- unreadable, but still
+ * dark enough to be mistaken for something on the map. Nothing is the honest
+ * picture of a word too small to read.
+ */
+const LABEL_MIN_PX = 5;
 
 /** Badge colours for the rectangle tool's cursor ghost. */
 const GHOST_BLUE = '#2D6FD4';
@@ -32,6 +42,36 @@ const DEBUG_LINE_H = 20;
  * of the chrome rather than being pushed clear by an arbitrary amount.
  */
 const DEBUG_CLEARANCE = 12;
+
+let cachedFamily = '';
+
+/**
+ * The app's own font stack, taken from the token the stylesheet sets.
+ *
+ * Canvas2D will not read a CSS variable, so the value is fetched once and kept:
+ * it is a constant in practice, and getComputedStyle on every frame of a running
+ * crowd is a layout read nobody asked for. The fallback is the token's own tail,
+ * for the moment before the theme is installed.
+ */
+function labelFamily(): string {
+  if (cachedFamily) return cachedFamily;
+  const token = getComputedStyle(document.documentElement)
+    .getPropertyValue('--wk-font-family').trim();
+  cachedFamily = token || 'system-ui, -apple-system, sans-serif';
+  return cachedFamily;
+}
+
+/**
+ * A canvas font string for a label.
+ *
+ * The weight goes in front of the size, which is the shorthand's own order and
+ * the only place Canvas2D will take one. Google Sans Flex is variable from 100
+ * to 1000, so every stop the slider offers is a real cut of the face rather than
+ * a browser's synthetic bolding of one.
+ */
+function labelFont(px: number, weight: number): string {
+  return `${weight} ${px}px ${labelFamily()}`;
+}
 
 /** A box of screen, in CSS pixels. `DOMRect` satisfies it, which is the point. */
 export interface ScreenRect {
@@ -124,6 +164,39 @@ export interface OverlayState {
    * debugLines: what this layer knows is where a string goes.
    */
   speedReadout: string | null;
+  /** The words written on the map, and the one being typed if there is one. */
+  labels: Label[];
+  editingLabel: EditingLabel | null;
+  /** How the one being typed is written: what the sliders are set to. */
+  editingLabelStyle: LabelStyle;
+  /** The recording's frame, while one is being dragged or held. */
+  recordFrame: RecordFrame | null;
+  /**
+   * The box the readout sits inside, or null for the whole canvas. What keeps
+   * the speed inside a cropped recording rather than off the side of it.
+   */
+  speedAnchor: ScreenRect | null;
+}
+
+/**
+ * The rectangle a recording is framed to, in screen pixels.
+ *
+ * `dim` is the difference between choosing the frame and living with it. While
+ * it is being dragged the rest of the screen is dimmed, because the question
+ * being asked is what gets left out. Once the take is running the dimming would
+ * be a lie -- what is outside is not darker, it is simply not in the file -- so
+ * only the border is drawn, and drawn *outside* the frame, where the crop cannot
+ * see it.
+ */
+export interface RecordFrame {
+  rect: ScreenRect;
+  dim: boolean;
+}
+
+/** A label mid-keystroke: where it will land, and how far it has got. */
+export interface EditingLabel {
+  at: Point;
+  text: string;
 }
 
 export class Overlay {
@@ -149,6 +222,9 @@ export class Overlay {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+    // First, under everything: a label is part of the map, not chrome over it,
+    // so a rubber-band line or a lasso crosses it rather than passing beneath.
+    this.drawLabels(state.labels, state.editingLabel, state.editingLabelStyle);
     this.drawConvexHulls(state.hulls);
     this.drawPendingWall(state.pendingWallPoints, state.mouseWorld, state.pendingWallTracing);
     this.drawPendingRect(state.pendingRect);
@@ -157,7 +233,8 @@ export class Overlay {
     this.drawPendingPedestrians(state.pendingPedestrians, state.pedestrianRadius);
     this.drawTargetLines(state);
     this.drawCursorGhost(state.cursorGhost);
-    if (state.speedReadout) this.drawSpeed(state.speedReadout);
+    this.drawRecordFrame(state.recordFrame);
+    if (state.speedReadout) this.drawSpeed(state.speedReadout, state.speedAnchor);
     if (state.showDebug) this.drawDebug(state.debugLines, state.toolbarBox);
   }
 
@@ -446,9 +523,64 @@ export class Overlay {
    * shadow underneath because unlike the debug block it has no reserved corner
    * and may well be sitting over a pale wall.
    */
-  private drawSpeed(text: string): void {
+  /**
+   * The words on the map, and the word being typed.
+   *
+   * Both by the same routine, deliberately: the preview is not a preview so much
+   * as the label itself, drawn a keystroke at a time before it is committed. A
+   * caret follows the one being typed, solid rather than blinking -- a blink
+   * would need a repaint twice a second for the whole of an edit, and a bar that
+   * is simply there says the same thing.
+   *
+   * Not suppressed while recording, unlike the pointer previews: this is content
+   * somebody put on the map on purpose, and a caption the recording drops is a
+   * caption nobody can see in the file it was written for.
+   */
+  private drawLabels(labels: Label[], editing: EditingLabel | null, editingStyle: LabelStyle): void {
+    if (labels.length === 0 && !editing) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.fillStyle = toCss(WHITE);
+    ctx.textBaseline = 'middle';
+    // The same shadow the speed readout wears, and for the same reason: there is
+    // no reserved corner for this, so it may well be sitting over a pale wall.
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 4;
+
+    // Each label at its own size, since each was written at whatever the slider
+    // said. The font is set per label rather than once, which costs a string a
+    // label and buys a map that can carry a title and a footnote.
+    for (const label of labels) {
+      const px = label.size * this.viewport.scale;
+      // Zoomed far enough out a caption is an unreadable smudge that still reads
+      // as something on the map. Nothing is the honest picture of it.
+      if (px < LABEL_MIN_PX) continue;
+      ctx.font = labelFont(px, label.weight);
+      const at = this.viewport.worldToScreen(label.at);
+      ctx.fillText(label.text, at[0], at[1]);
+    }
+
+    if (editing) {
+      // The one being typed is drawn however small it is: it is not a word on
+      // the map yet, it is where you are working.
+      const px = Math.max(LABEL_MIN_PX, editingStyle.size * this.viewport.scale);
+      ctx.font = labelFont(px, editingStyle.weight);
+      const at = this.viewport.worldToScreen(editing.at);
+      ctx.fillText(editing.text, at[0], at[1]);
+      const caret = at[0] + ctx.measureText(editing.text).width + 1;
+      const half = px * 0.55;
+      ctx.fillRect(caret, at[1] - half, Math.max(1, px * 0.06), half * 2);
+    }
+    ctx.restore();
+  }
+
+  private drawSpeed(text: string, anchor: ScreenRect | null): void {
     const { ctx } = this;
     const dpr = window.devicePixelRatio || 1;
+    // The corner of the picture being recorded, which is the window's own only
+    // while the whole window is what is being recorded.
+    const right = anchor ? anchor.right : this.canvas.width / dpr;
+    const top = anchor ? anchor.top : 0;
     ctx.save();
     ctx.fillStyle = toCss(WHITE);
     ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -456,7 +588,46 @@ export class Overlay {
     ctx.textBaseline = 'top';
     ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
     ctx.shadowBlur = 4;
-    ctx.fillText(text, this.canvas.width / dpr - DEBUG_MARGIN, DEBUG_MARGIN);
+    ctx.fillText(text, right - DEBUG_MARGIN, top + DEBUG_MARGIN);
+    ctx.restore();
+  }
+
+  /**
+   * The recording's frame: what is about to be in the file, and what is not.
+   *
+   * The dim pass is one path with the whole canvas and the frame in it, filled
+   * `evenodd` so the frame is the hole -- a single fill rather than four bars
+   * around the edge, which is both less arithmetic and free of the seams four
+   * rectangles leave where they meet.
+   */
+  private drawRecordFrame(frame: RecordFrame | null): void {
+    if (!frame) return;
+    const { ctx } = this;
+    const dpr = window.devicePixelRatio || 1;
+    const { rect } = frame;
+    const w = rect.right - rect.left;
+    const h = rect.bottom - rect.top;
+    if (w <= 0 || h <= 0) return;
+
+    ctx.save();
+    if (frame.dim) {
+      const mask = new Path2D();
+      mask.rect(0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
+      mask.rect(rect.left, rect.top, w, h);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fill(mask, 'evenodd');
+      ctx.setLineDash(DASH);
+      ctx.strokeStyle = toCss(WHITE);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rect.left, rect.top, w, h);
+    } else {
+      // Two pixels out, so the marker is beside the picture rather than in it.
+      ctx.setLineDash(DASH);
+      ctx.strokeStyle = toCss(WHITE);
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rect.left - 2.5, rect.top - 2.5, w + 5, h + 5);
+    }
     ctx.restore();
   }
 

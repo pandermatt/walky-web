@@ -3,7 +3,7 @@ import type { Point } from '../sim/geometry';
 import { ZOOM_LEVEL_MAX, ZOOM_LEVEL_MIN } from '../render/viewport';
 import {
   SCENARIO_VERSION, clampSettings,
-  type ScenarioCore, type SerializedAgent, type SerializedWall,
+  type ScenarioCore, type SerializedAgent, type SerializedLabel, type SerializedWall,
 } from './scenario';
 import type { Settings } from './model';
 
@@ -63,8 +63,21 @@ export const CODEC_VERSION = 3;
 /** The body is deflate-raw rather than the bytes written here. Set by shareLink.ts. */
 export const FLAG_DEFLATED = 1;
 
+/**
+ * The body carries a labels block after the pedestrians.
+ *
+ * This is the escape hatch the version comment above describes, used for the
+ * first time. Labels could not be a version bump: a version is refused in both
+ * directions, so numbering the format up would have stopped every link already
+ * pasted anywhere from opening. As a flag, a map with nothing written on it
+ * still encodes exactly as it did and still opens in an older build, and a map
+ * with labels meets one with "made by a different version of Walky" rather than
+ * with a silently truncated tail.
+ */
+export const FLAG_LABELS = 2;
+
 /** Every bit that means something. Anything else set is a payload from the future. */
-const KNOWN_FLAGS = FLAG_DEFLATED;
+const KNOWN_FLAGS = FLAG_DEFLATED | FLAG_LABELS;
 
 /** Sub-unit precision for the one thing in a map that is not a whole number. */
 const VIEW_QUANTUM = 16;  // at the deepest zoom a 16th of a unit is under 4px
@@ -90,6 +103,10 @@ export const LIMITS = {
   maxPointsPerPolygon: 4_096,
   maxTotalPoints: 20_000,
   maxAgents: 100_000,
+  /** Enough to name every room on a map, far short of a payload made of prose. */
+  maxLabels: 500,
+  /** The model's own cap on a typed label, applied again to a pasted one. */
+  maxLabelBytes: 512,
   /** Well inside the range where a Float32Array still holds integers exactly. */
   maxCoord: 1 << 22,
 } as const;
@@ -137,6 +154,13 @@ class Writer {
     this.byte(c[2]);
   }
 
+  /** UTF-8, length first: the bytes, not the characters, since that is what is read. */
+  string(v: string): void {
+    const bytes = new TextEncoder().encode(v);
+    this.varint(bytes.length);
+    for (const b of bytes) this.bytes.push(b);
+  }
+
   finish(): Uint8Array {
     return Uint8Array.from(this.bytes);
   }
@@ -177,6 +201,26 @@ class Reader {
     return [this.byte(), this.byte(), this.byte()];
   }
 
+  /**
+   * A length-prefixed UTF-8 string, refused by length before it is read.
+   *
+   * Fatal rather than lossy on bad bytes: a label that decodes to replacement
+   * characters is a link that has been damaged, and the rest of the payload
+   * after it cannot be trusted either.
+   */
+  string(limit: number): string {
+    const length = this.varint();
+    if (length > limit) throw new ScenarioLinkError('that link claims a longer label than Walky can hold');
+    if (this.at + length > this.bytes.length) throw new ScenarioLinkError(TRUNCATED);
+    const slice = this.bytes.subarray(this.at, this.at + length);
+    this.at += length;
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(slice);
+    } catch {
+      throw new ScenarioLinkError(TRUNCATED);
+    }
+  }
+
   /** A count, refused before it is used to size anything. */
   count(limit: number, what: string): number {
     const n = this.varint();
@@ -212,7 +256,17 @@ const TOGGLE_KEYS = [
   'showPersonalSpace', 'showDebug', 'sound',
 ] as const;
 
-/** The order the numeric settings are packed in. Append only, as above. */
+/**
+ * The order the numeric settings are packed in. Append only, as above.
+ *
+ * `labelSize` is deliberately not here. Appending to this list is not additive
+ * over the wire the way appending a block is: every link ever made would have
+ * one varint too few, and the reader would take the view that follows for the
+ * setting and misread the rest of the map. The size that matters travels on each
+ * label instead, inside the block the flags byte announces, so a shared map is
+ * written at the sizes it was written at -- what a link does not carry is where
+ * the slider happened to be left, which is a fact about the sender's session.
+ */
 const NUMBER_KEYS = [
   'speed', 'pedestrianRadius', 'personalSpace', 'brushSize', 'borderThickness',
 ] as const;
@@ -245,11 +299,22 @@ export function readHeader(bytes: Uint8Array): { flags: number; body: Uint8Array
 
 // ---- writing ---------------------------------------------------------------
 
+/**
+ * The flags a body written from this map needs announcing in the header.
+ *
+ * Set only when there is something to announce, which is what keeps a map with
+ * no labels on it byte-identical to what an older build wrote and readable by
+ * one. shareLink.ts ORs the deflate bit onto whatever this returns.
+ */
+export function bodyFlags(core: ScenarioCore): number {
+  return (core.labels?.length ?? 0) > 0 ? FLAG_LABELS : 0;
+}
+
 /** The scenario as bytes: a three-byte header followed by the body. */
 export function encodeScenario(core: ScenarioCore): Uint8Array {
   const body = encodeScenarioBody(core);
   const out = new Uint8Array(body.length + 3);
-  out.set(scenarioHeader(0), 0);
+  out.set(scenarioHeader(bodyFlags(core)), 0);
   out.set(body, 3);
   return out;
 }
@@ -338,6 +403,27 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
     previousColor = color;
   }
 
+  // Last, and only when there are any: a reader that does not know about labels
+  // is a reader that stops here, and the flag in the header is what stops it
+  // before it starts rather than after it has read a map missing its tail.
+  const labels = core.labels ?? [];
+  if (labels.length > 0) {
+    w.varint(labels.length);
+    let lx = 0;
+    let ly = 0;
+    for (const label of labels) {
+      const x = Math.round(label.at[0]);
+      const y = Math.round(label.at[1]);
+      w.zigzag(x - lx);
+      w.zigzag(y - ly);
+      w.varint(label.size);
+      w.varint(label.weight);
+      w.string(label.text);
+      lx = x;
+      ly = y;
+    }
+  }
+
   return w.finish();
 }
 
@@ -350,11 +436,16 @@ export function decodeScenario(bytes: Uint8Array): ScenarioCore {
     // Inflating is shareLink.ts's job; this entry point is the synchronous one.
     throw new ScenarioLinkError('that link is packed and must be opened through a link reader');
   }
-  return decodeScenarioBody(body);
+  return decodeScenarioBody(body, flags);
 }
 
-/** The body alone, once any deflate wrapper has been undone. */
-export function decodeScenarioBody(bytes: Uint8Array): ScenarioCore {
+/**
+ * The body alone, once any deflate wrapper has been undone.
+ *
+ * `flags` says which optional blocks the header promised. It defaults to none,
+ * which is the honest reading of a body handed over without its header.
+ */
+export function decodeScenarioBody(bytes: Uint8Array, flags = 0): ScenarioCore {
   const r = new Reader(bytes);
 
   const toggles = r.varint();
@@ -432,6 +523,23 @@ export function decodeScenarioBody(bytes: Uint8Array): ScenarioCore {
     });
   }
 
+  const labels: SerializedLabel[] = [];
+  if (flags & FLAG_LABELS) {
+    const labelCount = r.count(LIMITS.maxLabels, 'labels');
+    let lx = 0;
+    let ly = 0;
+    for (let i = 0; i < labelCount; i++) {
+      lx = r.step(lx);
+      ly = r.step(ly);
+      // Read in the order written: place, size, weight, word. The two numbers
+      // are taken as given and clamped where every other untrusted number is,
+      // in scenario.buildWorld.
+      const size = r.varint();
+      const weight = r.varint();
+      labels.push({ at: [lx, ly], size, weight, text: r.string(LIMITS.maxLabelBytes) });
+    }
+  }
+
   // Everything decoded, and bytes still to go: the payload is not what it says
   // it is. Better an error than a map quietly missing its tail.
   if (!r.done) throw new ScenarioLinkError(TRUNCATED);
@@ -442,6 +550,7 @@ export function decodeScenarioBody(bytes: Uint8Array): ScenarioCore {
     view,
     walls,
     agents,
+    labels,
   };
 }
 

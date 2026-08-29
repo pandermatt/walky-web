@@ -23,6 +23,7 @@ const TOGGLES: ToggleSpec[] = [
 
 const SLIDER_ORDER: (keyof Settings)[] = [
   'speed', 'pedestrianRadius', 'personalSpace', 'brushSize', 'borderThickness',
+  'labelSize', 'labelWeight',
 ];
 
 export const SHEET_CSS = `

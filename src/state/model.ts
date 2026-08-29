@@ -59,6 +59,23 @@ export interface Settings {
   personalSpace: number;
   speed: number;
   brushSize: number;
+  /**
+   * How tall a label is written, in world units.
+   *
+   * The size the *next* label takes, not a size every label has: each one keeps
+   * what it was written at, the way the brush size is the size of the next block
+   * rather than of every pedestrian on the map.
+   */
+  labelSize: number;
+  /**
+   * How heavy a label is written, on the font's own weight axis.
+   *
+   * Google Sans Flex is variable from 100 to 1000 (see ui/theme.ts), and a word
+   * on a map competes with walls and a moving crowd for the eye, so it starts at
+   * the top of that axis. The slider is there for the cases where it should not:
+   * a note beside a title, or a caption that should not shout.
+   */
+  labelWeight: number;
   borderThickness: number;
   /** Whether a pedestrian plops when it reaches its goal. */
   sound: boolean;
@@ -80,6 +97,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // display. Speed is now how many steps a pedestrian may buy per frame.
   speed: 4,
   brushSize: 1,
+  // A little over two pedestrian diameters: the size at which a word reads as a
+  // caption on the map rather than as something standing on it.
+  labelSize: 28,
+  labelWeight: 1000,
   // Mostly cosmetic: what a pedestrian actually cannot cross is the bar expanded
   // by its radius, so thickness changes how the wall looks far more than how it
   // blocks. The original used 2, which is a hairline on a modern display.
@@ -97,7 +118,8 @@ export const DEFAULT_SETTINGS: Settings = {
  * specs there.
  */
 export type NumericSetting =
-  | 'pedestrianRadius' | 'personalSpace' | 'speed' | 'brushSize' | 'borderThickness';
+  | 'pedestrianRadius' | 'personalSpace' | 'speed' | 'brushSize' | 'borderThickness'
+  | 'labelSize' | 'labelWeight';
 
 export const SETTING_RANGES: Record<NumericSetting, { min: number; max: number; step: number }> = {
   speed: { min: 1, max: 20, step: 1 },
@@ -105,6 +127,11 @@ export const SETTING_RANGES: Record<NumericSetting, { min: number; max: number; 
   personalSpace: { min: 0, max: 120, step: 1 },
   brushSize: { min: 1, max: 14, step: 1 },
   borderThickness: { min: 2, max: 60, step: 1 },
+  // From a word that has to be zoomed in on to one that titles the whole map.
+  labelSize: { min: 8, max: 120, step: 1 },
+  // The face's own axis, in steps coarse enough that every stop is a different
+  // weight rather than a different number.
+  labelWeight: { min: 100, max: 1000, step: 50 },
 };
 
 /**
@@ -165,6 +192,56 @@ export function makeWall(polygons: Point[][], options: WallOptions = {}): Wall {
     isGoal: false,
     isBorder,
     selected: false,
+  };
+}
+
+/**
+ * A word written on the map.
+ *
+ * Anchored to a world point rather than to the screen, and drawn at a size in
+ * world units, so it belongs to the place it names: zooming in makes it bigger,
+ * the way a word painted on the floor would be. That is the whole of it -- no
+ * colour and no size of its own. A label is a caption on somebody's map, not a
+ * drawing, and every one of them looking the same is what keeps it that way.
+ */
+export interface Label {
+  id: number;
+  at: Point;
+  text: string;
+  /**
+   * Height in world units and weight on the font's axis, both taken from the
+   * settings at the moment the label was written.
+   *
+   * Kept per label rather than read at draw time, so a title and a note beside
+   * it can differ -- and so that moving a slider to write the next one does not
+   * silently restyle every label already on the map.
+   */
+  size: number;
+  weight: number;
+}
+
+/** How a label is written: what the two sliders said when it was. */
+export interface LabelStyle {
+  size: number;
+  weight: number;
+}
+
+/** The longest a label may be, on the way in from a link as well as from a key. */
+export const LABEL_MAX_CHARS = 120;
+
+/** A number held to a setting's own range, as a slider would have held it. */
+function inRange(value: number, key: 'labelSize' | 'labelWeight'): number {
+  const { min, max } = SETTING_RANGES[key];
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+export function makeLabel(at: Point, text: string, style: LabelStyle): Label {
+  return {
+    id: nextId++,
+    at,
+    text: text.slice(0, LABEL_MAX_CHARS),
+    size: inRange(style.size, 'labelSize'),
+    weight: inRange(style.weight, 'labelWeight'),
   };
 }
 

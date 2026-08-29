@@ -3,7 +3,7 @@ import type { Settings, WallOptions } from '../state/model';
 
 export type ToolId =
   | 'wall' | 'rectangle' | 'border' | 'pedestrian'
-  | 'goal' | 'select' | 'shift' | 'erase';
+  | 'goal' | 'select' | 'shift' | 'erase' | 'text';
 
 /**
  * What the eraser would take away at a point.
@@ -51,6 +51,12 @@ export interface ToolContext {
    * that always follows it -- a selection is made in order to be sent somewhere.
    */
   activateTool(id: ToolId): void;
+  /**
+   * Opens a caret at a point on the map and takes whatever is typed into it as a
+   * label. The tool hands over the place and hears no more about it: the typing
+   * is a keyboard and a repaint away from anything a tool does.
+   */
+  editTextAt(at: Point): void;
   /** Say something to the user, as the chip that shared maps and updates use. */
   notify(message: string): void;
   panBy(dxScreen: number, dyScreen: number): void;

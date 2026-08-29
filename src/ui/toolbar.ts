@@ -1,5 +1,5 @@
 import type { ToolId } from '../tools/types';
-import { FINE, TOUCH } from './appShell';
+import { FINE, HANDHELD, TOUCH } from './appShell';
 import { injectStyle, installTheme } from './theme';
 import { attachTooltip } from './tooltip';
 
@@ -79,6 +79,9 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
       // among them would renumber three tools people already know in order to
       // group it with the ones it is about.
       { key: 'erase', icon: 'erase.svg', title: 'Erase shapes', kind: 'tool', shortcut: '8', press: '8', desktopOnly: true },
+      // Ninth for the same reason, and last because it is the one tool that adds
+      // nothing to the simulation: a label is for the person reading the map.
+      { key: 'text', icon: 'text.svg', title: 'Add text', kind: 'tool', shortcut: '9', press: '9', desktopOnly: true },
     ],
   },
   {
@@ -201,6 +204,27 @@ export const TOOLBAR_CSS = `
  * setRunning swaps in pause.png, which is pure black; the filter leaves it black.
  */
 #toolbar .wk-btn--cell[data-key="start"] img { filter: brightness(.49); }
+
+/*
+ * The cells that are not offered on a handheld.
+ *
+ * Record wants a two-minute sit-still and hands back a file a phone has nowhere
+ * good to put; the text tool wants a keyboard. Neither is a control that works
+ * worse on a phone -- they are controls a phone has no answer for -- so they are
+ * taken out of the strip rather than left there to disappoint. \`display: none\`
+ * removes the cell from the layout and from the accessibility tree both, and the
+ * query is live, so a tab handed to an installed window or a desktop window
+ * dragged narrow agrees without anything listening for it.
+ *
+ * A second rule at the foot of this stylesheet withholds the eraser, and asks a
+ * different question on purpose -- whether there is a mouse to hover with. A
+ * laptop window dragged narrow can still aim an eraser; it still has nowhere to
+ * put a video.
+ */
+@media ${HANDHELD} {
+  #toolbar .wk-btn--cell[data-key="record"],
+  #toolbar .wk-btn--cell[data-key="text"] { display: none; }
+}
 
 /*
  * Installed on a touch device the strip becomes a bar across the bottom.
@@ -361,6 +385,21 @@ export class Toolbar {
    * getBoundingClientRect inside a render loop is a layout flush per frame.
    */
   get frame(): DOMRect { return this.box; }
+
+  /**
+   * Whether a cell is actually on offer, which on a handheld some are not.
+   *
+   * Asked of the stylesheet rather than of `matchMedia`, so the guard cannot
+   * give a different answer from the rule that hides the cell: the media query
+   * lives in one place (see HANDHELD in ui/appShell.ts) and this reads what it
+   * decided. A second `matchMedia` call would be a second opinion, and a window
+   * that has not been laid out yet reports a width of zero, which is a phone as
+   * far as a width query is concerned and nothing at all as far as CSS is.
+   */
+  offers(key: ToolId | ActionId): boolean {
+    const button = this.buttons.get(key);
+    return button ? getComputedStyle(button).display !== 'none' : false;
+  }
 
   /**
    * @param silent set when the app is telling the toolbar what happened, rather

@@ -41,9 +41,10 @@ function stubContext(): { ctx: ToolContext; rec: Recorded } {
     colorAt: (at: Point) => (onWall(at) ? [1, 2, 3] as [number, number, number] : null),
     agentPositions: () => [],
     worldPerPixel: () => 1,
-    // The tool under test never erases; the eraser has its own file.
+    // The tool under test neither erases nor writes; those have their own files.
     eraseTargetAt: () => null,
     eraseAt: () => false,
+    editTextAt: () => {},
   } satisfies ToolContext;
   return { ctx, rec };
 }

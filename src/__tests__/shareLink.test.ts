@@ -15,6 +15,7 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
     view: { targetX: 0, targetY: 0, zoomLevel: 0 },
     walls: [],
     agents: [],
+    labels: [],
     ...over,
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  canRecord, captureSize, fitRect, formatElapsed, pickMimeType, recordingFilename,
+  canRecord, captureSize, cropSource, fitRect, formatElapsed, pickMimeType, recordingFilename,
 } from '../render/recorder';
 
 /**
@@ -105,6 +105,40 @@ describe('fitting a resized window into a frame that cannot change shape', () =>
       expect(box.x + box.w).toBeLessThanOrEqual(1920 + 1e-9);
       expect(box.y + box.h).toBeLessThanOrEqual(1080 + 1e-9);
     }
+  });
+});
+
+describe('the framed region, in one canvas\'s own pixels', () => {
+  /** A retina window: 800x450 CSS, and the buffers the two canvases end up with. */
+  const CROP = { x: 100, y: 50, w: 400, h: 200 };
+
+  it('scales a crop by the buffer this canvas actually has', () => {
+    expect(cropSource(CROP, 1600, 900, 800, 450)).toEqual({ sx: 200, sy: 100, sw: 800, sh: 400 });
+  });
+
+  it('gives each canvas its own answer where their buffers disagree', () => {
+    // deck floors css*dpr and the overlay rounds it, so at an odd CSS width the
+    // two differ by a pixel. Sharing one source rectangle would slide the
+    // overlay off the picture underneath it.
+    const deck = cropSource(CROP, 1125, 900, 750.5, 450);
+    const overlay = cropSource(CROP, 1126, 900, 750.5, 450);
+    expect(deck.sw).not.toBe(overlay.sw);
+    expect(overlay.sw / overlay.sh).toBeCloseTo(deck.sw / deck.sh, 2);
+  });
+
+  it('clamps a frame the window has since been shrunk past', () => {
+    const box = cropSource({ x: 600, y: 300, w: 400, h: 200 }, 800, 400, 800, 400);
+    expect(box).toEqual({ sx: 600, sy: 300, sw: 200, sh: 100 });
+  });
+
+  it('comes back empty rather than negative when the frame is off the edge', () => {
+    const box = cropSource({ x: 900, y: 500, w: 400, h: 200 }, 800, 400, 800, 400);
+    expect(box.sw).toBe(0);
+    expect(box.sh).toBe(0);
+  });
+
+  it('has nothing to crop into a canvas with no size yet', () => {
+    expect(cropSource(CROP, 0, 0, 0, 0)).toEqual({ sx: 0, sy: 0, sw: 0, sh: 0 });
   });
 });
 

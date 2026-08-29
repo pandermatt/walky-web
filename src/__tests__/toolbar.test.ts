@@ -6,13 +6,13 @@ import { SHORTCUTS } from '../ui/toolbar';
  * promise the numbers make: 1 to 8 are the tools, in the order you see them.
  * Insert a tool without renumbering and this is what says so.
  *
- * The eraser is eighth and last for that reason, and it keeps its number on a
- * touch device even though its cell is hidden there -- the app is what refuses
- * to arm it (see App.setTool), not the list of keys.
+ * The eraser is eighth and the text tool ninth for that reason, and both keep
+ * their numbers on a touch device even though neither cell is shown there -- the
+ * app is what refuses to arm them (see App.setTool), not the list of keys.
  */
 
 const TOOLS_IN_ORDER = [
-  'wall', 'rectangle', 'border', 'pedestrian', 'goal', 'select', 'shift', 'erase',
+  'wall', 'rectangle', 'border', 'pedestrian', 'goal', 'select', 'shift', 'erase', 'text',
 ];
 
 describe('the keyboard shortcuts', () => {

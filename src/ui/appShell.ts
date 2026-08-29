@@ -32,6 +32,30 @@ export const TOUCH = '(pointer: coarse)';
 export const FINE = '(hover: hover) and (pointer: fine)';
 
 /**
+ * Where a control that wants a keyboard, a pointer and room to work is not
+ * offered at all.
+ *
+ * A media query list, so the comma is an OR: a touch device, or a window too
+ * narrow to spare the space. The width arm is the only breakpoint in the app,
+ * and it is not the one the toolbar deliberately refused -- that argument is
+ * about *placing* a strip that exists either way, where a phone in landscape is
+ * 844px wide and still a phone. This asks a different question: whether there
+ * is anywhere sensible to put a two-minute video, a text caret, or a frame
+ * dragged with a mouse. A desktop window squeezed to a column fails it too, and
+ * that is the right answer rather than a side effect.
+ *
+ * Not the same question as FINE above, which asks whether there is a mouse to
+ * hover with. A narrow window on a laptop passes that and fails this, and both
+ * answers are right: you can still aim an eraser in a column of a window, and
+ * there is still nowhere in it to put a video.
+ *
+ * Read by the stylesheet alone. The guards in the app ask the strip whether a
+ * cell is on offer (Toolbar.offers) rather than asking this again, so there is
+ * one answer rather than two that can disagree.
+ */
+export const HANDHELD = `${TOUCH}, (max-width: 640px)`;
+
+/**
  * The same question the CSS asks, for the one decision that cannot be made in
  * a stylesheet: whether opening settings should also push a history entry.
  */

@@ -189,6 +189,48 @@ export function fitRect(
   return { x: (dstW - w) / 2, y: (dstH - h) / 2, w, h };
 }
 
+/**
+ * A frame to record instead of the whole window, in CSS pixels from the canvas's
+ * top-left corner -- the same space a pointer event arrives in.
+ */
+export interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The crop as a source rectangle in one canvas's own device pixels, clamped to
+ * what that canvas actually has.
+ *
+ * Per canvas rather than once for both, because the two do not agree to the
+ * pixel: deck's buffer is sized by luma at `floor(css * dpr)` and the overlay's
+ * by `Math.round`, so they can differ by one. Uncropped that never showed,
+ * because drawing each whole canvas into the same box stretches the difference
+ * away; cropping reads real coordinates out of both, and a shared rectangle
+ * would slide the overlay half a pixel off the picture underneath it.
+ *
+ * Clamped rather than trusted because the window can be made smaller than the
+ * frame mid-recording. A crop that has fallen off the edge comes back as a zero
+ * width, which capture() treats as nothing to draw -- a held frame, rather than
+ * an exception every time round the loop.
+ */
+export function cropSource(
+  crop: CropRect,
+  canvasW: number, canvasH: number,
+  cssW: number, cssH: number,
+): { sx: number; sy: number; sw: number; sh: number } {
+  if (cssW <= 0 || cssH <= 0) return { sx: 0, sy: 0, sw: 0, sh: 0 };
+  const kx = canvasW / cssW;
+  const ky = canvasH / cssH;
+  const left = Math.max(0, Math.min(canvasW, crop.x * kx));
+  const top = Math.max(0, Math.min(canvasH, crop.y * ky));
+  const right = Math.max(left, Math.min(canvasW, (crop.x + crop.w) * kx));
+  const bottom = Math.max(top, Math.min(canvasH, (crop.y + crop.h) * ky));
+  return { sx: left, sy: top, sw: right - left, sh: bottom - top };
+}
+
 /** `0:07`, `1:04`. */
 export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -253,6 +295,8 @@ export class Recorder {
   /** performance.now() at the start, which the readout and the cap both read. */
   private startedAt = 0;
   private lastFrameAt = 0;
+  /** The framed region, or null for the whole window. Fixed for the take. */
+  private crop: CropRect | null = null;
 
   constructor(
     private deckCanvas: HTMLCanvasElement,
@@ -277,10 +321,16 @@ export class Recorder {
    *   to the picture's rather than replacing the stream, and it is deliberately
    *   never stopped on teardown: it belongs to the audio graph, and ending it
    *   would leave the next recording with a dead one.
+   * @param crop the region to record, in CSS pixels, or null for everything.
+   *   Held in screen space for the whole take rather than followed in world
+   *   space: it is where the camera is pointed, so panning the map moves the
+   *   crowd through the shot instead of dragging the shot after it. It is also
+   *   the only reading under which the frame keeps the shape the video was
+   *   opened with -- see fitRect.
    * @throws if the browser refuses the recorder anyway -- isTypeSupported saying
    *   yes is not a promise the constructor will accept it.
    */
-  start(audio: MediaStream | null = null): void {
+  start(audio: MediaStream | null = null, crop: CropRect | null = null): void {
     if (this.rec) return;
 
     // Sound is the part that gives way. A browser that will write the picture but
@@ -299,7 +349,11 @@ export class Recorder {
       throw new Error('there is nothing on screen to record yet');
     }
 
-    const size = captureSize(source.width, source.height);
+    // The output takes the frame's shape, not the window's, so a doorway framed
+    // tall is a tall video rather than a tall region letterboxed into a wide one.
+    const src = this.sourceRect(source, crop);
+    if (src.sw < 2 || src.sh < 2) throw new Error('that frame is too small to record');
+    const size = captureSize(src.sw, src.sh);
     const canvas = document.createElement('canvas');
     canvas.width = size.w;
     canvas.height = size.h;
@@ -323,6 +377,7 @@ export class Recorder {
     this.chunks = [];
     this.startedAt = performance.now();
     this.lastFrameAt = 0;
+    this.crop = crop;
 
     rec.addEventListener('dataavailable', (event) => {
       if (event.data.size > 0) this.chunks.push(event.data);
@@ -356,11 +411,29 @@ export class Recorder {
 
     const deck = this.deckCanvas;
     if (deck.width === 0 || deck.height === 0) return;
-    const box = fitRect(deck.width, deck.height, canvas.width, canvas.height);
-    ctx.drawImage(deck, box.x, box.y, box.w, box.h);
-    // The same box for both: the two canvases are the same element size, and the
-    // overlay is the one on top on screen, so it is the one on top here.
-    ctx.drawImage(this.overlayCanvas, box.x, box.y, box.w, box.h);
+    const from = this.sourceRect(deck, this.crop);
+    if (from.sw < 1 || from.sh < 1) return;
+
+    // One destination box for both, from the picture's shape; each canvas brings
+    // its own source rectangle, since only the shapes agree and not the pixels.
+    const box = fitRect(from.sw, from.sh, canvas.width, canvas.height);
+    ctx.drawImage(deck, from.sx, from.sy, from.sw, from.sh, box.x, box.y, box.w, box.h);
+    const over = this.sourceRect(this.overlayCanvas, this.crop);
+    // The overlay is the one on top on screen, so it is the one on top here.
+    ctx.drawImage(
+      this.overlayCanvas,
+      over.sx, over.sy, over.sw, over.sh,
+      box.x, box.y, box.w, box.h,
+    );
+  }
+
+  /** A canvas's whole buffer, or the part of it the crop names. */
+  private sourceRect(
+    canvas: HTMLCanvasElement,
+    crop: CropRect | null,
+  ): { sx: number; sy: number; sw: number; sh: number } {
+    if (!crop) return { sx: 0, sy: 0, sw: canvas.width, sh: canvas.height };
+    return cropSource(crop, canvas.width, canvas.height, canvas.clientWidth, canvas.clientHeight);
   }
 
   /**
@@ -405,5 +478,6 @@ export class Recorder {
     this.canvas = null;
     this.ctx = null;
     this.chunks = [];
+    this.crop = null;
   }
 }

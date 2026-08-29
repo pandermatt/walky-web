@@ -32,6 +32,7 @@ function stubContext(): { ctx: ToolContext; walls: Committed[] } {
     selectionCount: () => 0,
     deactivateTool: () => {},
     activateTool: () => {},
+    editTextAt: () => {},
     notify: () => {},
     panBy: () => {},
     requestRender: () => {},

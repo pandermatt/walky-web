@@ -35,6 +35,8 @@ export const SLIDERS: Record<string, SliderSpec> = {
   personalSpace: { key: 'personalSpace', label: 'Personal space', ...SETTING_RANGES.personalSpace },
   brushSize: { key: 'brushSize', label: 'Brush size', ...SETTING_RANGES.brushSize },
   borderThickness: { key: 'borderThickness', label: 'Border thickness', ...SETTING_RANGES.borderThickness },
+  labelSize: { key: 'labelSize', label: 'Text size', ...SETTING_RANGES.labelSize },
+  labelWeight: { key: 'labelWeight', label: 'Text weight', ...SETTING_RANGES.labelWeight },
 };
 
 /**

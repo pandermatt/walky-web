@@ -41,6 +41,7 @@ function stubContext(): { ctx: ToolContext; rec: Recorded } {
     selectionCount: () => 0,
     deactivateTool: () => {},
     activateTool: () => {},
+    editTextAt: () => {},
     notify: () => {},
     panBy: () => {},
     requestRender: () => {},

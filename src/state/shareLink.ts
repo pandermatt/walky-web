@@ -1,6 +1,6 @@
 import {
   FLAG_DEFLATED, LIMITS, ScenarioLinkError,
-  base64UrlToBytes, bytesToBase64Url,
+  base64UrlToBytes, bodyFlags, bytesToBase64Url,
   decodeScenarioBody, encodeScenario, encodeScenarioBody,
   readHeader, scenarioHeader,
 } from './codec';
@@ -95,7 +95,7 @@ export async function encodeLink(core: ScenarioCore): Promise<string> {
     const deflated = await through(body, new CompressionStream('deflate-raw'), MAX_BODY_BYTES);
     if (deflated.length + 3 >= raw.length) return LINK_PREFIX + bytesToBase64Url(raw);
     const out = new Uint8Array(deflated.length + 3);
-    out.set(scenarioHeader(FLAG_DEFLATED), 0);
+    out.set(scenarioHeader(FLAG_DEFLATED | bodyFlags(core)), 0);
     out.set(deflated, 3);
     return LINK_PREFIX + bytesToBase64Url(out);
   } catch {
@@ -117,7 +117,7 @@ export async function decodeLink(payload: string): Promise<ScenarioCore> {
   const { flags, body } = readHeader(bytes);
   if ((flags & FLAG_DEFLATED) === 0) {
     if (body.length > MAX_BODY_BYTES) throw new ScenarioLinkError('that link is larger than Walky can hold');
-    return decodeScenarioBody(body);
+    return decodeScenarioBody(body, flags);
   }
   if (!hasCompression()) throw new ScenarioLinkError('this browser cannot unpack that link');
   let inflated: Uint8Array;
@@ -127,7 +127,7 @@ export async function decodeLink(payload: string): Promise<ScenarioCore> {
     if (err instanceof ScenarioLinkError) throw err;
     throw new ScenarioLinkError('that link is cut short or damaged');
   }
-  return decodeScenarioBody(inflated);
+  return decodeScenarioBody(inflated, flags);
 }
 
 /**

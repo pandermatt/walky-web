@@ -1,10 +1,10 @@
 import { Scene, type SceneState } from './render/scene';
-import { Overlay } from './render/overlay';
+import { Overlay, type EditingLabel, type RecordFrame, type ScreenRect } from './render/overlay';
 import { Viewport, type Bounds } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
-  DEFAULT_SETTINGS, makeWall, wallContains,
-  type Settings, type Wall, type WallOptions,
+  DEFAULT_SETTINGS, makeLabel, makeWall, wallContains,
+  type Label, type LabelStyle, type Settings, type Wall, type WallOptions,
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { groupWalls, type WallGroup } from './state/groups';
@@ -25,10 +25,12 @@ import { ShiftTool } from './tools/shiftTool';
 import { PedestrianTool } from './tools/pedestrianTool';
 import { GoalTool } from './tools/goalTool';
 import { EraseTool } from './tools/eraseTool';
+import { TextTool } from './tools/textTool';
+import { TextCaret } from './ui/textCaret';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
 import { Plops } from './audio/plops';
-import { MAX_MS, Recorder, canRecord, recordingFilename, saveBlob } from './render/recorder';
+import { MAX_MS, Recorder, canRecord, recordingFilename, saveBlob, type CropRect } from './render/recorder';
 import { RecordingChip } from './ui/recordingChip';
 import { dismissToast, showToast } from './pwa';
 import { SpatialHash } from './sim/spatialHash';
@@ -36,7 +38,6 @@ import {
   EMPTY_PREVIEW,
   type EraseTarget, type PointerInfo, type Tool, type ToolContext, type ToolId,
 } from './tools/types';
-import { FINE } from './ui/appShell';
 
 /**
  * How long a recording holds on the finished picture before it stops itself.
@@ -45,6 +46,25 @@ import { FINE } from './ui/appShell';
  * rather than after it, which reads as the recording having been interrupted.
  */
 const RECORD_TAIL_MS = 1500;
+
+/**
+ * A press that never became a drag, in screen pixels -- the same six the drawing
+ * tools call a click rather than a stroke.
+ */
+const FRAME_DRAG_THRESHOLD = 6;
+
+/**
+ * The smallest frame worth recording, per side.
+ *
+ * Not a technical floor -- the encoder will take almost anything -- but the
+ * point below which a frame is far more likely to be a slip of the hand than a
+ * shot somebody wanted. Refusing it costs one more drag; accepting it costs a
+ * two-minute video of a postage stamp.
+ */
+const MIN_FRAME_PX = 96;
+
+/** What the chip says while a frame is being chosen. */
+const FRAMING_HINT = 'Drag to frame the recording  ·  Enter for all  ·  Esc to cancel';
 
 /**
  * The window the frame rate is measured over. Short enough to show a stutter,
@@ -62,6 +82,7 @@ const FPS_WINDOW_MS = 1000;
  */
 interface MapSnapshot {
   walls: Wall[];
+  labels: Label[];
   agents: AgentsSnapshot;
 }
 
@@ -100,6 +121,10 @@ export class App {
   private contextPanel: ContextPanel;
 
   private walls: Wall[] = [];
+  private labels: Label[] = [];
+  /** The label being typed, or null. Not part of the map until it is finished. */
+  private editingLabel: EditingLabel | null = null;
+  private textCaret: TextCaret;
   private settings: Settings = { ...DEFAULT_SETTINGS };
   private nav = new Navigation();
   private agents = new Agents();
@@ -141,6 +166,16 @@ export class App {
   private recordingChip: RecordingChip;
   /** Ticks the readout and enforces the limit while recording; 0 otherwise. */
   private recordTicker = 0;
+  /**
+   * The framing step: armed by Record, and holding the drag until it becomes a
+   * frame. Screen pixels, because the frame is where the camera points rather
+   * than a thing on the map -- see Recorder.start.
+   */
+  private framing = false;
+  private framePress: Point | null = null;
+  private frameNow: Point | null = null;
+  /** The frame the running take was started with, or null for the whole window. */
+  private recordCrop: CropRect | null = null;
   /** Held across the stop, so a second tap cannot start one while one is ending. */
   private recordBusy = false;
   /**
@@ -180,7 +215,7 @@ export class App {
     for (const t of [
       new WallTool(), new RectangleTool(), new ShiftTool(),
       new PedestrianTool(), new GoalTool(), new SelectionTool(),
-      new BorderTool(), new EraseTool(),
+      new BorderTool(), new EraseTool(), new TextTool(),
     ]) {
       this.tools.set(t.id, t as Tool);
     }
@@ -198,6 +233,14 @@ export class App {
 
     this.recorder = new Recorder(deckCanvas, overlayCanvas);
     this.recordingChip = new RecordingChip(stage);
+    // One caret for the life of the app: an input created per edit would be
+    // focused before the browser had laid it out, which on Safari means focused
+    // and not typed into.
+    this.textCaret = new TextCaret(stage, (text) => {
+      if (!this.editingLabel) return;
+      this.editingLabel = { ...this.editingLabel, text };
+      this.requestRender();
+    });
     if (!canRecord()) {
       this.toolbar.setEnabled('record', false, 'This browser cannot record video');
     }
@@ -243,6 +286,8 @@ export class App {
     // recorder taken away outright, which would lose the lot. Better to stop with
     // what there is and say why.
     document.addEventListener('visibilitychange', () => {
+      // A frame chosen against a screen nobody is looking at is not a frame.
+      if (document.hidden && this.framing) this.cancelFraming();
       if (document.hidden && this.recorder.active) {
         void this.endRecording('Recording stopped when Walky went to the background');
       }
@@ -306,6 +351,7 @@ export class App {
     selectionCount: () => this.agents.selectionCount,
     deactivateTool: () => this.setTool(null),
     activateTool: (id) => this.setTool(id),
+    editTextAt: (at) => { void this.editTextAt(at); },
     notify: (message) => showToast(this.stage, message),
     panBy: (dx, dy) => this.viewport.panBy(dx, dy),
     requestRender: () => this.requestRender(),
@@ -345,6 +391,14 @@ export class App {
       if (ev.button === 2) return;
       (el as HTMLElement).setPointerCapture?.(ev.pointerId);
       const e = info(ev);
+      // Framing is not a tool and does not go through one: the press belongs to
+      // the frame until the frame is settled.
+      if (this.framing) {
+        this.framePress = e.screen;
+        this.frameNow = e.screen;
+        this.requestRender();
+        return;
+      }
       this.pointers.set(ev.pointerId, e.screen);
 
       if (this.pointers.size === 2) {
@@ -379,6 +433,13 @@ export class App {
     el.addEventListener('pointermove', (ev) => {
       const e = info(ev);
 
+      if (this.framing) {
+        if (this.framePress) {
+          this.frameNow = e.screen;
+          this.requestRender();
+        }
+        return;
+      }
       if (this.pinch) {
         this.pointers.set(ev.pointerId, e.screen);
         const now = this.measurePinch();
@@ -403,6 +464,10 @@ export class App {
     });
 
     el.addEventListener('pointerup', (ev) => {
+      if (this.framing) {
+        this.finishFraming(info(ev).screen);
+        return;
+      }
       if (this.releasePointer(ev.pointerId)) return;
       if (this.pendingTouch?.id === ev.pointerId) this.flushPendingTouch();
       const e = info(ev);
@@ -414,6 +479,12 @@ export class App {
     // The browser taking a gesture back mid-stroke: nothing was finished, so
     // nothing should be committed.
     el.addEventListener('pointercancel', (ev) => {
+      if (this.framing) {
+        this.framePress = null;
+        this.frameNow = null;
+        this.requestRender();
+        return;
+      }
       this.releasePointer(ev.pointerId);
       this.pendingTouch = null;
       this.tool?.cancel?.();
@@ -444,6 +515,27 @@ export class App {
         ev.preventDefault();
         this.undo();
         return;
+      }
+      // Framing answers two keys of its own, and answers them first: Enter is
+      // the whole window and Escape is never mind. Space would otherwise start
+      // the crowd walking under a frame that has not been settled yet, and
+      // Escape would put down the tool rather than the camera.
+      if (this.framing && !this.settingsSheet.visible) {
+        const focused = (ev.target as HTMLElement | null)?.closest('button');
+        // Enter over the Record button is that button being pressed, and it
+        // already means "everything" while framing. Answering it here as well
+        // would start the take and then stop it again in the same keystroke --
+        // the trap the Space shortcut below documents.
+        if (ev.key === 'Enter' && !focused) {
+          ev.preventDefault();
+          this.beginRecording(null);
+          return;
+        }
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          this.cancelFraming();
+          return;
+        }
       }
       // The bare keys: 1-7 for the tools, Space for start/pause. Held back from
       // anything that is already listening -- a field being typed into, a
@@ -522,12 +614,18 @@ export class App {
   }
 
   private setTool(id: ToolId | null): void {
-    // The eraser is a pointer's tool. Its cell is hidden on a touch device by a
-    // rule in the toolbar's stylesheet, and this is the same question asked of
-    // the other way in -- the digit shortcut. Asked here rather than at startup
-    // so a hybrid laptop gets the answer for the input in use right now.
-    if (id === 'erase' && !window.matchMedia(FINE).matches) return;
+    // A tool the strip is not showing cannot be reached by its digit either. Two
+    // tools are withheld and for different reasons -- the eraser wants a mouse
+    // to hover with, the text tool a keyboard to type on -- but the answer to
+    // "is this on offer" is the stylesheet's either way, so it is asked of the
+    // strip rather than restated here as a second media query that could give a
+    // different answer. Asked per press rather than at startup, since a hybrid
+    // laptop changes its mind while the page is open.
+    if (id && !this.toolbar.offers(id)) return;
     this.tool?.cancel?.();
+    // A caret left open under a tool that is no longer armed is a caret nobody
+    // can see the point of.
+    this.cancelTextEdit();
     // A press held back for the old tool is not the new tool's to receive.
     this.pendingTouch = null;
     this.tool = id ? this.tools.get(id) ?? null : null;
@@ -550,8 +648,12 @@ export class App {
    */
   private updateContextPanel(): void {
     const brush = this.tool?.id === 'pedestrian';
+    const writing = this.tool?.id === 'text';
     const keys: (keyof Settings)[] = [];
     if (brush) keys.push('brushSize', 'personalSpace');
+    // The size of the next label, beside the caret that is about to write it --
+    // and live, so dragging it while a word is half typed resizes the word.
+    if (writing) keys.push('labelSize', 'labelWeight');
     if (this.running) {
       keys.push('speed');
       // Preferred space is not only the pitch a brushed block is painted at: it
@@ -564,11 +666,14 @@ export class App {
       this.contextPanel.hide();
       return;
     }
-    this.contextPanel.show(brush ? 'Pedestrians' : 'Running', keys);
+    const title = brush ? 'Pedestrians' : writing ? 'Text' : 'Running';
+    this.contextPanel.show(title, keys);
   }
 
   private applyCursor(): void {
-    const cursor = this.tool?.cursor ?? 'default';
+    // Framing takes the pointer off whatever tool is armed: the next drag is the
+    // frame, not a wall, and the cursor is the only thing saying so.
+    const cursor = this.framing ? 'crosshair' : this.tool?.cursor ?? 'default';
     this.stage.style.cursor = cursor;
     // The deck canvas sits on top and paints its own cursor, so it needs telling.
     this.scene.setCursor(cursor);
@@ -590,6 +695,9 @@ export class App {
       for (const polygon of wall.polygons) for (const p of polygon) add(p[0], p[1]);
     }
     for (let i = 0; i < this.agents.count; i++) add(this.agents.x[i], this.agents.y[i]);
+    // The anchor only: where a label starts is where it is, and how far the
+    // word runs from there depends on a zoom the camera has not been set to yet.
+    for (const label of this.labels) add(label.at[0], label.at[1]);
     return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
   }
 
@@ -600,10 +708,12 @@ export class App {
    */
   private resetWorld(): void {
     this.walls = [];
+    this.labels = [];
     this.agents.clear();
     this.play(false);
     this.navDirty = true;
     this.tool?.cancel?.();
+    this.cancelTextEdit();
     this.touch();
   }
 
@@ -668,12 +778,94 @@ export class App {
     if (this.recordBusy) return;
     if (this.recorder.active) {
       await this.endRecording('Recording ready');
-    } else {
-      this.beginRecording();
+      return;
     }
+    // Pressed again while framing: the answer to "what shall I record" is
+    // everything, which is the same answer Enter gives and the same one the
+    // button gave before there was a question.
+    if (this.framing) {
+      this.beginRecording(null);
+      return;
+    }
+    this.armFraming();
   }
 
-  private beginRecording(): void {
+  /**
+   * The step between pressing Record and recording: choosing what is in shot.
+   *
+   * A drag frames it, Enter takes the whole window, Escape calls the whole thing
+   * off. The button stays pressed throughout, because from the outside this is
+   * already the recording -- it has simply not started yet, the way a camera is
+   * held up before the button goes down.
+   *
+   * Desktop only, and not by omission: the cell is not in the strip on a
+   * handheld at all (see ui/toolbar.ts), and this guard is what makes that true
+   * for a tablet with a keyboard bolted to it as well.
+   */
+  private armFraming(): void {
+    if (!this.toolbar.offers('record')) return;
+    // The same refusal beginRecording makes, made before the drag rather than
+    // after it: framing a shot that cannot be taken is worse than being told.
+    if (document.hidden) {
+      showToast(this.stage, 'Cannot record -- Walky is in the background.');
+      return;
+    }
+
+    this.framing = true;
+    this.framePress = null;
+    this.frameNow = null;
+    this.toolbar.setPressed('record', true);
+    this.recordingChip.hint(FRAMING_HINT);
+    this.applyCursor();
+    this.requestRender();
+  }
+
+  private cancelFraming(): void {
+    if (!this.framing) return;
+    this.framing = false;
+    this.framePress = null;
+    this.frameNow = null;
+    this.toolbar.setPressed('record', false);
+    this.recordingChip.hide();
+    this.applyCursor();
+    this.requestRender();
+  }
+
+  /**
+   * The drag, once the button comes up: a frame, a click, or a slip.
+   *
+   * A press that never travelled is read as a click and records everything --
+   * the same reading every drawing tool gives a press that did not move, and a
+   * second way to say "all of it" for anyone who does not read the hint. A drag
+   * too small to be a shot is refused with the framing still armed, so the
+   * answer is another drag rather than another press of Record.
+   */
+  private finishFraming(at: Point): void {
+    const from = this.framePress;
+    this.framePress = null;
+    this.frameNow = null;
+    if (!from) return;
+
+    const w = Math.abs(at[0] - from[0]);
+    const h = Math.abs(at[1] - from[1]);
+    if (w < FRAME_DRAG_THRESHOLD && h < FRAME_DRAG_THRESHOLD) {
+      this.beginRecording(null);
+      return;
+    }
+    if (w < MIN_FRAME_PX || h < MIN_FRAME_PX) {
+      showToast(this.stage, 'That frame is too small -- drag a bigger one, or press Enter for the whole window.');
+      this.requestRender();
+      return;
+    }
+    this.beginRecording({
+      x: Math.min(from[0], at[0]),
+      y: Math.min(from[1], at[1]),
+      w,
+      h,
+    });
+  }
+
+  private beginRecording(crop: CropRect | null): void {
     // Refused rather than started: a hidden tab is handed no animation frames, so
     // this would record one motionless frame for as long as it was left. The
     // visibilitychange handler only catches going away, not being away already.
@@ -687,13 +879,19 @@ export class App {
       // context for the plops to be tapped from -- and this is the click, which
       // is the only moment a context starts unsuspended.
       this.plops.arm();
-      this.recorder.start(this.settings.sound ? this.plops.captureStream() : null);
+      this.recorder.start(this.settings.sound ? this.plops.captureStream() : null, crop);
     } catch (err: unknown) {
       const why = err instanceof Error ? err.message : 'this browser cannot record video';
       showToast(this.stage, `Cannot record -- ${why}.`);
+      this.cancelFraming();
       return;
     }
 
+    this.framing = false;
+    this.framePress = null;
+    this.frameNow = null;
+    this.recordCrop = crop;
+    this.applyCursor();
     this.toolbar.setPressed('record', true);
     this.crowdFinishedAt = 0;
     // Which also starts the loop -- and if the crowd was already walking, the
@@ -787,6 +985,10 @@ export class App {
     } finally {
       this.recordBusy = false;
       this.toolbar.setEnabled('record', true);
+      // Held until the recorder has actually stopped, so the frames still being
+      // written while it does keep the readout inside the frame rather than
+      // losing it to a corner the file does not have.
+      this.recordCrop = null;
       // The other edge: the readout comes down and the previews come back.
       this.requestRender();
     }
@@ -818,9 +1020,55 @@ export class App {
     this.resetWorld();
   }
 
+  /**
+   * Types a label onto the map, from the click that placed the caret to the key
+   * that finished it.
+   *
+   * The caret is a keyboard and nothing else (see ui/textCaret.ts); what is on
+   * screen is drawn by the overlay from `editingLabel`, so the words appear on
+   * the canvas as they are typed and look exactly like the label they become.
+   *
+   * An empty one is not an edit. Escape, a blank line and clicking away all end
+   * with nothing added and no undo step -- the same rule the pedestrian brush
+   * follows when a stroke lands nobody.
+   */
+  private async editTextAt(at: Point): Promise<void> {
+    const screen = this.viewport.worldToScreen(at);
+    this.editingLabel = { at, text: '' };
+    this.requestRender();
+
+    const text = await this.textCaret.open(screen[0], screen[1]);
+    // The map may have been thrown away while the caret was open -- undo, Clear
+    // and a shared link all close it -- and the edit went with it.
+    if (this.editingLabel?.at !== at) return;
+    this.editingLabel = null;
+
+    const written = text?.trim() ?? '';
+    if (written === '') {
+      this.requestRender();
+      return;
+    }
+    this.checkpoint();
+    this.labels = [...this.labels, makeLabel(at, written, this.labelStyle())];
+    this.touch();
+  }
+
+  /** How the next label will be written: whatever the two sliders say. */
+  private labelStyle(): LabelStyle {
+    return { size: this.settings.labelSize, weight: this.settings.labelWeight };
+  }
+
+  /** Ends an edit in progress, keeping nothing. */
+  private cancelTextEdit(): void {
+    if (!this.editingLabel) return;
+    this.editingLabel = null;
+    this.textCaret.close();
+    this.requestRender();
+  }
+
   /** Nothing drawn and nobody standing: what makes a question about losing it moot. */
   private isEmpty(): boolean {
-    return this.walls.length === 0 && this.agents.count === 0;
+    return this.walls.length === 0 && this.agents.count === 0 && this.labels.length === 0;
   }
 
   /**
@@ -839,6 +1087,9 @@ export class App {
   private checkpoint(): void {
     this.undoStack.push({
       walls: this.walls.map((w) => ({ ...w })),
+      // A shallow copy each, like the walls: a label's text and place are
+      // replaced rather than edited, so nothing here is written through.
+      labels: this.labels.map((l) => ({ ...l })),
       agents: this.agents.snapshot(),
     });
     // Oldest goes first once the stack is full, so the depth is a window on the
@@ -859,10 +1110,12 @@ export class App {
     const previous = this.undoStack.pop();
     if (!previous) return;
     this.walls = previous.walls;
+    this.labels = previous.labels;
     this.agents.restore(previous.agents);
     this.navDirty = true;
     // Whatever is half-drawn was drawn on a map that no longer exists.
     this.tool?.cancel?.();
+    this.cancelTextEdit();
     this.toolbar.setEnabled('undo', this.undoStack.length > 0);
     this.updateContextPanel();
     this.touch();
@@ -1292,12 +1545,49 @@ export class App {
       agentPositions: targetLines ? this.targetableAgents() : [],
       agentColors: targetLines ? this.targetableColors() : [],
       mouseWorld: this.mouseWorld,
+      labels: this.labels,
+      editingLabel: this.editingLabel,
+      // The settings rather than anything stored: the label being typed is the
+      // next one, and the next one is what the sliders are set to.
+      editingLabelStyle: this.labelStyle(),
       debugLines: this.debugLines(),
       // The speed is the one thing about a recorded run that the recording
       // cannot otherwise show: the same crowd at 2 and at 12 is the same crowd.
       // Read live, so dragging the slider mid-take is visible in the take.
       speedReadout: recording ? `Speed ×${this.settings.speed}` : null,
+      recordFrame: this.recordFrame(),
+      // While a frame is set the readout belongs in the frame's corner, or it
+      // would be written on a part of the screen the file does not have.
+      speedAnchor: this.recordCrop ? cropBox(this.recordCrop) : null,
     });
+  }
+
+  /**
+   * The frame to draw: the one being dragged, or the one the take is running to.
+   *
+   * Nothing at all while a recording runs with the whole window in shot -- there
+   * is no line to draw around everything, and drawing one would put it in the
+   * file.
+   */
+  private recordFrame(): RecordFrame | null {
+    if (this.framing) {
+      const from = this.framePress;
+      const to = this.frameNow;
+      if (!from || !to) return null;
+      return {
+        rect: {
+          left: Math.min(from[0], to[0]),
+          top: Math.min(from[1], to[1]),
+          right: Math.max(from[0], to[0]),
+          bottom: Math.max(from[1], to[1]),
+        },
+        dim: true,
+      };
+    }
+    if (this.recorder.active && this.recordCrop) {
+      return { rect: cropBox(this.recordCrop), dim: false };
+    }
+    return null;
   }
 
   /**
@@ -1441,6 +1731,7 @@ export class App {
         zoomLevel: this.viewport.zoomLevel,
       },
       walls: this.walls,
+      labels: this.labels,
       agents,
       stuck,
     });
@@ -1506,8 +1797,9 @@ export class App {
 
     Object.assign(this.settings, clampSettings(core.settings));
 
-    const { walls, agents } = buildWorld(core);
+    const { walls, agents, labels } = buildWorld(core);
     this.walls = walls;
+    this.labels = labels;
     for (const agent of agents) this.agents.addRestored(agent);
 
     this.viewport.targetX = core.view.targetX;
@@ -1527,6 +1819,7 @@ export class App {
       `Pedestrians Alive: ${this.agents.count}`,
       `Selected: ${this.agents.selectionCount}`,
       `Walls: ${this.walls.length}`,
+      `Labels: ${this.labels.length}`,
       `Zoom level: ${this.viewport.zoomLevel} (scale ${this.viewport.scale.toFixed(3)})`,
       m ? `X: ${Math.round(m[0])} / Y: ${Math.round(m[1])}` : 'X: - / Y: -',
       // Below the ported lines rather than among them: drawInformationString had
@@ -1542,6 +1835,11 @@ export class App {
   }
 
   get toolbarRef(): Toolbar { return this.toolbar; }
+}
+
+/** A crop as the box the overlay draws boxes in. */
+function cropBox(crop: CropRect): ScreenRect {
+  return { left: crop.x, top: crop.y, right: crop.x + crop.w, bottom: crop.y + crop.h };
 }
 
 /**

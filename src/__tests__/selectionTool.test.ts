@@ -46,9 +46,10 @@ function stubContext(crowd: Point[]): Recorded {
     colorAt: () => null,
     agentPositions: () => [],
     worldPerPixel: () => 1,
-    // The tool under test never erases; the eraser has its own file.
+    // The tool under test neither erases nor writes; those have their own files.
     eraseTargetAt: () => null,
     eraseAt: () => false,
+    editTextAt: () => {},
   } satisfies ToolContext;
   return { ctx, armed, messages, selected: () => selected.size };
 }

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!--
+    A serif T with a caret beside it, in the same black line art as the rest of
+    the 2016 set. SVG rather than PNG because this one is a letterform: at a
+    letterform's weight a 512px bitmap scaled into a 40px cell softens the stem,
+    and there is nothing here a path does not say exactly.
+  -->
+  <g fill="#000">
+    <!-- Crossbar and stem. -->
+    <rect x="12" y="14" width="62" height="15" rx="3"/>
+    <rect x="35" y="14" width="16" height="66" rx="3"/>
+    <!-- The foot, which is what makes it a letter rather than a symbol. -->
+    <rect x="22" y="72" width="42" height="14" rx="3"/>
+  </g>
+  <!-- The caret: where the next character lands. -->
+  <rect x="82" y="30" width="7" height="46" rx="3" fill="#000" opacity=".55"/>
+</svg>
