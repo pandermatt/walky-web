@@ -95,6 +95,12 @@ export class Behaviour {
       const j = near[k];
       if (!this.yieldsTo(self, j)) continue;
       const d = Math.hypot(a.x[j] - px, a.y[j] - py);
+      // Only an intrusion counts. The original left this unclamped, so a
+      // neighbour further away than the preferred space contributed a *negative*
+      // amount -- attraction -- and the x100 multiplier turned a distant crowd
+      // bound elsewhere into the strongest pull on the map, which is the exact
+      // opposite of what it is for.
+      if (d >= preferred) continue;
       const sameGoal = a.goal[j] === a.goal[self];
       total += (preferred - d) * (sameGoal ? 1 : 100);
     }
@@ -125,6 +131,24 @@ export class Behaviour {
     return false;
   }
 
+  /**
+   * Which way along one axis relieves the crush: -1, +1, or 0 for neither.
+   *
+   * A tie or a dead heat gives 0 rather than a coin flip, so a pedestrian with
+   * nothing to gain on this axis does not jitter along it; the caller decides
+   * what to do instead.
+   */
+  private relieves(
+    x: number, y: number, ax: number, ay: number,
+    self: number, radius: number, preferred: number, here: number,
+  ): number {
+    const plus = this.crowding(x + ax, y + ay, self, radius, preferred);
+    const minus = this.crowding(x - ax, y - ay, self, radius, preferred);
+    if (plus < minus && plus < here) return 1;
+    if (minus < plus && minus < here) return -1;
+    return 0;
+  }
+
   /** One step towards `target`. Mirrors PedestrianBehaviour.stepTowards. */
   stepTowards(i: number, target: Point, radius: number, preferred: number): StepResult {
     const a = this.agents;
@@ -141,10 +165,21 @@ export class Behaviour {
       dx = Math.sign(target[0] - x);
       dy = Math.sign(target[1] - y);
     } else {
-      // Too close to others: move whichever way relieves the crush.
+      // Too close to others: relieve the crush where relief is available, and
+      // keep heading for the target on whichever axis offers none.
+      //
+      // Both directions are measured. The original probed only +1 on each axis
+      // and inferred -1 from "not better", so a cell that was worse both ways
+      // still committed a step into the worse one.
+      //
+      // Falling back to the target matters more than it looks. An axis with no
+      // relief on offer used to send the pedestrian somewhere anyway, and a
+      // packed crowd is exactly the case where no relief exists -- so the crowd
+      // stopped walking to its goal and milled about instead. Answering "then
+      // carry on towards the target" keeps a jam draining.
       const here = this.crowding(x, y, i, radius, preferred);
-      dx = this.crowding(x + 1, y, i, radius, preferred) < here ? 1 : -1;
-      dy = this.crowding(x, y + 1, i, radius, preferred) < here ? 1 : -1;
+      dx = this.relieves(x, y, 1, 0, i, radius, preferred, here) || Math.sign(target[0] - x);
+      dy = this.relieves(x, y, 0, 1, i, radius, preferred, here) || Math.sign(target[1] - y);
       ignoreDiagonal = true;
     }
 
