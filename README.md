@@ -10,7 +10,10 @@ as the environment. The original needed a JDK and Maven to run, so essentially
 nobody ever saw it. This version is a static page.
 
 It is a revival, not a redesign. The look is the original's, taken from the source
-rather than from memory.
+rather than from memory, and so is the navigation and the lattice the crowd walks
+on. The one place it knowingly departs is how a pedestrian picks its next step,
+which the original wired to the preferred-space setting in a way that made the
+setting counterproductive — see [Crowd behaviour](#crowd-behaviour).
 
 ## The look, and where it comes from
 
@@ -125,11 +128,11 @@ Supporting changes:
 
 ### Crowd behaviour
 
-`PedestrianBehaviour` is ported closely — the integer 8-direction lattice, the
-speed counter where a diagonal costs √2, the cadence that walks a shallow angle as
-a staircase, and the ×100 penalty that makes pedestrians avoid crowds bound
-elsewhere. Neighbour lookup is a spatial hash rebuilt each tick by counting sort,
-replacing the original's scan over every pedestrian.
+The lattice is the original's: eight integer directions, a speed counter where a
+diagonal costs √2, and a pecking order by remaining distance to the goal.
+Neighbour lookup is a spatial hash rebuilt each tick by counting sort, replacing
+the original's scan over every pedestrian. How a pedestrian *chooses* among those
+eight directions is not the original's, and the rest of this section is why.
 
 Bugs found while porting, all with regression tests:
 
@@ -149,6 +152,108 @@ Bugs found while porting, all with regression tests:
   dense crowd at a narrow gap went from 0/196 arriving to 196/196.
 - **Speed did nothing.** `stepTowards` clamped the budget to √2 on every call, so
   speed above ~1.41 was inert in the original too. The cap is now the speed itself.
+- **Personal space that pulled.** `totalToNearDistance` scored a cell as
+  `Σ (preferred − distance)`, unclamped, over a query circle of radius
+  `2 × radius + preferred`. The *gradient* of that is repulsive, so it reads as
+  correct; the fault is at the rim. A neighbour crossing into the circle arrives
+  contributing `preferred − reach`, which is `−2 × radius` — times 100 for anyone
+  bound elsewhere. At the default radius and a preferred space of 90 that is
+  **−2600 for one distant stranger entering range, against +64 for a same-goal
+  pedestrian standing at body contact**. Cells were being scored on how many
+  far-away strangers they could see, and a crowd drifted toward the fringe of the
+  largest group headed somewhere else. Only an intrusion counts now.
+
+#### Beyond the port: why the step rule was replaced
+
+The reported complaint was that raising **Preferred space** made pedestrians
+shove each other rather than give each other room. It did, and no amount of
+tuning would have fixed it, because the setting was wired to the wrong thing.
+
+`stepTowards` asked one question — *is anyone inside my preferred space?* — and on
+a yes it stopped navigating outright and moved solely to relieve the crush. The
+reach of that question **is** the preferred space, so at 90 it was a 116px trigger
+radius: in any crowd it was always on. A crowd that has stopped walking anywhere
+and is only pushing away from itself is precisely what shoving looks like, and
+turning the dial up put more of the crowd into that state.
+
+It was never bodies interpenetrating. `isLegal` returns early when a candidate
+cell is clear, so its "no worse than now" branch is only reachable from an
+already-overlapping state and cannot create an overlap — which the suite asserts
+over 600 ticks. The shoving was **movement selection**: in that branch `dx` and
+`dy` were each forced to ±1 (the probe sampled `+1` and inferred `−1` without
+testing it) and the diagonal cadence was bypassed, so every crowded pedestrian
+took a diagonal step every single tick, in a direction read off a one-sided probe
+of a discontinuous field.
+
+A pedestrian now scores all nine things it could do — the eight neighbouring cells
+and **standing still** — and takes the cheapest. Progress and comfort are always
+weighed against each other, so a crowded pedestrian slows, sidesteps or waits, but
+never stops heading for its goal. The terms, and what each is for:
+
+- **Progress, per unit of step budget.** Rate rather than distance is what walks a
+  shallow approach angle as a staircase: toward a 45° target a diagonal gains √2
+  for √2 spent and wins, toward a shallow one it gains barely more than an axis
+  step for half again the cost and loses. The original bought that shape with an
+  explicit cadence counter, which has retired — it falls out of the geometry.
+- **Discomfort, decaying exponentially.** Under the original's linear falloff a
+  dozen distant neighbours outvote the one person you are about to walk into.
+- **Anisotropy.** A neighbour behind you counts a fifth of one ahead (Helbing and
+  Johansson's λ, fitted to video of real crowds). Without it, pressure from behind
+  scatters the front rank sideways — the other half of the shoving.
+- **Anticipation.** Every neighbour is judged one lookahead along its own heading,
+  so converging paths resolve before they touch instead of after.
+- **A turn penalty**, priced above a whole step of progress. It is what separates
+  walking from shimmering: reversals fell from 13.8% of all moves to 0.7%.
+- **A passing side.** Given the choice, step the way everyone else steps.
+- **The cost of standing still**, which starts low and grows. Queuing at a
+  bottleneck rather than barging, with a guarantee that a jam still drains:
+  patience runs out, and a pedestrian who has waited long enough accepts a squeeze
+  it first refused.
+
+Two further departures, both aimed squarely at the same complaint:
+
+- **Personal space compresses with density** — the fundamental diagram. Rather
+  than eighty pedestrians all trying to hold 80px apart in a corridor that cannot
+  give it and settling the shortfall by shoving, the asking price comes down: an
+  isolated pedestrian keeps 78px of it, a packed one 45px, and it goes back up
+  when the crush lifts. Turn on **Preferred radius** and the rings can be watched
+  tightening. Density is judged in a window fixed to the body radius, deliberately
+  not the interaction reach — the reach grows with the setting, so counting inside
+  it finds more neighbours exactly when the setting is raised, compressing as hard
+  as the setting had loosened and leaving the dial doing nothing.
+- **Pedestrians differ.** How much room one wants and how briskly it walks vary a
+  little. A crowd that agrees on both locks into ranks and nobody ever has reason
+  to overtake. The trait is derived from where a pedestrian was placed rather than
+  stored, so it survives undo and Reset without the snapshot carrying it.
+
+**×100 became ×2.5.** With an exponential falloff and a passing side already
+separating counterflow, the original multiplier was no longer doing that work,
+only distorting it — it made two streams mutually repulsive without ever settling
+who went which way, so they held each other up. Through one corridor, two streams
+of 56: **2 arrived in 600 ticks before, 110 after.**
+
+Measured on a corridor of 80 pedestrians, sweeping preferred space from 0 to 80:
+
+| | ported | now |
+|---|---:|---:|
+| arrive at preferred space 80 | 50/80 | 80/80 |
+| mean nearest-neighbour gap, 0 → 80 | flat | 34.6px → 52.2px |
+| area the crowd spreads over | 24.8× | 3.1× |
+| steps that reverse the one before | 13.8% | 0.7% |
+
+None of this is free, and it is not a speed-up either. Nine candidates cost more
+to score than three; what pays for them is structure — one hash query per step
+instead of about seven, a legality check that walks a short list of touchable
+bodies rather than re-querying, and a neighbourhood summarised once into a
+discomfort *gradient* that each candidate meets with a single dot product. Every
+candidate sits within √2px, so that first-order term is the whole story to a
+fraction of a pixel. Interleaved against the ported rule on one machine to cancel
+drift, at 2,000 agents: p50 within a few percent, p95 about 8% higher.
+
+`src/__tests__/crowd.test.ts` covers the table above. The older
+`behaviour.test.ts` asserts the invariants — nobody overlaps, nobody enters a
+wall, everybody arrives — and every one of them stayed green throughout the
+behaviour it describes, which is why the second file exists.
 
 ### Quality-of-life additions
 
@@ -552,9 +657,14 @@ Two honest caveats:
   `ScatterplotLayer` is not the bottleneck at these counts — the agent step is.
 - The simulation still runs on the main thread. Moving it into a Web Worker (with
   double-buffered transferable arrays, no `SharedArrayBuffer`, so no COOP/COEP
-  headers are needed) is the next step and would stop it blocking the frame. The
-  remaining hot spot is the legality check, which does several spatial-hash
-  queries per agent per step.
+  headers are needed) is the next step and would stop it blocking the frame.
+- The table predates the scored step rule described under **Crowd behaviour**,
+  and was measured on hardware not to hand since. Rather than restate it from a
+  slower machine, the two rules were run interleaved on one box to cancel drift:
+  at 2,000 agents the new rule lands within a few percent of the old on p50 and
+  about 8% above it on p95, so the guidance above still holds. The legality check
+  used to be the remaining hot spot and is no longer — a step makes one
+  spatial-hash query where it used to make about seven.
 
 ## Running it
 

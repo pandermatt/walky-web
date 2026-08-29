@@ -8,19 +8,168 @@ import type { Agents } from './agents';
 export const SQRT2 = 1.41421356237;
 
 /**
- * How a pedestrian decides its next step, ported from
- * pedestrians/PedestrianBehaviour.
+ * How a pedestrian decides its next step.
  *
- * The parts that give the crowd its character are all kept: the integer
- * 8-direction lattice, the speed counter that lets a diagonal cost sqrt(2), the
- * cadence that spaces diagonal steps out so a shallow angle is walked as a
- * staircase, the three-way priority (keep preferred space, else step direct, else
- * step at random) and the x100 penalty that makes a pedestrian avoid crowds
- * heading somewhere other than its own goal.
+ * The lattice is kept from pedestrians/PedestrianBehaviour: eight integer
+ * directions, a speed counter where a diagonal costs sqrt(2), and a pecking order
+ * by remaining distance to the goal. What the original did with that lattice does
+ * not survive, because it could not be made to behave.
  *
- * What changed is only how neighbours are found: a spatial hash instead of the
- * original's scan over every pedestrian.
+ * The original asked one question -- "is anyone inside my preferred space?" -- and
+ * on a yes it stopped navigating outright and moved solely to relieve the crush.
+ * The reach of that question is the preferred space, so the wider you set the
+ * setting the more of the crowd was permanently in relief mode, and a crowd that
+ * has stopped walking to its goal and is only pushing away from itself is exactly
+ * what it looked like: people shoving. Turning the dial up made it worse.
+ *
+ * Here a pedestrian scores all nine things it could do -- the eight neighbouring
+ * cells and standing still -- and takes the cheapest. Progress and comfort are
+ * always weighed against each other, so a crowded pedestrian slows, sidesteps or
+ * waits, but never stops heading for its goal. The terms:
+ *
+ *  - Progress, per unit of step budget. Rate rather than distance is what makes a
+ *    shallow approach angle come out as a staircase: towards a 45-degree target a
+ *    diagonal gains sqrt(2) for sqrt(2) spent and wins outright, while towards a
+ *    shallow one it gains barely more than an axis step for half again the cost
+ *    and loses. The original bought the same shape with an explicit cadence
+ *    counter; it falls out of the geometry instead.
+ *  - Discomfort, which decays exponentially with distance and is weighted by where
+ *    a neighbour stands relative to the way you are facing. People guard the space
+ *    in front of them and largely ignore what is behind (Helbing and Johansson's
+ *    anisotropy); without that, pressure from behind scatters the front rank
+ *    sideways, which is the other half of the shoving. The exponential matters
+ *    too: under a linear falloff a dozen distant neighbours outvote the one person
+ *    you are about to walk into.
+ *  - Anticipation. Real pedestrians avoid where someone *will* be, not where they
+ *    are, which is why crossing streams weave through each other instead of
+ *    colliding and then sorting it out. Every neighbour is judged one lookahead
+ *    along its own heading.
+ *  - A turn penalty, so a path reads as walked rather than as a random walk that
+ *    happened to arrive.
+ *  - A passing side. Given a choice, step the same way everyone else does, and
+ *    counterflow sorts itself into lanes.
+ *  - The cost of standing still, which starts low and grows. This is what lets
+ *    someone queue at a bottleneck rather than barge, while guaranteeing that a
+ *    jam still drains: patience runs out, and a pedestrian who has waited long
+ *    enough will accept a squeeze it first refused.
+ *
+ * Cost is why this is not slower than what it replaced. The original scanned every
+ * pedestrian on the map; the first port of this file cut that to a spatial hash but
+ * queried it about seven times per step, and scoring nine candidates against every
+ * neighbour would have been worse again. Instead a single pass summarises the
+ * neighbourhood into a discomfort *gradient*, and each candidate costs one dot
+ * product against it. Every candidate is within sqrt(2)px, so the first-order term
+ * is the whole story to a fraction of a pixel, and the constant part is shared by
+ * all nine and cancels out of the comparison anyway.
  */
+
+/**
+ * Weight of a neighbour directly behind, against one directly ahead.
+ * Helbing and Johansson fit ~0.2 to video of real crowds.
+ */
+const LAMBDA = 0.2;
+/** Falloff length of the discomfort curve, as a fraction of the personal space. */
+const DECAY_FRACTION = 0.3;
+/** Extra weight for a neighbour bound somewhere other than here. */
+const OPPOSING = 2.5;
+/**
+ * Weight of a neighbour this pedestrian outranks.
+ *
+ * The original made this 0: whoever was closest to the goal ignored everyone and
+ * walked through them. The asymmetry is load-bearing -- without it every member of
+ * a dense crowd yields to every other and the block churns in place -- but it does
+ * not have to be absolute. Having right of way makes you less careful, not blind.
+ */
+const YIELD_LOW = 0.25;
+/** Discomfort against progress. Progress is scaled to +-1, so this is the exchange rate. */
+const W_SPACE = 6;
+/**
+ * Cost of turning away from the current heading, at a full reversal.
+ *
+ * Priced above a whole step of progress on purpose. It is what separates walking
+ * from jittering: without it a crowd relieving pressure changes its mind every
+ * step and the whole thing shimmers. Raising it from 0.35 to 1.2 took outright
+ * reversals from 4.8% of moves to 0.7% and cost nothing in spacing.
+ */
+const W_TURN = 1.2;
+/** Pull towards the conventional passing side when someone is coming the other way. */
+const W_SIDE = 0.15;
+/** Cost of standing still, before patience runs out. */
+const W_WAIT = 0.3;
+/** Steps of waiting after which standing still costs double. */
+const PATIENCE = 10;
+/**
+ * How far ahead a neighbour is judged to be, in lattice steps.
+ *
+ * Anticipation, in its cheapest honest form: score where someone will be rather
+ * than where they are.
+ */
+const LOOKAHEAD = 4;
+/** How fast the smoothed heading follows the steps actually taken. */
+const HEADING_SMOOTH = 0.35;
+/**
+ * How much brisker than the speed setting the briskest pedestrian walks.
+ *
+ * The variation goes upwards rather than around the setting because the budget
+ * has to buy a whole lattice step within one tick: scaled below 1, a pedestrian at
+ * speed 1 cannot afford a step on the tick it is offered one, and only moves every
+ * other tick -- which at the lowest setting is most of the crowd stuttering.
+ */
+const PACE_SPREAD = 0.15;
+
+/** A pedestrian's pace, as a multiple of the speed setting. */
+export function paceScale(trait: number): number {
+  return 1 + PACE_SPREAD * trait;
+}
+/**
+ * A pedestrian's share of the preferred-space setting: between 0.8 and 1 of it.
+ *
+ * The setting is the room the most private person in the crowd wants, and the
+ * rest want a little less -- rather than a mean everyone scatters around, which
+ * would let an agent demand more space than the setting and quietly invalidate
+ * the query reach built from it.
+ */
+const SPACE_SPREAD = 0.2;
+/**
+ * Neighbours within reach at which personal space has halved, and the floor it
+ * cannot compress past.
+ *
+ * People accept less room as it gets crowded -- the fundamental diagram. This is
+ * the direct answer to a preferred space set high: rather than a crowd trying to
+ * hold 90px apart in a corridor that cannot give it and shoving over the
+ * shortfall, the requirement itself relaxes, and the crowd compresses and queues.
+ * The setting stops being a lever that blows the crowd apart and becomes what it
+ * says: the room people take when there is room to take.
+ */
+const DENSITY_HALF = 3;
+const COMPRESS_FLOOR = 0.25;
+/** Neighbours close by that count as room enough, before compression starts. */
+const FREE_NEIGHBOURS = 2;
+/**
+ * The window density is judged in, as a multiple of the body radius.
+ *
+ * Deliberately not the interaction reach. That grows with the preferred-space
+ * setting, so counting neighbours inside it would find more of them exactly when
+ * the setting was raised -- compressing precisely as hard as the setting had
+ * loosened, and leaving the dial doing nothing at all.
+ */
+const DENSITY_WINDOW = 3;
+
+/**
+ * How far a pedestrian can be influenced from: its own body, its personal space,
+ * far enough again to see a collision coming, and one tick's travel of slack.
+ *
+ * The slack is not padding. The hash is built once at the top of a tick and agents
+ * move within it, so a neighbour can be up to a tick's worth of steps from the cell
+ * it was filed under; without the margin, the fastest-moving neighbours -- the ones
+ * most worth noticing -- are the ones a query misses.
+ *
+ * Exported because the spatial hash wants its cell size to match: a query is a 3x3
+ * block of cells when they agree, and a wider sweep when they do not.
+ */
+export function interactionReach(radius: number, preferred: number, speed: number): number {
+  return 2 * radius + preferred + LOOKAHEAD + Math.max(0, speed) * (1 + PACE_SPREAD);
+}
 
 export interface StepResult {
   /** Distance covered: 0, 1, or sqrt(2). */
@@ -41,7 +190,132 @@ export class Behaviour {
     private agents: Agents,
     private nav: Navigation,
     private hash: SpatialHash,
+    private speed: number,
   ) {}
+
+  /**
+   * The neighbours close enough that a step could overlap them. Usually a handful,
+   * and it is the only list the legality check has to walk -- where the first port
+   * of this file re-queried the hash for every candidate.
+   */
+  private bodyIdx = new Int32Array(64);
+  private bodyCount = 0;
+  /** Total penetration where the pedestrian stands now; the "no worse" baseline. */
+  private hereOverlap = 0;
+  /** Which way discomfort increases, and how steeply. */
+  private gradX = 0;
+  private gradY = 0;
+  /** How much oncoming traffic there is to pass. */
+  private oncoming = 0;
+
+  /**
+   * Everything about the neighbourhood that does not depend on which way the
+   * pedestrian steps, in one pass.
+   *
+   * The discomfort field is summarised by its value's *gradient* rather than
+   * sampled per candidate. Every candidate is within sqrt(2) px of here, so the
+   * first-order term is the whole story to well under a tenth of a pixel, and the
+   * constant part is shared by all nine and cancels out of the comparison. That
+   * turns nine passes over the neighbours into one.
+   */
+  private survey(self: number, radius: number, preferred: number): void {
+    const a = this.agents;
+    const reach = interactionReach(radius, preferred, this.speed);
+    const found = this.hash.query(a.x[self], a.y[self], reach, self, a.x, a.y);
+    const n = found.length;
+    if (this.bodyIdx.length < n) this.bodyIdx = new Int32Array(n * 2);
+
+    // How much room this pedestrian is asking for: its own temperament, relaxed
+    // by how crowded it is here.
+    const densityWindow = DENSITY_WINDOW * radius;
+    const densityWindow2 = densityWindow * densityWindow;
+    let crowd = 0;
+    for (let k = 0; k < n; k++) {
+      const j = found[k];
+      if (a.arrived[j]) continue;
+      const cx = a.x[j] - a.x[self];
+      const cy = a.y[j] - a.y[self];
+      if (cx * cx + cy * cy < densityWindow2) crowd++;
+    }
+    const compression = Math.max(
+      COMPRESS_FLOOR,
+      1 / (1 + Math.max(0, crowd - FREE_NEIGHBOURS) / DENSITY_HALF),
+    );
+    const space = preferred * (1 - SPACE_SPREAD * a.trait[self]) * compression;
+    a.effectiveSpace[self] = space;
+    const personal = 2 * radius + space;
+    const decay = Math.max(1, DECAY_FRACTION * personal);
+
+    const hx = a.headingX[self];
+    const hy = a.headingY[self];
+    const facing = hx !== 0 || hy !== 0;
+    const contact = 2 * radius;
+    // A candidate is at most sqrt(2) away, so nothing further than this can be
+    // overlapped by one.
+    const bodyReach = contact + 2;
+    const goalSelf = a.goal[self];
+    const costSelf = a.costToGoal[self];
+
+    let bodies = 0;
+    let gx = 0;
+    let gy = 0;
+    let oncoming = 0;
+    let here = 0;
+
+    for (let k = 0; k < n; k++) {
+      const j = found[k];
+      if (a.arrived[j]) continue; // pedestrians that reached their target are ignored
+
+      const trueX = a.x[j] - a.x[self];
+      const trueY = a.y[j] - a.y[self];
+      const trueD = Math.hypot(trueX, trueY);
+
+      // Bodies, at their real positions: this is what may not be walked into.
+      if (trueD < bodyReach) {
+        this.bodyIdx[bodies++] = j;
+        if (trueD < contact) here += contact - trueD;
+      }
+
+      // Everything else judges the neighbour where it is about to be, not where
+      // it is. One displacement along its heading is the whole of anticipation:
+      // two people converging on the same spot start avoiding it before they
+      // arrive, which is how crossing streams weave rather than collide.
+      const rx = trueX + a.headingX[j] * LOOKAHEAD;
+      const ry = trueY + a.headingY[j] * LOOKAHEAD;
+      const d = Math.hypot(rx, ry);
+      if (d < 1e-6 || d >= personal) continue;
+
+      let w = costSelf < a.costToGoal[j] ? YIELD_LOW : 1;
+      if (a.goal[j] !== goalSelf) w *= OPPOSING;
+
+      const ux = rx / d;
+      const uy = ry / d;
+      if (facing) {
+        // Anisotropy: people guard the space in front of them and largely ignore
+        // what is behind. Taken against the heading rather than against each
+        // candidate, which keeps this loop candidate-free -- and is truer anyway,
+        // since a pedestrian's sense of its own front turns as gradually as it does.
+        const cos = ux * hx + uy * hy;
+        w *= LAMBDA + (1 - LAMBDA) * (1 + cos) / 2;
+        // Someone squarely ahead and walking back at us is someone to pass.
+        if (cos > 0.5) {
+          const closing = -(a.headingX[j] * hx + a.headingY[j] * hy);
+          if (closing > 0) oncoming += closing;
+        }
+      }
+
+      const e = Math.exp((personal - d) / decay);
+      const scale = W_SPACE * w * e / decay;
+      gx += scale * ux;
+      gy += scale * uy;
+    }
+
+    this.bodyCount = bodies;
+    this.hereOverlap = here;
+    this.gradX = gx;
+    this.gradY = gy;
+    this.oncoming = oncoming;
+  }
 
   /**
    * A coordinate is legal when it is clear of every wall, and does not put this
@@ -56,147 +330,107 @@ export class Behaviour {
    * crush keeps the no-overlap guarantee whenever it already holds -- if nothing
    * overlaps here, only a non-overlapping cell is accepted -- while letting a
    * jammed crowd work itself apart.
+   *
+   * Reads the survey, so `survey` must have run for this pedestrian.
    */
-  isLegal(px: number, py: number, self: number, radius: number): boolean {
+  isLegal(px: number, py: number, radius: number): boolean {
     if (this.insideAnyWall([px, py])) return false;
-    const there = this.agentOverlap(px, py, self, radius);
+    const there = this.agentOverlap(px, py, radius);
     if (there === 0) return true;
-    const here = this.agentOverlap(this.agents.x[self], this.agents.y[self], self, radius);
-    return there < here;
+    return there < this.hereOverlap;
   }
 
   /** Total penetration into other pedestrians at a position; 0 when clear. */
-  private agentOverlap(px: number, py: number, self: number, radius: number): number {
+  private agentOverlap(px: number, py: number, radius: number): number {
     const a = this.agents;
     const min = radius * 2;
-    const near = this.hash.query(px, py, min, self, a.x, a.y);
     let total = 0;
-    for (let k = 0; k < near.length; k++) {
-      const j = near[k];
-      if (a.arrived[j]) continue; // pedestrians that reached their target are ignored
+    for (let k = 0; k < this.bodyCount; k++) {
+      const j = this.bodyIdx[k];
       const d = Math.hypot(a.x[j] - px, a.y[j] - py);
       if (d < min) total += min - d;
     }
     return total;
   }
 
-  /**
-   * How much other pedestrians intrude on this one's preferred space at a
-   * candidate location. Ported from totalToNearDistance(), including the x100
-   * weighting for pedestrians bound for a different goal -- which is what makes
-   * opposing streams part rather than merge.
-   */
-  private crowding(px: number, py: number, self: number, radius: number, preferred: number): number {
-    const a = this.agents;
-    const reach = radius + preferred + radius;
-    const near = this.hash.query(px, py, reach, self, a.x, a.y);
-    let total = 0;
-    for (let k = 0; k < near.length; k++) {
-      const j = near[k];
-      if (!this.yieldsTo(self, j)) continue;
-      const d = Math.hypot(a.x[j] - px, a.y[j] - py);
-      const sameGoal = a.goal[j] === a.goal[self];
-      total += (preferred - d) * (sameGoal ? 1 : 100);
-    }
-    return total;
-  }
-
-  /**
-   * Whether `self` has to give way to `other`.
-   *
-   * Ported from Map.getColosionPedestrian, whose filter is easy to miss: a
-   * neighbour only counts when it is inside the preferred space AND has not
-   * arrived AND `self` does *not* outrank it. Rank is remaining distance to the
-   * goal (PedestrianBehaviour.hasPriorityTo), so whoever is closest to the target
-   * ignores everyone and keeps walking. Without this pecking order every member
-   * of a dense crowd yields to every other and the block churns in place instead
-   * of draining toward the goal.
-   */
-  private yieldsTo(self: number, other: number): boolean {
-    const a = this.agents;
-    if (a.arrived[other]) return false;
-    return !(a.costToGoal[self] < a.costToGoal[other]);
-  }
-
-  private hasCrowding(px: number, py: number, self: number, radius: number, preferred: number): boolean {
-    const a = this.agents;
-    const near = this.hash.query(px, py, radius + preferred + radius, self, a.x, a.y);
-    for (let k = 0; k < near.length; k++) if (this.yieldsTo(self, near[k])) return true;
-    return false;
-  }
-
-  /** One step towards `target`. Mirrors PedestrianBehaviour.stepTowards. */
+  /** One step towards `target`: score all nine options and take the cheapest. */
   stepTowards(i: number, target: Point, radius: number, preferred: number): StepResult {
     const a = this.agents;
     if (a.speedCounter[i] < 1) return { length: 0, replan: false };
 
     const x = a.x[i];
     const y = a.y[i];
+    const budget = a.speedCounter[i];
 
-    let dx: number;
-    let dy: number;
-    let ignoreDiagonal = false;
+    this.survey(i, radius, preferred);
 
-    if (!this.hasCrowding(x, y, i, radius, preferred)) {
-      dx = Math.sign(target[0] - x);
-      dy = Math.sign(target[1] - y);
-    } else {
-      // Too close to others: move whichever way relieves the crush.
-      const here = this.crowding(x, y, i, radius, preferred);
-      dx = this.crowding(x + 1, y, i, radius, preferred) < here ? 1 : -1;
-      dy = this.crowding(x, y + 1, i, radius, preferred) < here ? 1 : -1;
-      ignoreDiagonal = true;
-    }
+    const distHere = Math.hypot(target[0] - x, target[1] - y);
+    const hx = a.headingX[i];
+    const hy = a.headingY[i];
+    const facing = hx !== 0 || hy !== 0;
+    // The right hand of a pedestrian facing h. Screen y runs down, so walking
+    // east that is south.
+    const rightX = -hy;
+    const rightY = hx;
 
-    return this.tryStep(i, dx, dy, target, ignoreDiagonal, radius, preferred);
-  }
+    let bestCost = Infinity;
+    let bestDx = 0;
+    let bestDy = 0;
+    let bestLen = 0;
 
-  private tryStep(
-    i: number, dx: number, dy: number, target: Point,
-    ignoreDiagonal: boolean, radius: number, preferred: number,
-  ): StepResult {
-    const a = this.agents;
-    const x = a.x[i];
-    const y = a.y[i];
-
-    if (dx === 0 && dy === 0) return { length: 0, replan: true };
-
-    const xDistance = Math.abs(x - target[0]);
-    const yDistance = Math.abs(y - target[1]);
-    if (a.stepsTaken[i] < 0) a.stepsTaken[i] = 0;
-
-    // A shallow approach angle is walked as a staircase: one diagonal every
-    // `stepsUntil` straight steps.
-    const larger = Math.max(xDistance, yDistance);
-    const smaller = Math.min(xDistance, yDistance);
-    a.stepsUntil[i] = smaller === 0 ? Infinity : (larger / smaller) - 1;
-
-    const yHasPriority = yDistance > xDistance;
-    const diagonal: Point = [x + dx, y + dy];
-    let second: Point = [x, y + dy];
-    let third: Point = [x + dx, y];
-    if (!yHasPriority) { const t = second; second = third; third = t; }
-
-    let replan = true;
-
-    if (this.isLegal(diagonal[0], diagonal[1], i, radius)) {
-      if (dx === 0 || dy === 0 || ignoreDiagonal || a.stepsTaken[i] >= a.stepsUntil[i]) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
         const len = stepLengthOf(dx, dy);
-        // Wait rather than overspend the counter on a diagonal.
-        if (a.speedCounter[i] < len) return { length: 0, replan: false };
-        return this.commit(i, diagonal, len, true);
+
+        if (len === 0) {
+          // Standing still is always on the table -- it is the option the original
+          // lacked, which is why a blocked pedestrian there could only jiggle. It
+          // is also the reference point every other candidate is measured against,
+          // so it carries no discomfort term of its own.
+          const cost = W_WAIT * (1 + a.waited[i] / PATIENCE);
+          if (cost < bestCost) { bestCost = cost; bestDx = 0; bestDy = 0; bestLen = 0; }
+          continue;
+        }
+
+        // A diagonal costs sqrt(2); wait rather than overspend the counter on one.
+        if (len > budget) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!this.isLegal(nx, ny, radius)) continue;
+
+        const ux = dx / len;
+        const uy = dy / len;
+
+        // Everything is priced per unit of distance travelled, which is what makes
+        // a shallow approach angle come out as a staircase: a diagonal must earn
+        // its sqrt(2) to beat an axis step.
+        let cost = -(distHere - Math.hypot(target[0] - nx, target[1] - ny)) / len
+          + this.gradX * ux + this.gradY * uy;
+
+        if (facing) {
+          cost += W_TURN * (1 - (ux * hx + uy * hy)) / 2;
+          // Given a choice, pass the same side everyone else does.
+          if (this.oncoming > 0) {
+            cost -= W_SIDE * this.oncoming * (ux * rightX + uy * rightY);
+          }
+        }
+
+        if (cost < bestCost) {
+          bestCost = cost;
+          bestDx = dx;
+          bestDy = dy;
+          bestLen = len;
+        }
       }
-      // Not yet time for the diagonal: fall through to an axis step.
-      replan = false;
     }
 
-    if (this.isLegal(second[0], second[1], i, radius) && !(second[0] === x && second[1] === y)) {
-      return this.commit(i, second, stepLengthOf(second[0] - x, second[1] - y), replan);
+    if (bestLen === 0) {
+      // Waiting, rather than being unable to move: the waypoint is still good, and
+      // re-planning one costs a scan of the whole graph.
+      a.waited[i] += 1;
+      return { length: 0, replan: false };
     }
-    if (this.isLegal(third[0], third[1], i, radius) && !(third[0] === x && third[1] === y)) {
-      return this.commit(i, third, stepLengthOf(third[0] - x, third[1] - y), true);
-    }
-    return this.randomStep(i, radius, preferred);
+    return this.commit(i, [x + bestDx, y + bestDy], bestLen, true);
   }
 
   /**
@@ -322,26 +556,35 @@ export class Behaviour {
     return NO_STEP;
   }
 
-  /** Last resort when every preferred direction is blocked. */
-  randomStep(i: number, radius: number, _preferred: number): StepResult {
+  /** Last resort when there is nowhere sensible to go. */
+  randomStep(i: number, radius: number, preferred: number): StepResult {
     const a = this.agents;
     const dx = Math.floor(Math.random() * 3) - 1;
     const dy = Math.floor(Math.random() * 3) - 1;
     if (dx === 0 && dy === 0) return NO_STEP;
     const nx = a.x[i] + dx;
     const ny = a.y[i] + dy;
-    if (!this.isLegal(nx, ny, i, radius)) return NO_STEP;
+    this.survey(i, radius, preferred);
+    if (!this.isLegal(nx, ny, radius)) return NO_STEP;
     return this.commit(i, [nx, ny], stepLengthOf(dx, dy), true);
   }
 
   private commit(i: number, to: Point, length: number, replan: boolean): StepResult {
     const a = this.agents;
+    const dx = to[0] - a.x[i];
+    const dy = to[1] - a.y[i];
     a.x[i] = to[0];
     a.y[i] = to[1];
-    // Spend the counter, and advance or reset the diagonal cadence.
     a.speedCounter[i] -= length;
-    if (length === SQRT2) a.stepsTaken[i] -= a.stepsUntil[i];
-    else a.stepsTaken[i] += length;
+    a.waited[i] = 0;
+
+    // Follow the steps actually taken, so the heading survives a sidestep without
+    // swinging to meet it. It is what "in front of me" means everywhere above.
+    const hx = a.headingX[i] + (dx / length - a.headingX[i]) * HEADING_SMOOTH;
+    const hy = a.headingY[i] + (dy / length - a.headingY[i]) * HEADING_SMOOTH;
+    const mag = Math.hypot(hx, hy);
+    if (mag > 1e-6) { a.headingX[i] = hx / mag; a.headingY[i] = hy / mag; }
+
     return { length, replan };
   }
 }

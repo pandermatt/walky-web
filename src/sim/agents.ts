@@ -1,6 +1,6 @@
 import { randomBrightColor, BLACK, type RGB } from '../palette';
 import { distance, type Point } from './geometry';
-import { Behaviour, SQRT2 } from './behaviour';
+import { Behaviour, SQRT2, interactionReach, paceScale } from './behaviour';
 import type { Navigation } from './navigation';
 import type { SpatialHash } from './spatialHash';
 import type { RestoredAgent } from '../state/scenario';
@@ -22,9 +22,11 @@ export interface AgentsSnapshot {
  * Agent state, kept as a structure of arrays so it can move to a worker and into
  * deck.gl's attribute buffers without a per-agent object walk.
  *
- * Step 3 moves agents straight toward their waypoint. The full
- * PedestrianBehaviour port -- the integer 8-direction lattice, the diagonal
- * cadence and preferred-space avoidance -- lands in step 4.
+ * The step accounting is float64 because the original used Java doubles and the
+ * arithmetic is exact-comparison sensitive: the budget is clamped to exactly
+ * sqrt(2) and a diagonal costs exactly sqrt(2). Held in a Float32Array the clamp
+ * rounds *down* below the cost, so a diagonal becomes unaffordable forever and the
+ * agent deadlocks the moment it wants to turn.
  */
 export class Agents {
   x: Float32Array;
@@ -41,19 +43,43 @@ export class Agents {
   hasWaypoint: Uint8Array;
   /** Graph node the waypoint came from, or -1 when heading straight to the goal. */
   waypointNode: Int32Array;
-  /**
-   * Step accounting, in float64 because the original used Java doubles and the
-   * arithmetic is exact-comparison sensitive: the counter is clamped to exactly
-   * sqrt(2), and a diagonal costs exactly sqrt(2). Held in a Float32Array the
-   * clamp rounds *down* below the cost, so a diagonal becomes unaffordable
-   * forever and the agent deadlocks the moment it wants to turn.
-   */
   /** Budget for this tick; a diagonal costs sqrt(2), an axis step costs 1. */
   speedCounter: Float64Array;
-  /** Straight steps banked since the last diagonal. */
-  stepsTaken: Float64Array;
-  /** How many straight steps to bank before the next diagonal is allowed. */
-  stepsUntil: Float64Array;
+  /**
+   * Smoothed unit direction of travel, and the only memory the lattice keeps of
+   * which way a pedestrian was going.
+   *
+   * Everything that makes the crowd read as people rather than as particles hangs
+   * off it: which side of you counts as "in front", where a neighbour will be in a
+   * moment, how sharp a turn is, and which way to pass someone. Zero until the
+   * first step, and every rule that reads it falls back to caring equally about
+   * every direction while it is.
+   */
+  headingX: Float32Array;
+  headingY: Float32Array;
+  /** Consecutive steps spent standing still; patience that runs out. */
+  waited: Float32Array;
+  /**
+   * A stable number in [0,1) that makes this pedestrian slightly its own person:
+   * how much room it keeps and how briskly it walks are both scaled by it.
+   *
+   * A crowd where everyone wants exactly the same space and moves at exactly the
+   * same pace behaves like a lattice -- it locks into ranks, and nobody ever has
+   * a reason to overtake. Real variation is what makes a crowd fan out, form
+   * lanes and thin at the edges.
+   *
+   * Derived from where the pedestrian was placed rather than stored, because a
+   * trait has to survive undo and Reset, and its origin is the one piece of
+   * identity it already carries through both. That keeps the undo snapshot to the
+   * four things a map edit can actually change.
+   */
+  trait: Float32Array;
+  /**
+   * The room this pedestrian actually kept on its last step, after its own
+   * temperament and the crush around it. Read by the preferred-radius overlay, so
+   * the rings visibly tighten as a crowd packs.
+   */
+  effectiveSpace: Float32Array;
   /** Remaining distance to the goal; lower means higher priority in a crowd. */
   costToGoal: Float32Array;
   /** Lassoed by the selection tool; the mark-goal tool acts on these alone. */
@@ -81,8 +107,11 @@ export class Agents {
     this.hasWaypoint = new Uint8Array(capacity);
     this.waypointNode = new Int32Array(capacity).fill(-1);
     this.speedCounter = new Float64Array(capacity);
-    this.stepsTaken = new Float64Array(capacity);
-    this.stepsUntil = new Float64Array(capacity);
+    this.headingX = new Float32Array(capacity);
+    this.headingY = new Float32Array(capacity);
+    this.waited = new Float32Array(capacity);
+    this.trait = new Float32Array(capacity);
+    this.effectiveSpace = new Float32Array(capacity);
     this.costToGoal = new Float32Array(capacity).fill(Infinity);
     this.selected = new Uint8Array(capacity);
   }
@@ -97,8 +126,11 @@ export class Agents {
     this.arrived[i] = 0;
     this.hasWaypoint[i] = 0;
     this.speedCounter[i] = 0;
-    this.stepsTaken[i] = 0;
-    this.stepsUntil[i] = 0;
+    this.headingX[i] = 0;
+    this.headingY[i] = 0;
+    this.waited[i] = 0;
+    this.trait[i] = traitOf(at[0], at[1]);
+    this.effectiveSpace[i] = 0;
     this.costToGoal[i] = Infinity;
     this.selected[i] = 0;
     return i;
@@ -140,8 +172,11 @@ export class Agents {
     this.hasWaypoint[i] = this.hasWaypoint[last];
     this.waypointNode[i] = this.waypointNode[last];
     this.speedCounter[i] = this.speedCounter[last];
-    this.stepsTaken[i] = this.stepsTaken[last];
-    this.stepsUntil[i] = this.stepsUntil[last];
+    this.headingX[i] = this.headingX[last];
+    this.headingY[i] = this.headingY[last];
+    this.waited[i] = this.waited[last];
+    this.trait[i] = this.trait[last];
+    this.effectiveSpace[i] = this.effectiveSpace[last];
     this.costToGoal[i] = this.costToGoal[last];
     this.selected[i] = this.selected[last];
   }
@@ -185,8 +220,13 @@ export class Agents {
     this.hasWaypoint.fill(0, 0, n);
     this.waypointNode.fill(-1, 0, n);
     this.speedCounter.fill(0, 0, n);
-    this.stepsTaken.fill(0, 0, n);
-    this.stepsUntil.fill(0, 0, n);
+    this.headingX.fill(0, 0, n);
+    this.headingY.fill(0, 0, n);
+    this.waited.fill(0, 0, n);
+    this.effectiveSpace.fill(0, 0, n);
+    // Not derived from the tick but from the pedestrian: recomputed rather than
+    // restored, so it comes back identical without being stored.
+    for (let i = 0; i < n; i++) this.trait[i] = traitOf(this.originX[i], this.originY[i]);
     this.costToGoal.fill(Infinity, 0, n);
     this.justArrived.length = 0;
     this.count = n;
@@ -200,7 +240,10 @@ export class Agents {
       this.arrived[i] = 0;
       this.hasWaypoint[i] = 0;
       this.speedCounter[i] = 0;
-      this.stepsTaken[i] = 0;
+      this.headingX[i] = 0;
+      this.headingY[i] = 0;
+      this.waited[i] = 0;
+      this.effectiveSpace[i] = 0;
     }
   }
 
@@ -237,12 +280,16 @@ export class Agents {
    * Advance every agent one tick.
    *
    * Mirrors IntelligentPedestrian.makeStep: top up the speed counter, then spend
-   * it on whole lattice steps until it runs out or the agent cannot move.
+   * it on whole lattice steps until it runs out or the agent stops moving. A
+   * pedestrian that chooses to stand still ends its tick with budget in hand,
+   * which the cap below then takes back -- waiting must not bank into a lurch.
    */
   step(nav: Navigation, hash: SpatialHash, speed: number, radius: number, preferred: number): void {
     this.justArrived.length = 0;
-    hash.build(this.x, this.y, this.count, Math.max(1, 2 * (radius + preferred)));
-    const behaviour = new Behaviour(this, nav, hash);
+    // Cells the size of the interaction range keep a neighbour query to the 3x3
+    // block around an agent.
+    hash.build(this.x, this.y, this.count, Math.max(1, interactionReach(radius, preferred, speed)));
+    const behaviour = new Behaviour(this, nav, hash, speed);
 
     for (let i = 0; i < this.count; i++) {
       if (this.arrived[i]) continue;
@@ -264,8 +311,12 @@ export class Agents {
       // then lurch forward once freed) but raised to the speed itself, so the
       // setting actually controls how far a pedestrian gets per frame. At speed 1
       // this is exactly the original's sqrt(2).
-      const cap = Math.max(speed, SQRT2);
-      this.speedCounter[i] = Math.min(this.speedCounter[i] + speed, cap);
+      // Not everyone walks at the setting. Slower neighbours give the brisker ones
+      // someone to overtake, which is most of what makes a crowd look like a crowd
+      // rather than a block sliding across the map.
+      const own = speed * paceScale(this.trait[i]);
+      const cap = Math.max(own, SQRT2);
+      this.speedCounter[i] = Math.min(this.speedCounter[i] + own, cap);
 
       let stepTaken = true;
       while (this.speedCounter[i] >= 1 && stepTaken) {
@@ -345,12 +396,30 @@ export class Agents {
     this.hasWaypoint = copy(this.hasWaypoint, (n) => new Uint8Array(n));
     this.waypointNode = copy(this.waypointNode, (n) => new Int32Array(n));
     this.speedCounter = copy(this.speedCounter, (n) => new Float64Array(n));
-    this.stepsTaken = copy(this.stepsTaken, (n) => new Float64Array(n));
-    this.stepsUntil = copy(this.stepsUntil, (n) => new Float64Array(n));
+    this.headingX = copy(this.headingX, (n) => new Float32Array(n));
+    this.headingY = copy(this.headingY, (n) => new Float32Array(n));
+    this.waited = copy(this.waited, (n) => new Float32Array(n));
+    this.trait = copy(this.trait, (n) => new Float32Array(n));
+    this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));
     this.costToGoal = copy(this.costToGoal, (n) => new Float32Array(n));
     this.selected = copy(this.selected, (n) => new Uint8Array(n));
     this.capacity = next;
   }
+}
+
+/**
+ * A stable number in [0,1) from a placement, well spread for nearby inputs.
+ *
+ * The brush lays pedestrians on a regular pitch, so neighbouring origins differ by
+ * a constant -- which a weaker mix would turn into a visible stripe of identical
+ * temperaments across the crowd.
+ */
+export function traitOf(ox: number, oy: number): number {
+  let h = Math.imul(Math.round(ox) | 0, 73856093) ^ Math.imul(Math.round(oy) | 0, 19349663);
+  h = Math.imul(h ^ (h >>> 15), 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 3266489917);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
 }
 
 export function packRgb(c: RGB): number {

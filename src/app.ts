@@ -937,11 +937,15 @@ export class App {
     const r = this.settings.pedestrianRadius;
     const space = this.settings.preferredSpace;
     for (let i = 0; i < this.agents.count; i++) {
+      // The room this one is actually keeping, not the setting: personal space
+      // gives way as a crowd packs, and the ring is where you can watch it do so.
+      // Nought until a pedestrian has taken a step, and then the setting stands in.
+      const kept = this.agents.effectiveSpace[i];
       out[i] = {
         position: [this.agents.x[i], this.agents.y[i]] as Point,
         color: unpackRgb(this.agents.color[i]),
         radius: r,
-        preferredSpace: space,
+        preferredSpace: kept > 0 ? kept : space,
         selected: this.agents.selected[i] === 1,
       };
     }
