@@ -155,6 +155,24 @@ export class Navigation {
     return out;
   }
 
+  /**
+   * The whole route a pedestrian standing at `from` would walk to `goalWallId`,
+   * from its own position through to the goal.
+   *
+   * This is what pathFromNode() gives an agent that is already walking, for one
+   * that has not stepped yet: pick the waypoint it would pick on its first step,
+   * then read the rest off the same predecessors. It costs one nextWaypoint()
+   * scan, so it is for the paused preview, not for the per-frame path overlay of
+   * a running crowd -- those agents already carry a waypoint node.
+   */
+  routeFrom(from: Point, goalWallId: number): Point[] {
+    const next = this.nextWaypoint(from, goalWallId);
+    if (!next) return [];
+    // node -1 means the goal itself is in sight, so the route is that one hop.
+    const rest = next.node >= 0 ? this.pathFromNode(next.node, goalWallId) : [];
+    return rest.length > 0 ? [from, ...rest] : [from, next.point];
+  }
+
   /** True when the agent is close enough to its goal hull to stop. */
   hasArrived(from: Point, goalWallId: number, tolerance: number): boolean {
     for (const part of this.graph.obstacles) {
