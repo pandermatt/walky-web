@@ -15,9 +15,9 @@ export const SQRT2 = 1.41421356237;
  * by remaining distance to the goal. What the original did with that lattice does
  * not survive, because it could not be made to behave.
  *
- * The original asked one question -- "is anyone inside my preferred space?" -- and
+ * The original asked one question -- "is anyone inside my personal space?" -- and
  * on a yes it stopped navigating outright and moved solely to relieve the crush.
- * The reach of that question is the preferred space, so the wider you set the
+ * The reach of that question is the personal space, so the wider you set the
  * setting the more of the crowd was permanently in relief mode, and a crowd that
  * has stopped walking to its goal and is only pushing away from itself is exactly
  * what it looked like: people shoving. Turning the dial up made it worse.
@@ -122,7 +122,7 @@ export function paceScale(trait: number): number {
   return 1 + PACE_SPREAD * trait;
 }
 /**
- * A pedestrian's share of the preferred-space setting: between 0.8 and 1 of it.
+ * A pedestrian's share of the personal-space setting: between 0.8 and 1 of it.
  *
  * The setting is the room the most private person in the crowd wants, and the
  * rest want a little less -- rather than a mean everyone scatters around, which
@@ -135,7 +135,7 @@ const SPACE_SPREAD = 0.2;
  * cannot compress past.
  *
  * People accept less room as it gets crowded -- the fundamental diagram. This is
- * the direct answer to a preferred space set high: rather than a crowd trying to
+ * the direct answer to a personal space set high: rather than a crowd trying to
  * hold 90px apart in a corridor that cannot give it and shoving over the
  * shortfall, the requirement itself relaxes, and the crowd compresses and queues.
  * The setting stops being a lever that blows the crowd apart and becomes what it
@@ -212,7 +212,7 @@ const FREE_NEIGHBOURS = 2;
 /**
  * The window density is judged in, as a multiple of the body radius.
  *
- * Deliberately not the interaction reach. That grows with the preferred-space
+ * Deliberately not the interaction reach. That grows with the personal-space
  * setting, so counting neighbours inside it would find more of them exactly when
  * the setting was raised -- compressing precisely as hard as the setting had
  * loosened, and leaving the dial doing nothing at all.
@@ -231,8 +231,8 @@ const DENSITY_WINDOW = 3;
  * Exported because the spatial hash wants its cell size to match: a query is a 3x3
  * block of cells when they agree, and a wider sweep when they do not.
  */
-export function interactionReach(radius: number, preferred: number, speed: number): number {
-  return 2 * radius + preferred + LOOKAHEAD + Math.max(0, speed) * (1 + PACE_SPREAD);
+export function interactionReach(radius: number, personalSpace: number, speed: number): number {
+  return 2 * radius + personalSpace + LOOKAHEAD + Math.max(0, speed) * (1 + PACE_SPREAD);
 }
 
 export interface StepResult {
@@ -282,9 +282,9 @@ export class Behaviour {
    * constant part is shared by all nine and cancels out of the comparison. That
    * turns nine passes over the neighbours into one.
    */
-  private survey(self: number, radius: number, preferred: number): void {
+  private survey(self: number, radius: number, personalSpace: number): void {
     const a = this.agents;
-    const reach = interactionReach(radius, preferred, this.speed);
+    const reach = interactionReach(radius, personalSpace, this.speed);
     const found = this.hash.query(a.x[self], a.y[self], reach, self, a.x, a.y);
     const n = found.length;
     if (this.bodyIdx.length < n) this.bodyIdx = new Int32Array(n * 2);
@@ -310,7 +310,7 @@ export class Behaviour {
     );
     // Two independent things: how much room this one likes, and how little it
     // minds going without. An assertive pedestrian simply walks closer.
-    const wanted = preferred * (1 - SPACE_SPREAD * a.trait[self]);
+    const wanted = personalSpace * (1 - SPACE_SPREAD * a.trait[self]);
     const space = wanted * Math.max(COMPRESS_FLOOR, Math.min(compression, pressed));
     // Being shoved from behind makes you tolerate the back of the person in front
     // of you. It does not make you willing to walk into somebody coming the other
@@ -323,10 +323,10 @@ export class Behaviour {
     // and counterflow arrivals fell by a third.
     const openSpace = wanted * compression;
     a.effectiveSpace[self] = space;
-    const personal = 2 * radius + space;
-    const decay = Math.max(1, DECAY_FRACTION * personal);
-    const openPersonal = 2 * radius + openSpace;
-    const openDecay = Math.max(1, DECAY_FRACTION * openPersonal);
+    const bubble = 2 * radius + space;
+    const decay = Math.max(1, DECAY_FRACTION * bubble);
+    const openBubble = 2 * radius + openSpace;
+    const openDecay = Math.max(1, DECAY_FRACTION * openBubble);
 
     const hx = a.headingX[self];
     const hy = a.headingY[self];
@@ -368,7 +368,7 @@ export class Behaviour {
       const ry = trueY + a.headingY[j] * LOOKAHEAD;
       const d = Math.hypot(rx, ry);
       const sameGoal = a.goal[j] === goalSelf;
-      const reachJ = sameGoal ? personal : openPersonal;
+      const reachJ = sameGoal ? bubble : openBubble;
       const decayJ = sameGoal ? decay : openDecay;
       if (d < 1e-6 || d >= reachJ) continue;
 
@@ -467,7 +467,7 @@ export class Behaviour {
   }
 
   /** One step towards `target`: score all nine options and take the cheapest. */
-  stepTowards(i: number, target: Point, radius: number, preferred: number): StepResult {
+  stepTowards(i: number, target: Point, radius: number, personalSpace: number): StepResult {
     const a = this.agents;
     if (a.speedCounter[i] < 1) return { length: 0, replan: false };
 
@@ -475,7 +475,7 @@ export class Behaviour {
     const y = a.y[i];
     const budget = a.speedCounter[i];
 
-    this.survey(i, radius, preferred);
+    this.survey(i, radius, personalSpace);
 
     const distHere = Math.hypot(target[0] - x, target[1] - y);
     const hx = a.headingX[i];
@@ -632,12 +632,12 @@ export class Behaviour {
    *  - Outside, but the goal is unreachable. Then it simply jiggles in place,
    *    which is the visible signal that there is no way through.
    */
-  escapeStep(i: number, radius: number, preferred: number): StepResult {
+  escapeStep(i: number, radius: number, personalSpace: number): StepResult {
     const a = this.agents;
     const here: Point = [a.x[i], a.y[i]];
     const depth = this.penetration(here);
 
-    if (depth === 0) return this.randomStep(i, radius, preferred);
+    if (depth === 0) return this.randomStep(i, radius, personalSpace);
 
     // Head for the nearest way out, with a random tie-break so a pedestrian
     // pinned exactly on an axis still works itself loose.
@@ -672,14 +672,14 @@ export class Behaviour {
   }
 
   /** Last resort when there is nowhere sensible to go. */
-  randomStep(i: number, radius: number, preferred: number): StepResult {
+  randomStep(i: number, radius: number, personalSpace: number): StepResult {
     const a = this.agents;
     const dx = Math.floor(Math.random() * 3) - 1;
     const dy = Math.floor(Math.random() * 3) - 1;
     if (dx === 0 && dy === 0) return NO_STEP;
     const nx = a.x[i] + dx;
     const ny = a.y[i] + dy;
-    this.survey(i, radius, preferred);
+    this.survey(i, radius, personalSpace);
     if (!this.isLegal(nx, ny, radius)) return NO_STEP;
     return this.commit(i, [nx, ny], stepLengthOf(dx, dy), true);
   }

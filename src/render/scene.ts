@@ -26,7 +26,7 @@ export interface Agent {
   position: Point;
   color: RGB;
   radius: number;
-  preferredSpace: number;
+  personalSpace: number;
   selected: boolean;
 }
 
@@ -46,7 +46,7 @@ export interface SceneState {
   agents: Agent[];
   rays: Ray[];
   paths: Point[][];
-  showPreferredRadius: boolean;
+  showPersonalSpace: boolean;
 }
 
 export class Scene {
@@ -105,7 +105,7 @@ export class Scene {
   }
 
   private buildLayers(state: SceneState) {
-    const { worldRevision, agentRevision, walls, agents, rays, paths, showPreferredRadius } = state;
+    const { worldRevision, agentRevision, walls, agents, rays, paths, showPersonalSpace } = state;
 
     return [
       // Walls are flat 2D fills -- no shadow copy, no extrusion. A merged wall
@@ -144,9 +144,9 @@ export class Scene {
 
       new ScatterplotLayer<Agent>({
         id: 'preferred-radius',
-        data: showPreferredRadius ? agents : [],
+        data: showPersonalSpace ? agents : [],
         getPosition: (a) => a.position,
-        getRadius: (a) => a.radius + a.preferredSpace,
+        getRadius: (a) => a.radius + a.personalSpace,
         radiusUnits: 'common',
         filled: false,
         stroked: true,

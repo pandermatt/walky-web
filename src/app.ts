@@ -522,14 +522,14 @@ export class App {
   private updateContextPanel(): void {
     const brush = this.tool?.id === 'pedestrian';
     const keys: (keyof Settings)[] = [];
-    if (brush) keys.push('brushSize', 'preferredSpace');
+    if (brush) keys.push('brushSize', 'personalSpace');
     if (this.running) {
       keys.push('speed');
       // Preferred space is not only the pitch a brushed block is painted at: it
       // is the room agents keep from each other on every tick, so watching a
       // crowd loosen or tighten as you drag it is exactly the case this panel
       // exists for. The brush already put it up when both are active.
-      if (!brush) keys.push('preferredSpace');
+      if (!brush) keys.push('personalSpace');
     }
     if (keys.length === 0) {
       this.contextPanel.hide();
@@ -1035,7 +1035,7 @@ export class App {
       this.rebuildNavIfNeeded();
       this.agents.step(
         this.nav, this.hash,
-        this.settings.speed, this.settings.pedestrianRadius, this.settings.preferredSpace,
+        this.settings.speed, this.settings.pedestrianRadius, this.settings.personalSpace,
       );
       this.playArrivals();
       this.agentRevision++;
@@ -1132,7 +1132,7 @@ export class App {
       agents: this.agentViews(),
       rays: [],
       paths: this.settings.showLineToTarget ? this.goalPaths() : [],
-      showPreferredRadius: this.settings.showPreferredRadius,
+      showPersonalSpace: this.settings.showPersonalSpace,
     };
     this.scene.setViewState(this.viewport.toViewState());
     this.scene.render(sceneState);
@@ -1221,7 +1221,7 @@ export class App {
   private agentViews() {
     const out = new Array(this.agents.count);
     const r = this.settings.pedestrianRadius;
-    const space = this.settings.preferredSpace;
+    const space = this.settings.personalSpace;
     for (let i = 0; i < this.agents.count; i++) {
       // The room this one is actually keeping, not the setting: personal space
       // gives way as a crowd packs, and the ring is where you can watch it do so.
@@ -1231,7 +1231,7 @@ export class App {
         position: [this.agents.x[i], this.agents.y[i]] as Point,
         color: unpackRgb(this.agents.color[i]),
         radius: r,
-        preferredSpace: kept > 0 ? kept : space,
+        personalSpace: kept > 0 ? kept : space,
         selected: this.agents.selected[i] === 1,
       };
     }

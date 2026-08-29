@@ -165,7 +165,8 @@ Bugs found while porting, all with regression tests:
 
 #### Beyond the port: why the step rule was replaced
 
-The reported complaint was that raising **Preferred space** made pedestrians
+The reported complaint was that raising **Personal space** (then called Preferred
+space) made pedestrians
 shove each other rather than give each other room. It did, and no amount of
 tuning would have fixed it, because the setting was wired to the wrong thing.
 
@@ -216,7 +217,7 @@ Two further departures, both aimed squarely at the same complaint:
   than eighty pedestrians all trying to hold 80px apart in a corridor that cannot
   give it and settling the shortfall by shoving, the asking price comes down: an
   isolated pedestrian keeps 78px of it, a packed one 45px, and it goes back up
-  when the crush lifts. Turn on **Preferred radius** and the rings can be watched
+  when the crush lifts. Turn on **Space rings** and they can be watched
   tightening. Density is judged in a window fixed to the body radius, deliberately
   not the interaction reach — the reach grows with the setting, so counting inside
   it finds more neighbours exactly when the setting is raised, compressing as hard
@@ -225,18 +226,53 @@ Two further departures, both aimed squarely at the same complaint:
   little. A crowd that agrees on both locks into ranks and nobody ever has reason
   to overtake. The trait is derived from where a pedestrian was placed rather than
   stored, so it survives undo and Reset without the snapshot carrying it.
+- **A crowd presses.** Density on its own is circular — a crowd holds the spacing
+  it wants, so the density that would compress that spacing never arises, and a
+  queue backed up by a hundred people stood as politely as a queue of three: 125
+  of 143 simply waiting, holding 40px gaps. What it misses is that being leaned on
+  is not being near. The people behind you want to be where you are standing and
+  cannot get there, and that is a load whether or not they have closed the
+  distance. So a held-up pedestrian aimed at you leans on you, and passes on what
+  is leaning on it as well as its own weight — the load builds along a queue and
+  peaks at the front, against the barrier, which is why a crush is dangerous at
+  the front and unremarkable at the back. It lowers what a pedestrian asks for; it
+  never moves anybody, and **bodies still never overlap**.
+- **Some of them press harder.** Assertiveness points *outward*, at what a
+  pedestrian is to everybody else: it commands more of the crowd's regard, leans
+  harder on whoever is in front, and finds standing still dearer. Letting it point
+  inward as well — some of them minding the crowd less, or keeping a smaller
+  bubble — reads like the same idea and behaves like the opposite one. It varies
+  the geometry the crowd packs into, and a narrow bottleneck then arches over and
+  *stays* arched: even a five percent spread took a 64-strong crowd from all
+  through to as few as two.
+
+Two things pressure must not do, both found the hard way. It must combine with
+density by taking whichever asks for less, never by multiplying — the product runs
+to nothing in a few ticks, the crowd packs to body contact where "no worse than
+now" has no move to offer anyone, and a bottleneck arches permanently: 64 through
+became 12 through and then nothing for eighteen hundred further ticks. And a crush
+must only close up the space kept from people going the *same* way. Tolerating an
+oncoming stream at close range is not a queue, it is a collision, and it quietly
+dismantles lane formation.
 
 **×100 became ×2.5.** With an exponential falloff and a passing side already
 separating counterflow, the original multiplier was no longer doing that work,
 only distorting it — it made two streams mutually repulsive without ever settling
-who went which way, so they held each other up. Through one corridor, two streams
-of 56: **2 arrived in 600 ticks before, 110 after.**
+who went which way, so they held each other up.
 
-Measured on a corridor of 80 pedestrians, sweeping preferred space from 0 to 80:
+Counterflow deserves a caveat rather than a number, and it is the honest weak spot
+of the model. Two streams through one corridor is by far the least reproducible
+thing it does: shifting where the crowds are placed by a single pixel — a change
+nobody could describe — swings how many get through from 12 of 112 to 102. The
+streams reliably separate, and they reliably do better than the ported rule's 2 of
+112, but any single figure for throughput is measuring the layout rather than the
+model. The test runs three layouts and asserts only what survives all of them.
+
+Measured on a corridor of 80 pedestrians, sweeping personal space from 0 to 80:
 
 | | ported | now |
 |---|---:|---:|
-| arrive at preferred space 80 | 50/80 | 80/80 |
+| arrive at personal space 80 | 50/80 | 80/80 |
 | mean nearest-neighbour gap, 0 → 80 | flat | 34.6px → 52.2px |
 | area the crowd spreads over | 24.8× | 3.1× |
 | steps that reverse the one before | 13.8% | 0.7% |
@@ -323,7 +359,7 @@ behaviour it describes, which is why the second file exists.
   thing to select, colour and delete. Thickness is a setting; a frame too small to
   hold anyone is refused and previewed in red rather than silently made.
 - **Contextual panels.** Selecting the pedestrian tool brings up brush size and
-  preferred space; running the simulation brings up speed and preferred space,
+  personal space; running the simulation brings up speed and personal space,
   since the room agents keep from each other is as much a live dial as the clock
   they run on. Both live in the full
   settings panel too, but these are the cases where you change a value and want to

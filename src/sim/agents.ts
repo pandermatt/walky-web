@@ -101,7 +101,7 @@ export class Agents {
   assertiveness: Float32Array;
   /**
    * The room this pedestrian actually kept on its last step, after its own
-   * temperament and the crush around it. Read by the preferred-radius overlay, so
+   * temperament and the crush around it. Read by the personalSpace-radius overlay, so
    * the rings visibly tighten as a crowd packs.
    */
   effectiveSpace: Float32Array;
@@ -358,11 +358,11 @@ export class Agents {
    * pedestrian that chooses to stand still ends its tick with budget in hand,
    * which the cap below then takes back -- waiting must not bank into a lurch.
    */
-  step(nav: Navigation, hash: SpatialHash, speed: number, radius: number, preferred: number): void {
+  step(nav: Navigation, hash: SpatialHash, speed: number, radius: number, personalSpace: number): void {
     this.justArrived.length = 0;
     // Cells the size of the interaction range keep a neighbour query to the 3x3
     // block around an agent.
-    hash.build(this.x, this.y, this.count, Math.max(1, interactionReach(radius, preferred, speed)));
+    hash.build(this.x, this.y, this.count, Math.max(1, interactionReach(radius, personalSpace, speed)));
     const behaviour = new Behaviour(this, nav, hash, speed);
 
     for (let i = 0; i < this.count; i++) {
@@ -400,7 +400,7 @@ export class Agents {
             // No route: jiggle. Either it is embedded in a wall's expanded hull
             // and works its way out, or the goal is genuinely unreachable and it
             // fidgets in place rather than freezing.
-            const escape = behaviour.escapeStep(i, radius, preferred);
+            const escape = behaviour.escapeStep(i, radius, personalSpace);
             if (escape.length === 0) this.speedCounter[i] = 0;
             stepTaken = escape.length > 0;
             continue;
@@ -431,7 +431,7 @@ export class Agents {
         }
 
         const target: Point = [this.waypointX[i], this.waypointY[i]];
-        const result = behaviour.stepTowards(i, target, radius, preferred);
+        const result = behaviour.stepTowards(i, target, radius, personalSpace);
         stepTaken = result.length > 0;
         if (result.replan) this.hasWaypoint[i] = 0;
 

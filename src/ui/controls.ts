@@ -32,7 +32,7 @@ export type ChangeHandler = <K extends keyof Settings>(key: K, value: Settings[K
 export const SLIDERS: Record<string, SliderSpec> = {
   speed: { key: 'speed', label: 'Simulation speed', ...SETTING_RANGES.speed },
   pedestrianRadius: { key: 'pedestrianRadius', label: 'Pedestrian radius', ...SETTING_RANGES.pedestrianRadius },
-  preferredSpace: { key: 'preferredSpace', label: 'Preferred space', ...SETTING_RANGES.preferredSpace },
+  personalSpace: { key: 'personalSpace', label: 'Personal space', ...SETTING_RANGES.personalSpace },
   brushSize: { key: 'brushSize', label: 'Brush size', ...SETTING_RANGES.brushSize },
   borderThickness: { key: 'borderThickness', label: 'Border thickness', ...SETTING_RANGES.borderThickness },
 };

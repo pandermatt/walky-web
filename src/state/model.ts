@@ -48,10 +48,15 @@ export interface Settings {
    * hull.
    */
   showConvexParts: boolean;
-  showPreferredRadius: boolean;
+  showPersonalSpace: boolean;
   showDebug: boolean;
   pedestrianRadius: number;
-  preferredSpace: number;
+  /**
+   * The room a pedestrian keeps around itself when it has the room to keep, in
+   * pixels. Not a distance anyone holds to: a crowd gives some of it up as it
+   * packs, and nearly all of it under pressure from behind.
+   */
+  personalSpace: number;
   speed: number;
   brushSize: number;
   borderThickness: number;
@@ -64,11 +69,13 @@ export const DEFAULT_SETTINGS: Settings = {
   showLineToTarget: true,
   showConvexHull: true,
   showConvexParts: false,
-  showPreferredRadius: false,
+  showPersonalSpace: false,
   showDebug: false,
-  // Defaults from AbstractPedestrian: radius 13, preferredSpace 30.
-  pedestrianRadius: 13,
-  preferredSpace: 30,
+  pedestrianRadius: 13, // AbstractPedestrian's default.
+  // The original's was 30. The brush no longer spaces a block by this, so a crowd
+  // is painted shoulder to shoulder and opens out to whatever it is set to -- and
+  // a little more room reads better as the thing it opens out *to*.
+  personalSpace: 40,
   // The original walked one lattice step per frame, which is a crawl on a modern
   // display. Speed is now how many steps a pedestrian may buy per frame.
   speed: 4,
@@ -90,12 +97,12 @@ export const DEFAULT_SETTINGS: Settings = {
  * specs there.
  */
 export type NumericSetting =
-  | 'pedestrianRadius' | 'preferredSpace' | 'speed' | 'brushSize' | 'borderThickness';
+  | 'pedestrianRadius' | 'personalSpace' | 'speed' | 'brushSize' | 'borderThickness';
 
 export const SETTING_RANGES: Record<NumericSetting, { min: number; max: number; step: number }> = {
   speed: { min: 1, max: 20, step: 1 },
   pedestrianRadius: { min: 3, max: 40, step: 1 },
-  preferredSpace: { min: 0, max: 90, step: 1 },
+  personalSpace: { min: 0, max: 120, step: 1 },
   brushSize: { min: 1, max: 14, step: 1 },
   borderThickness: { min: 2, max: 60, step: 1 },
 };

@@ -209,12 +209,12 @@ class Reader {
 /** The order the toggle bits are packed in. Append only: the position is the format. */
 const TOGGLE_KEYS = [
   'showVisibleLines', 'showLineToTarget', 'showConvexHull', 'showConvexParts',
-  'showPreferredRadius', 'showDebug', 'sound',
+  'showPersonalSpace', 'showDebug', 'sound',
 ] as const;
 
 /** The order the numeric settings are packed in. Append only, as above. */
 const NUMBER_KEYS = [
-  'speed', 'pedestrianRadius', 'preferredSpace', 'brushSize', 'borderThickness',
+  'speed', 'pedestrianRadius', 'personalSpace', 'brushSize', 'borderThickness',
 ] as const;
 
 const AGENT_ARRIVED = 1;

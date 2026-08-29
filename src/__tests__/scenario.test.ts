@@ -76,11 +76,11 @@ describe('the snapshot', () => {
 describe('settings out of an untrusted map', () => {
   it('pins every number into the range its slider allows', () => {
     const clamped = clampSettings({
-      speed: 9999, pedestrianRadius: -4, preferredSpace: 1000, brushSize: 0, borderThickness: 1,
+      speed: 9999, pedestrianRadius: -4, personalSpace: 1000, brushSize: 0, borderThickness: 1,
     });
     expect(clamped.speed).toBe(20);
     expect(clamped.pedestrianRadius).toBe(3);
-    expect(clamped.preferredSpace).toBe(90);
+    expect(clamped.personalSpace).toBe(120);
     expect(clamped.brushSize).toBe(1);
     expect(clamped.borderThickness).toBe(2);
   });
@@ -88,11 +88,11 @@ describe('settings out of an untrusted map', () => {
   it('falls back to the default for anything that is not a number', () => {
     const clamped = clampSettings({
       speed: NaN, pedestrianRadius: Infinity,
-      preferredSpace: undefined, showDebug: 'yes' as unknown as boolean,
+      personalSpace: undefined, showDebug: 'yes' as unknown as boolean,
     });
     expect(clamped.speed).toBe(DEFAULT_SETTINGS.speed);
     expect(clamped.pedestrianRadius).toBe(DEFAULT_SETTINGS.pedestrianRadius);
-    expect(clamped.preferredSpace).toBe(DEFAULT_SETTINGS.preferredSpace);
+    expect(clamped.personalSpace).toBe(DEFAULT_SETTINGS.personalSpace);
     expect(clamped.showDebug).toBe(DEFAULT_SETTINGS.showDebug);
   });
 

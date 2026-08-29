@@ -43,7 +43,7 @@ function richScenario(): ScenarioCore {
     sound: false,
     speed: 9,
     pedestrianRadius: 21,
-    preferredSpace: 5,
+    personalSpace: 5,
     brushSize: 4,
     borderThickness: 33,
   };

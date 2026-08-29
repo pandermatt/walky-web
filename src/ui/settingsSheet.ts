@@ -16,13 +16,13 @@ const TOGGLES: ToggleSpec[] = [
   { key: 'showConvexParts', label: 'Convex parts' },
   { key: 'showVisibleLines', label: 'Visibility rays' },
   { key: 'showLineToTarget', label: 'Path to goal' },
-  { key: 'showPreferredRadius', label: 'Preferred radius' },
+  { key: 'showPersonalSpace', label: 'Space rings' },
   { key: 'showDebug', label: 'Debug info' },
   { key: 'sound', label: 'Arrival sound' },
 ];
 
 const SLIDER_ORDER: (keyof Settings)[] = [
-  'speed', 'pedestrianRadius', 'preferredSpace', 'brushSize', 'borderThickness',
+  'speed', 'pedestrianRadius', 'personalSpace', 'brushSize', 'borderThickness',
 ];
 
 export const SHEET_CSS = `
