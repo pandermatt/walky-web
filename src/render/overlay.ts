@@ -228,13 +228,13 @@ export class Overlay {
 
     switch (ghost.kind) {
       case 'square': {
-        // A badge hanging off the pointer's lower-left, the way a tool cursor
+        // A badge hanging off the pointer's lower-right, the way a tool cursor
         // carries its icon. Fixed pixel size rather than world units: it says
         // which tool is armed, so it should not grow or shrink with zoom, and it
         // sits clear of the pointer instead of under it.
         const size = 14;
         const gap = 3;
-        const x = at[0] - size - gap;
+        const x = at[0] + gap;
         const y = at[1] + gap;
         ctx.fillStyle = GHOST_BLUE;
         ctx.strokeStyle = GHOST_BLUE_EDGE;
