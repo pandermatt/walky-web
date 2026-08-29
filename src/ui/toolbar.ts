@@ -1,6 +1,7 @@
 import type { ToolId } from '../tools/types';
 import { TOUCH } from './appShell';
 import { injectStyle, installTheme } from './theme';
+import { attachTooltip } from './tooltip';
 
 export type ActionId =
   | 'start' | 'undo' | 'clear' | 'record' | 'reset_pedestrians' | 'reset_zoom' | 'settings';
@@ -130,6 +131,24 @@ export const TOOLBAR_CSS = `
 }
 
 /*
+ * The play triangle, put in shadow.
+ *
+ * start.png is drawn in a neon rgb(76,218,67) that measures 1.9:1 against the
+ * capsule and 1.3:1 where the capsule is over the dark map -- the one icon in
+ * the strip nobody can see, while the rest of the set is black. WCAG 1.4.11 asks
+ * 3:1 of a graphic that *is* the control.
+ *
+ * brightness(.49) is Java's Color.darker() applied twice: CSS's shorthand
+ * filters multiply in sRGB, so this is the same channel arithmetic shadowOf()
+ * does in palette.ts, and the same operation the accent's ink comes from. It
+ * lands on rgb(37,106,32) -- 5.7:1 on the capsule, 3.2:1 over a dark map, and
+ * still green. Recolouring the file would have hidden the rule inside a binary.
+ *
+ * setRunning swaps in pause.png, which is pure black; the filter leaves it black.
+ */
+#toolbar .wk-btn--cell[data-key="start"] img { filter: brightness(.49); }
+
+/*
  * Installed on a touch device the strip becomes a bar across the bottom.
  *
  * \`pointer: coarse\` rather than a width breakpoint: this is about the hand,
@@ -188,8 +207,12 @@ export class Toolbar {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'wk-btn wk-btn--cell';
-        btn.title = spec.title;
+        btn.dataset.key = spec.key;
         btn.setAttribute('aria-label', spec.title);
+        // Instead of `title`: the browser holds that back a second or two, which
+        // for a strip of icon-only buttons is the same as not having it. The
+        // aria-label above stays the accessible name; the tip is decoration.
+        attachTooltip(btn, spec.title);
         // A tool starts pressed if it is the armed one; a toggle starts on its
         // own state, which is off. Comparing a toggle's key against the initial
         // *tool* used to give the right answer by accident, which is worse than

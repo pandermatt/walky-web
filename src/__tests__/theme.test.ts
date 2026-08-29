@@ -5,6 +5,7 @@ import { CONTROLS_CSS } from '../ui/controls';
 import { SHEET_CSS } from '../ui/settingsSheet';
 import { TOOLBAR_CSS } from '../ui/toolbar';
 import { CONTEXT_CSS } from '../ui/contextPanel';
+import { TOOLTIP_CSS } from '../ui/tooltip';
 import { TOAST_CSS } from '../pwa';
 
 /**
@@ -15,6 +16,7 @@ import { TOAST_CSS } from '../pwa';
 
 const ALL_CSS = [
   THEME_CSS, BUTTON_CSS, CONTROLS_CSS, SHEET_CSS, TOOLBAR_CSS, CONTEXT_CSS, TOAST_CSS,
+  TOOLTIP_CSS,
 ].join('\n');
 
 describe('the accent', () => {
@@ -31,6 +33,32 @@ describe('the accent', () => {
 
   it('is not readable undarkened, which is why it is only ever a fill', () => {
     expect(contrastRatio(ORANGE, WHITE)).toBeLessThan(3);
+  });
+});
+
+describe('the play triangle', () => {
+  /** The green start.png is drawn in; see the filter rule in TOOLBAR_CSS. */
+  const GREEN = [76, 218, 67] as const;
+  /** The capsule, and the capsule at .72 over the map's rgb(30,30,30). */
+  const CAPSULE = [236, 236, 236] as const;
+  const OVER_MAP = [178, 178, 178] as const;
+
+  it('is invisible undarkened on both grounds the capsule takes', () => {
+    expect(contrastRatio(GREEN, CAPSULE)).toBeLessThan(2);
+    expect(contrastRatio(GREEN, OVER_MAP)).toBeLessThan(1.5);
+  });
+
+  it('clears 1.4.11 once put in shadow, which is what the filter does', () => {
+    const ink = shadowOf(GREEN);
+    expect(toHex(ink)).toBe('#256A20');
+    expect(contrastRatio(ink, CAPSULE)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(ink, OVER_MAP)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('is darkened by the stylesheet rather than in the artwork', () => {
+    // .49 is 0.7 twice: CSS shorthand filters multiply in sRGB, so the rule and
+    // shadowOf are the same arithmetic. If one moves, this pairing is the seam.
+    expect(TOOLBAR_CSS).toContain('[data-key="start"] img { filter: brightness(.49); }');
   });
 });
 
