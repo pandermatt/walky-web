@@ -62,45 +62,35 @@ describe('groupWalls', () => {
     expect(groupWalls([])).toEqual([]);
   });
 
-  it('leaves a shape that is not outlined alone without an outline', () => {
+  it('outlines a shape that touches nothing, on its own', () => {
     const trace: Point[] = [[0, 0], [100, 0], [100, 100], [40, 60], [0, 100]];
-    const freehand = makeWall([trace], { outlinedAlone: false });
-    // Touching nothing, there is no group for the outline to summarise.
-    expect(groupWalls([freehand])).toEqual([]);
+    const freehand = makeWall([trace]);
+    const groups = groupWalls([freehand]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].wallIds).toEqual([freehand.id]);
+    expect(groups[0].hull).toEqual(monotoneChainHull(trace));
   });
 
-  it('outlines it once it touches something, points and all', () => {
+  it('hulls a traced shape together with what it touches, points and all', () => {
     const solid = makeWall([rectanglePolygon([0, 0], [100, 100])]);
-    const freehand = makeWall([rectanglePolygon([90, 90], [400, 400])], { outlinedAlone: false });
+    const freehand = makeWall([rectanglePolygon([90, 90], [400, 400])]);
     const groups = groupWalls([solid, freehand]);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].wallIds).toEqual([solid.id, freehand.id].sort((a, b) => a - b));
-    // The outline is the group's, so the trace shapes it like any other member.
+    // The outline is the group's, so every member shapes it.
     expect(groups[0].hull).toEqual(monotoneChainHull([
       ...solid.polygons.flat(), ...freehand.polygons.flat(),
     ]));
   });
 
-  it('outlines two traces that touch each other', () => {
-    const left = makeWall([rectanglePolygon([0, 0], [100, 100])], { outlinedAlone: false });
-    const right = makeWall([rectanglePolygon([100, 0], [200, 100])], { outlinedAlone: false });
-    const groups = groupWalls([left, right]);
-
-    expect(groups).toHaveLength(1);
-    expect(groups[0].hull).toEqual(monotoneChainHull([
-      ...left.polygons.flat(), ...right.polygons.flat(),
-    ]));
-    // Apart, neither is worth an outline.
-    expect(groupWalls([left])).toEqual([]);
-  });
-
-  it('lets a trace join two shapes under one outline', () => {
+  it('lets a traced shape join two others under one outline', () => {
     const left = makeWall([rectanglePolygon([0, 0], [100, 100])]);
     const right = makeWall([rectanglePolygon([300, 0], [400, 100])]);
-    const bridge = makeWall([[[90, 40], [310, 40], [310, 200], [90, 200]] as Point[]],
-      { outlinedAlone: false });
+    const bridge = makeWall([[[90, 40], [310, 40], [310, 200], [90, 200]] as Point[]]);
 
+    // Apart, the two rectangles are two outlines.
     expect(groupWalls([left, right])).toHaveLength(2);
     const groups = groupWalls([left, right, bridge]);
     expect(groups).toHaveLength(1);

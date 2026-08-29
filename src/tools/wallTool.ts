@@ -30,18 +30,6 @@ const SIMPLIFY_TOLERANCE_PX = 2.5;
 /** Past this, a press-and-release counts as a trace rather than a click. */
 const DRAG_THRESHOLD_PX = 5;
 
-/**
- * Shapes from this tool are not outlined until they touch something.
- *
- * The dashed outline is a summary of a connected group of shapes, which reads for
- * the shapes a hull describes -- a rectangle, a frame, a blocky building. What
- * this tool makes is a freehand outline: an S, a spiral, a room traced by hand,
- * whose hull on its own is a blob with no resemblance to what was drawn and
- * nothing to summarise. Drawn against other shapes it is a member like any other,
- * and its points shape the group's outline. See Wall.outlinedAlone.
- */
-const ALONE_UNOUTLINED = { outlinedAlone: false } as const;
-
 export class WallTool implements Tool {
   readonly id = 'wall' as const;
   readonly cursor = 'crosshair';
@@ -96,7 +84,7 @@ export class WallTool implements Tool {
 
   onDoubleClick(e: PointerInfo, ctx: ToolContext): void {
     this.addPoint(e.world, true);
-    if (this.points.length >= 3) ctx.addWall(this.points, ALONE_UNOUTLINED);
+    if (this.points.length >= 3) ctx.addWall(this.points);
     this.cancel();
     ctx.requestRender();
   }
@@ -125,7 +113,7 @@ export class WallTool implements Tool {
     const tolerance = SIMPLIFY_TOLERANCE_PX * ctx.worldPerPixel();
     const simplified = simplifyClosed(this.stroke, tolerance)
       .map((p) => [Math.round(p[0]), Math.round(p[1])] as Point);
-    if (simplified.length >= 3) ctx.addWall(simplified, ALONE_UNOUTLINED);
+    if (simplified.length >= 3) ctx.addWall(simplified);
     this.cancel();
     ctx.requestRender();
   }
