@@ -521,8 +521,12 @@ export class App {
   }
 
   /**
-   * The hull outlines to draw: each wall's convex hull grown by the pedestrian
-   * radius, which is the boundary a pedestrian's centre must stay outside of.
+   * The outlines to draw, each grown by the pedestrian radius -- the boundary a
+   * pedestrian's centre must stay outside of.
+   *
+   * Two sets, with a toggle each, and only what is switched on is built: the
+   * hulls, one per connected group, and the convex parts, one per piece a wall
+   * was decomposed into. Off, a set costs nothing per frame.
    */
   private expandedHulls(): { points: Point[]; color: RGB; faint: boolean }[] {
     const byId = new Map(this.walls.map((w) => [w.id, w.color]));
@@ -531,18 +535,19 @@ export class App {
     // so shapes drawn against each other still read as one object -- the look
     // merging used to give, without merging their identities. Navigation keeps
     // its own per-wall shells, which serve a different purpose.
-    const shells = this.groups().map((g) => ({
+    const shells = this.settings.showConvexHull ? this.groups().map((g) => ({
       points: expandPolygon(g.hull, this.settings.pedestrianRadius),
       // The group's colour is its lowest-numbered member's, so it holds still as
       // unrelated shapes are drawn elsewhere.
       color: byId.get(g.wallIds[0]) ?? WHITE,
       faint: false,
-    }));
-    const parts = this.nav.obstacles.map((ob) => ({
+    })) : [];
+    const parts = this.settings.showConvexParts ? this.nav.obstacles.map((ob) => ({
       points: ob.hull,
       color: byId.get(ob.wallId) ?? WHITE,
       faint: true,
-    }));
+    })) : [];
+    // Parts first: where both are on, the hull is the one drawn over the top.
     return [...parts, ...shells];
   }
 
@@ -693,7 +698,6 @@ export class App {
     const preview = this.tool?.preview() ?? EMPTY_PREVIEW;
     this.overlay.render({
       hulls: this.expandedHulls(),
-      showConvexHull: this.settings.showConvexHull,
       showDebug: this.settings.showDebug,
       pendingWallPoints: preview.pendingWallPoints,
       pendingWallTracing: preview.pendingWallTracing,

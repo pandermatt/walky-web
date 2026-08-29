@@ -113,7 +113,10 @@ Supporting changes:
   every one of its nodes was discarded for sitting inside the U's hull, and
   Dijkstra got zero sources. Decomposing keeps navigation built from convex hulls
   while leaving real cavities open. A rectangle stays 1 part, an L becomes 2, a U
-  becomes 3.
+  becomes 3. The parts have a toggle of their own, **Convex parts**, off by
+  default: they are a diagnostic for how a shape was split, and a traced shape
+  wears one along every edge and a diagonal across every notch, which buries the
+  hull that the hull toggle is named for.
 - **The whole-wall hull** is still drawn, and still earns its keep as a broad phase:
   anything that misses it cannot touch any of that wall's parts — which holds only
   while the shell really contains them, so it is expanded by `hypot(2, 1)` radii

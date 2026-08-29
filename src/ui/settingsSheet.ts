@@ -13,6 +13,7 @@ import { injectStyle } from './theme';
  */
 const TOGGLES: ToggleSpec[] = [
   { key: 'showConvexHull', label: 'Convex hulls' },
+  { key: 'showConvexParts', label: 'Convex parts' },
   { key: 'showVisibleLines', label: 'Visibility rays' },
   { key: 'showLineToTarget', label: 'Path to goal' },
   { key: 'showPreferredRadius', label: 'Preferred radius' },

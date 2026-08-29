@@ -45,7 +45,18 @@ export interface Tree {
 export interface Settings {
   showVisibleLines: boolean;
   showLineToTarget: boolean;
+  /** The dashed outline around each connected group of shapes. */
   showConvexHull: boolean;
+  /**
+   * The convex *decomposition* -- a faint outline around every convex piece each
+   * wall is navigated by, expanded like the hull is.
+   *
+   * A diagnostic for how a shape was split, not a view of the hull, and dense
+   * enough to bury one: a traced shape carries an outline along its own edge and
+   * a diagonal across every notch. Off by default, so the hull toggle shows the
+   * hull.
+   */
+  showConvexParts: boolean;
   showPreferredRadius: boolean;
   showDebug: boolean;
   pedestrianRadius: number;
@@ -61,6 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showVisibleLines: false,
   showLineToTarget: true,
   showConvexHull: true,
+  showConvexParts: false,
   showPreferredRadius: false,
   showDebug: false,
   // Defaults from AbstractPedestrian: radius 13, preferredSpace 30.

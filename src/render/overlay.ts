@@ -19,17 +19,20 @@ export const FAT_DASH = [21, 9, 3, 9];
 const GHOST_BLUE = '#2D6FD4';
 const GHOST_BLUE_EDGE = '#1B4E9E';
 
-/** A hull outline to draw, already expanded by the pedestrian radius. */
+/** An outline to draw, already expanded by the pedestrian radius. */
 export interface HullOutline {
   points: Point[];
   color: RGB;
-  /** Convex parts are drawn faintly; the whole-wall hull is drawn solid. */
+  /** Convex parts are drawn faintly; a group's hull is drawn solid. */
   faint: boolean;
 }
 
 export interface OverlayState {
+  /**
+   * The outlines to draw. Each set -- group hulls, convex parts -- has a toggle
+   * of its own, and what is switched off simply is not in here.
+   */
   hulls: HullOutline[];
-  showConvexHull: boolean;
   showDebug: boolean;
   /** Points of a wall being drawn right now. */
   pendingWallPoints: Point[];
@@ -77,7 +80,7 @@ export class Overlay {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    if (state.showConvexHull) this.drawConvexHulls(state.hulls);
+    this.drawConvexHulls(state.hulls);
     this.drawPendingWall(state.pendingWallPoints, state.mouseWorld, state.pendingWallTracing);
     this.drawPendingRect(state.pendingRect);
     this.drawPendingPolygons(state.pendingPolygons, state.pendingPolygonsInvalid);
@@ -89,7 +92,8 @@ export class Overlay {
   }
 
   /**
-   * Ports drawConvexHulls(): dashed, in each wall's own colour.
+   * Ports drawConvexHulls(): dashed, in each wall's own colour, the faint ones
+   * being the convex parts and the solid ones the hulls.
    *
    * The outline drawn is the hull *expanded by the pedestrian radius* -- the same
    * geometry the navigation graph and the legality checks use. Drawing the raw
