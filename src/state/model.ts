@@ -26,6 +26,9 @@ export interface Wall {
    * it draws a dashed outline that has nothing to do with what was drawn, and
    * pulls every wall it touches into the same misleading blob.
    *
+   * It still groups with the shapes it touches, and still joins two of them under
+   * one outline; it just adds no points to that outline. See groupWalls.
+   *
    * Opting out costs nothing but the broad phase: navigation is built from the
    * convex *decomposition* of each polygon, never from this hull, so the wall
    * blocks and is walked around exactly as before.

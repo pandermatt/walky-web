@@ -12,13 +12,22 @@ import { polygonsOverlap, type Wall } from './model';
  * its own identity, colour and (eventually) deletability -- the grouping is
  * recomputed from scratch whenever walls change, so it can never accumulate.
  *
- * Walls with `hulled` false -- freehand traces -- take no part in this: they are
- * neither hulled themselves nor allowed to pull a neighbour's outline out to
- * cover them. See Wall.hulled.
+ * Walls with `hulled` false -- freehand traces -- still group like any other
+ * shape, so a squiggle laid across two buildings still puts them under one
+ * outline. What they do not do is contribute points to that outline: the hull is
+ * taken over the group's hulled members only, so a traced shape never stretches
+ * the outline out to cover itself. See Wall.hulled.
  */
 export interface WallGroup {
+  /** Every wall in the group, lowest id first. */
   wallIds: number[];
-  /** Convex hull over every point of every wall in the group. */
+  /**
+   * The members the hull was built from -- the group minus anything that opts out
+   * of hulling -- lowest id first. Never empty: a group with nothing to hull is
+   * not returned at all.
+   */
+  hullWallIds: number[];
+  /** Convex hull over every point of every *hulled* wall in the group. */
   hull: Point[];
 }
 
@@ -43,8 +52,7 @@ function wallsTouchWithin(a: Wall, b: Wall, tolerance: number): boolean {
   return false;
 }
 
-export function groupWalls(input: Wall[], tolerance = GROUP_TOLERANCE): WallGroup[] {
-  const walls = input.filter((w) => w.hulled);
+export function groupWalls(walls: Wall[], tolerance = GROUP_TOLERANCE): WallGroup[] {
   const n = walls.length;
   if (n === 0) return [];
 
@@ -73,12 +81,18 @@ export function groupWalls(input: Wall[], tolerance = GROUP_TOLERANCE): WallGrou
 
   const groups: WallGroup[] = [];
   for (const members of byRoot.values()) {
+    // Only hulled members shape the outline; the rest are in the group but
+    // invisible to it, which is what keeps a traced shape from bloating it.
+    const hulled = members.filter((i) => walls[i].hulled);
+    if (hulled.length === 0) continue;
     const points: Point[] = [];
-    for (const i of members) points.push(...walls[i].polygons.flat());
+    for (const i of hulled) points.push(...walls[i].polygons.flat());
+    // Sorted so the lowest id is first: the outline's colour comes from the first
+    // hulled member and must not change as unrelated shapes are added.
+    const byId = (a: number, b: number) => a - b;
     groups.push({
-      // Sorted so the lowest id is first: the outline's colour comes from it and
-      // must not change as unrelated shapes are added.
-      wallIds: members.map((i) => walls[i].id).sort((a, b) => a - b),
+      wallIds: members.map((i) => walls[i].id).sort(byId),
+      hullWallIds: hulled.map((i) => walls[i].id).sort(byId),
       hull: monotoneChainHull(points),
     });
   }

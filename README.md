@@ -177,9 +177,11 @@ blob with no resemblance to what was drawn. Worse, the dashed outline is drawn p
 building's outline over both.
 
 So the wall tool's shapes are left out of the convex hull calculation: they get no
-hull of their own, and they take no part in grouping, so they cannot enlarge
-anyone else's outline. Every other tool still hulls, because everything else makes
-a shape a hull describes.
+hull of their own, and they contribute no points to the hull of the group they are
+in. They still *group* — a traced shape laid across two buildings still puts both
+under one outline, and that outline now wraps the two buildings rather than the
+squiggle. Every other tool still hulls, because everything else makes a shape a
+hull describes.
 
 Nothing about navigation changes. Obstacles come from the convex *decomposition*
 of each polygon, never from the whole-wall hull, so a traced shape blocks and is

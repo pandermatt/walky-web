@@ -37,9 +37,10 @@ const DRAG_THRESHOLD_PX = 5;
  * this tool makes is a freehand outline -- an S, a spiral, a room traced by hand
  * -- and its hull is a blob that bears no resemblance to what was drawn, and that
  * drags every wall it touches into the same blob, since the dashed outline is
- * drawn per connected group. Navigation is unaffected: it runs on the convex
- * decomposition of the polygon, not on this hull, so the shape blocks and is
- * walked around exactly as before. See Wall.hulled.
+ * drawn per connected group. The shape still groups with what it touches; it
+ * simply contributes no points to the group's hull. Navigation is unaffected: it
+ * runs on the convex decomposition of the polygon, not on this hull, so the shape
+ * blocks and is walked around exactly as before. See Wall.hulled.
  */
 const NOT_HULLED = { hulled: false } as const;
 
