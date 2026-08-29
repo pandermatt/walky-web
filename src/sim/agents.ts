@@ -71,6 +71,16 @@ export class Agents {
    */
   pressure: Float32Array;
   /**
+   * Which way the crowd is leaning on this pedestrian, as a unit vector.
+   *
+   * Pressure has only ever been a scalar, which is enough to decide how much room
+   * somebody gives up but not enough to shove them anywhere. This is the direction
+   * a pedestrian is carried when the load gets past what it can hold out against --
+   * the difference between a crowd that changes your mind and one that moves you.
+   */
+  pushX: Float32Array;
+  pushY: Float32Array;
+  /**
    * A stable number in [0,1) that makes this pedestrian slightly its own person:
    * how much room it keeps and how briskly it walks are both scaled by it.
    *
@@ -117,6 +127,12 @@ export class Agents {
    * (`removeAt`, `clear`), so read it straight after stepping.
    */
   readonly justArrived: number[] = [];
+  /**
+   * Involuntary steps taken this tick -- pedestrians the crowd moved rather than
+   * ones that decided to move. Exists to be measured: "nobody is shoved in a crowd
+   * with room to walk in" is not otherwise checkable.
+   */
+  carries = 0;
   count = 0;
 
   constructor(private capacity = 4096) {
@@ -136,6 +152,8 @@ export class Agents {
     this.headingY = new Float32Array(capacity);
     this.waited = new Float32Array(capacity);
     this.pressure = new Float32Array(capacity);
+    this.pushX = new Float32Array(capacity);
+    this.pushY = new Float32Array(capacity);
     this.trait = new Float32Array(capacity);
     this.assertiveness = new Float32Array(capacity);
     this.effectiveSpace = new Float32Array(capacity);
@@ -157,6 +175,8 @@ export class Agents {
     this.headingY[i] = 0;
     this.waited[i] = 0;
     this.pressure[i] = 0;
+    this.pushX[i] = 0;
+    this.pushY[i] = 0;
     this.trait[i] = traitOf(at[0], at[1], SPACE_SEED);
     this.assertiveness[i] = traitOf(at[0], at[1], NERVE_SEED);
     this.effectiveSpace[i] = 0;
@@ -225,6 +245,8 @@ export class Agents {
     this.headingY[i] = this.headingY[last];
     this.waited[i] = this.waited[last];
     this.pressure[i] = this.pressure[last];
+    this.pushX[i] = this.pushX[last];
+    this.pushY[i] = this.pushY[last];
     this.trait[i] = this.trait[last];
     this.assertiveness[i] = this.assertiveness[last];
     this.effectiveSpace[i] = this.effectiveSpace[last];
@@ -275,6 +297,8 @@ export class Agents {
     this.headingY.fill(0, 0, n);
     this.waited.fill(0, 0, n);
     this.pressure.fill(0, 0, n);
+    this.pushX.fill(0, 0, n);
+    this.pushY.fill(0, 0, n);
     this.effectiveSpace.fill(0, 0, n);
     // Not derived from the tick but from the pedestrian: recomputed rather than
     // restored, so it comes back identical without being stored.
@@ -284,6 +308,7 @@ export class Agents {
     }
     this.costToGoal.fill(Infinity, 0, n);
     this.justArrived.length = 0;
+    this.carries = 0;
     this.count = n;
   }
 
@@ -317,6 +342,8 @@ export class Agents {
       this.headingY[i] = 0;
       this.waited[i] = 0;
       this.pressure[i] = 0;
+      this.pushX[i] = 0;
+      this.pushY[i] = 0;
       this.effectiveSpace[i] = 0;
     }
   }
@@ -337,6 +364,13 @@ export class Agents {
     const i = this.add([a.x, a.y], a.color);
     this.originX[i] = a.originX;
     this.originY[i] = a.originY;
+    // Temperament comes from where a pedestrian was placed, and `add` had only
+    // where it currently stands to go on. Left as it was, a crowd loaded from a
+    // link mid-walk would take its temperaments from wherever everybody happened
+    // to be standing, and then quietly swap them all for the real ones the first
+    // time anybody pressed undo -- `restore` recomputes from the origin.
+    this.trait[i] = traitOf(a.originX, a.originY, SPACE_SEED);
+    this.assertiveness[i] = traitOf(a.originX, a.originY, NERVE_SEED);
     this.goal[i] = a.goal;
     this.arrived[i] = a.arrived ? 1 : 0;
     return i;
@@ -474,6 +508,8 @@ export class Agents {
     this.headingY = copy(this.headingY, (n) => new Float32Array(n));
     this.waited = copy(this.waited, (n) => new Float32Array(n));
     this.pressure = copy(this.pressure, (n) => new Float32Array(n));
+    this.pushX = copy(this.pushX, (n) => new Float32Array(n));
+    this.pushY = copy(this.pushY, (n) => new Float32Array(n));
     this.trait = copy(this.trait, (n) => new Float32Array(n));
     this.assertiveness = copy(this.assertiveness, (n) => new Float32Array(n));
     this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));

@@ -203,6 +203,104 @@ const NERVE_IMPATIENCE = 1.2;
 /** How hard it leans on the person in front: 0.5x when polite, 1.5x when not. */
 const NERVE_LEAN = 1.0;
 
+/**
+ * How far a body will give when the crowd leans on it, as a fraction of its radius,
+ * and the load at which half of that is available.
+ *
+ * Bodies are not rigid, and pretending they are had a specific cost. With no give
+ * anywhere, a crowd that packs to body contact has no legal move left: every
+ * candidate cell is worse than standing still, so a bottleneck arches over and
+ * stays arched. Real crowds arch at a gap too; they do not do it permanently, and
+ * what breaks the arch is that somebody gets squeezed.
+ *
+ * Two properties keep this honest. It is nought at nought pressure, so a crowd
+ * nobody is leaning on behaves exactly as it did before -- being close to somebody
+ * never earns you the right to walk into them, only being crushed does.
+ *
+ * And the cap is per *pair*, not on the total. "No worse than now" is judged on the
+ * sum, and a move that gathers the same sum onto one neighbour drives one body much
+ * deeper into another while the sum reports that nothing happened. Capping the worst
+ * pair is what makes the bound provable rather than merely likely: every accepted
+ * move leaves the mover's worst pair no deeper than the cap, a pair is bounded by
+ * each of its members, so the deepest overlap anywhere is bounded by the cap.
+ */
+export const SQUASH_MAX = 0.15;
+const SQUASH_HALF = 4;
+
+/**
+ * Where the pushy end of the crowd begins, and how little room it settles for.
+ *
+ * Assertiveness is spread evenly, and spreading *this* evenly with it is the thing
+ * that must not happen. Every pedestrian wanting a slightly different amount of room
+ * varies the geometry the whole crowd packs into, and a bottleneck arches over and
+ * never recovers -- a five percent spread once took a 64-strong crowd from all
+ * through to as few as two. What was wanted instead is a minority: seven in eight
+ * behave exactly as before, and the last eighth ramps up to somebody who walks into
+ * the space you were standing in.
+ *
+ * A minority behaves unlike a spread because they break arches rather than build
+ * them. An arch is held up by everybody in it deferring equally; one pedestrian who
+ * will not defer is a weak point rather than another stone.
+ */
+const BULLY_FROM = 0.88;
+/** How much less of a crush it takes before a pushy one starts squeezing in. */
+const SHOVE_SQUEEZE = 0.75;
+
+/** How much shove is in a pedestrian: nought for most, total at the very top. */
+function shoveOf(assertiveness: number): number {
+  return Math.max(0, (assertiveness - BULLY_FROM) / (1 - BULLY_FROM));
+}
+
+/**
+ * The load at which a pedestrian is half as able to add any push of its own, the
+ * load at which the crowd starts moving it whether it likes or not, and how wildly
+ * a shove wanders at the worst of it.
+ *
+ * Somebody crushed against a barrier is not bracing and shoving; they are a link in
+ * a chain. What they add is damped and what they *transmit* is not -- the carried
+ * term below is normalised by the undamped total on purpose, because damping both
+ * halves would flatten the front-heavy gradient that makes a crush a crush.
+ *
+ * The measure of pinned is coherence, not size. Deep in a queue the load is large,
+ * points one way, and you can still walk; in a scrum it is the same size, points
+ * nowhere, and you cannot. Summed as vectors the two separate themselves -- one
+ * cancels, the other adds -- so the push vector's *length* is the fraction of the
+ * load that points anywhere at all, and its direction is where.
+ *
+ * And past a point you stop being able to hold your ground at all. A pedestrian
+ * being carried has not chosen to move and is not waiting either, so its patience
+ * must not reset: it is still stuck, and if it stopped counting as stuck the
+ * pressure holding it there would drop and the whole thing would oscillate.
+ *
+ * The wander is what a crush looks like from outside. Shoves in a real one do not
+ * all line up, and because carrying only happens under load there is no noise
+ * anywhere it would not belong.
+ */
+const PIN_FLOOR = 0.15;
+/**
+ * Calibrated, not guessed. The load a crowd actually reaches is much smaller than
+ * it looks: nought in a crowd with room to walk in, 1.6 at the worst of a busy
+ * corridor, 3.1 at the front of a deep crush against a gap. This sits between the
+ * last two, so a corridor never shoves anybody and a crush always does.
+ */
+const CARRY_FROM = 2.5;
+const CARRY_WANDER = 0.5;
+
+/**
+ * How much of its own weight a pedestrian can still put behind a lean.
+ *
+ * Guarded at nought pressure because an unloaded pedestrian has no push vector at
+ * all, and without the guard the freest one in the crowd would score as the most
+ * pinned and a queue would never form.
+ */
+function gripOf(a: Agents, j: number): number {
+  const p = a.pressure[j];
+  if (p <= 0) return 1;
+  const coherence = Math.hypot(a.pushX[j], a.pushY[j]);
+  const blended = coherence + (1 - coherence) / (1 + p / PRESSURE_HALF);
+  return PIN_FLOOR + (1 - PIN_FLOOR) * blended;
+}
+
 /** How much of its own load a pressed pedestrian passes to the one in front. */
 const TRANSMIT = 0.8;
 /** A ceiling, so a deep enough crowd cannot run the figure away. */
@@ -266,11 +364,16 @@ export class Behaviour {
   private bodyCount = 0;
   /** Total penetration where the pedestrian stands now; the "no worse" baseline. */
   private hereOverlap = 0;
+  /** The deepest single pair here, and at the candidate last measured. */
+  private hereWorst = 0;
+  private worstThere = 0;
   /** Which way discomfort increases, and how steeply. */
   private gradX = 0;
   private gradY = 0;
   /** How much oncoming traffic there is to pass. */
   private oncoming = 0;
+  /** How far this pedestrian's body will give, at the load it is currently under. */
+  private squash = 0;
 
   /**
    * Everything about the neighbourhood that does not depend on which way the
@@ -293,7 +396,14 @@ export class Behaviour {
     // how crowded it is here, and given up under enough load from behind. The load
     // is last step's -- it is measured by the same pass that would need it, and one
     // tick at sixty a second is not something anyone can see.
-    const pressed = 1 / (1 + a.pressure[self] / PRESSURE_HALF);
+    const load0 = a.pressure[self];
+    const shove = shoveOf(a.assertiveness[self]);
+    const pressed = 1 / (1 + load0 / PRESSURE_HALF);
+    // What being leaned on costs a body, rather than what it costs a preference.
+    // The pushy need far less of a crush before they start squeezing in, but they
+    // still need some: nobody earns the right to walk through a standing crowd.
+    const squashHalf = SQUASH_HALF * (1 - SHOVE_SQUEEZE * shove);
+    this.squash = SQUASH_MAX * radius * (load0 / (load0 + squashHalf));
     const densityWindow = DENSITY_WINDOW * radius;
     const densityWindow2 = densityWindow * densityWindow;
     let crowd = 0;
@@ -310,6 +420,9 @@ export class Behaviour {
     );
     // Two independent things: how much room this one likes, and how little it
     // minds going without. An assertive pedestrian simply walks closer.
+    // Two separate things: how much room this one likes, and whether it is the sort
+    // to insist on it. Most of the crowd is not pushy at all and this second factor
+    // is exactly 1 for them.
     const wanted = personalSpace * (1 - SPACE_SPREAD * a.trait[self]);
     const space = wanted * Math.max(COMPRESS_FLOOR, Math.min(compression, pressed));
     // Being shoved from behind makes you tolerate the back of the person in front
@@ -340,11 +453,15 @@ export class Behaviour {
 
     let bodies = 0;
     let load = 0;
+    let loadRaw = 0;
     let carried = 0;
+    let pushX = 0;
+    let pushY = 0;
     let gx = 0;
     let gy = 0;
     let oncoming = 0;
     let here = 0;
+    let worst = 0;
 
     for (let k = 0; k < n; k++) {
       const j = found[k];
@@ -357,7 +474,11 @@ export class Behaviour {
       // Bodies, at their real positions: this is what may not be walked into.
       if (trueD < bodyReach) {
         this.bodyIdx[bodies++] = j;
-        if (trueD < contact) here += contact - trueD;
+        if (trueD < contact) {
+          const into = contact - trueD;
+          here += into;
+          if (into > worst) worst = into;
+        }
       }
 
       // Everything else judges the neighbour where it is about to be, not where
@@ -411,20 +532,34 @@ export class Behaviour {
       // How squarely its way forward runs through us, and how near it already is.
       const into = -(ux * wantX + uy * wantY) / wantLen;
       if (into <= 0) continue;
-      const share = into * (1 - d / reachJ) * (1 - NERVE_LEAN / 2 + NERVE_LEAN * a.assertiveness[j]);
-      load += share;
+      const share = into * (1 - d / reachJ)
+        * (1 - NERVE_LEAN / 2 + NERVE_LEAN * a.assertiveness[j]);
+      const put = share * gripOf(a, j);
+      loadRaw += share;
+      load += put;
+      // The raw share, deliberately: what the back of the crowd is doing has to
+      // reach the front whether or not the people between can still push.
       carried += share * a.pressure[j];
+      // The shove on us points away from whoever is leaning.
+      pushX -= put * ux;
+      pushY -= put * uy;
     }
 
     // Its own load, plus the mean of what its pushers are already carrying. The
     // mean rather than the sum is what keeps a deep crowd bounded: the figure
     // converges along a queue instead of doubling down it.
-    a.pressure[self] = load <= 0
+    a.pressure[self] = loadRaw <= 0
       ? 0
-      : Math.min(PRESSURE_MAX, load + TRANSMIT * (carried / load));
+      : Math.min(PRESSURE_MAX, load + TRANSMIT * (carried / loadRaw));
+    // Divided by the total load rather than normalised: the length that comes out
+    // is how much of the load points anywhere, which is the whole measure of
+    // whether this one is being carried or merely crushed.
+    a.pushX[self] = loadRaw > 0 ? pushX / loadRaw : 0;
+    a.pushY[self] = loadRaw > 0 ? pushY / loadRaw : 0;
 
     this.bodyCount = bodies;
     this.hereOverlap = here;
+    this.hereWorst = worst;
     this.gradX = gx;
     this.gradY = gy;
     this.oncoming = oncoming;
@@ -450,7 +585,15 @@ export class Behaviour {
     if (this.insideAnyWall([px, py])) return false;
     const there = this.agentOverlap(px, py, radius);
     if (there === 0) return true;
-    return there < this.hereOverlap;
+    // Working loose is never refused: a pedestrian reducing the total crush is
+    // going the right way even if the pair it is nearest to gets no better, and
+    // refusing those was enough on its own to leave a bottleneck arched.
+    if (there < this.hereOverlap) return true;
+    // Squeezing in, though, is capped per *pair* and not on the total. A move that
+    // gathers the same total onto one neighbour drives one body much deeper into
+    // another while the total reports that nothing happened.
+    if (this.worstThere > Math.max(this.squash, this.hereWorst)) return false;
+    return there <= this.squash;
   }
 
   /** Total penetration into other pedestrians at a position; 0 when clear. */
@@ -458,11 +601,13 @@ export class Behaviour {
     const a = this.agents;
     const min = radius * 2;
     let total = 0;
+    let worst = 0;
     for (let k = 0; k < this.bodyCount; k++) {
       const j = this.bodyIdx[k];
       const d = Math.hypot(a.x[j] - px, a.y[j] - py);
-      if (d < min) total += min - d;
+      if (d < min) { const into = min - d; total += into; if (into > worst) worst = into; }
     }
+    this.worstThere = worst;
     return total;
   }
 
@@ -540,12 +685,53 @@ export class Behaviour {
     }
 
     if (bestLen === 0) {
+      // Standing still is only available to somebody the crowd will let stand.
+      this.carryStep(i, radius);
       // Waiting, rather than being unable to move: the waypoint is still good, and
       // re-planning one costs a scan of the whole graph.
       a.waited[i] += 1;
       return { length: 0, replan: false };
     }
     return this.commit(i, [x + bestDx, y + bestDy], bestLen, true);
+  }
+
+  /**
+   * Being moved by the crowd rather than by choice.
+   *
+   * Past `CARRY_FROM` a pedestrian no longer gets to decide it is staying put: it
+   * goes the way the load is pushing, wandering more the harder it is pressed. The
+   * step spends budget so one tick cannot carry anybody twice, and deliberately
+   * leaves its patience alone -- it is still stuck, only somewhere else now.
+   */
+  private carryStep(i: number, radius: number): boolean {
+    const a = this.agents;
+    const px = a.pushX[i];
+    const py = a.pushY[i];
+    const load = a.pressure[i] * Math.hypot(px, py);
+    if (load < CARRY_FROM) return false;
+
+    // A shove in a crush does not travel in a straight line.
+    const wander = CARRY_WANDER * Math.min(1, load / PRESSURE_MAX) * (Math.random() * 2 - 1);
+    const cos = Math.cos(wander);
+    const sin = Math.sin(wander);
+    const wx = px * cos - py * sin;
+    const wy = px * sin + py * cos;
+
+    // The lattice direction nearest the way we are being pushed.
+    const dx = Math.abs(wx) < 0.383 ? 0 : Math.sign(wx);
+    const dy = Math.abs(wy) < 0.383 ? 0 : Math.sign(wy);
+    if (dx === 0 && dy === 0) return false;
+    if (!this.isLegal(a.x[i] + dx, a.y[i] + dy, radius)) return false;
+    // Deliberately not through commit. Patience must keep counting -- it is what
+    // tells everybody else this one is held up, and zeroing it would take it
+    // straight out of the pressure sum that is moving it, collapsing the load,
+    // stopping the shove, and setting the whole crowd lurching on alternate ticks.
+    // The heading must not follow either: somebody shoved sideways is not facing
+    // sideways, they are facing where they were going and being taken elsewhere.
+    a.x[i] += dx;
+    a.y[i] += dy;
+    a.carries++;
+    return true;
   }
 
   /**

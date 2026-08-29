@@ -236,7 +236,40 @@ Two further departures, both aimed squarely at the same complaint:
   is leaning on it as well as its own weight — the load builds along a queue and
   peaks at the front, against the barrier, which is why a crush is dangerous at
   the front and unremarkable at the back. It lowers what a pedestrian asks for; it
-  never moves anybody, and **bodies still never overlap**.
+  lowers what a pedestrian asks for, and past a point it stops asking.
+
+  **Bodies give.** Everything else in the model treats two radii as a wall, and
+  real crowds do not: at the front of a crush shoulders overlap. Forbidding that
+  had a specific cost — with no give anywhere, a crowd packed to body contact has
+  no legal cell left, so the front rank stops, so the queue behind it stops, and a
+  bottleneck arches over and *stays* arched. Across forty placements of the same
+  64-strong crowd at a gap, as few as 16 got through. With give, all forty
+  placements clear completely. The giving is bounded at a sixth of a radius, capped
+  per pair rather than on the total (a move that gathers the same total onto one
+  neighbour drives one body much deeper while the total reports nothing happened),
+  and it is exactly nought until somebody is actually leaning on you — so a crowd
+  with room to walk in still touches nobody at all. That remains a guarantee, and a
+  test still asserts it.
+- **Being pushed has consequences.** A pedestrian pinned by the crowd stops being
+  able to push back: what it adds to the load is damped by how *incoherently* it is
+  pressed, which is the difference between deep in a queue (large load, one
+  direction, you can still walk) and a scrum (same size, points nowhere, you
+  cannot). What it *transmits* from behind is undamped — damping both would flatten
+  the front-heavy gradient that makes a crush a crush. And past a threshold it
+  stops being able to hold its ground at all: the crowd carries it, along a load
+  direction that wanders more the harder it is pressed. That step is the one thing
+  in the model nobody chose, so it deliberately does not reset patience — clearing
+  it would take the pedestrian out of the pressure sum that is moving it, and the
+  crowd would lurch on alternate ticks — and it does not turn the head either,
+  because somebody shoved sideways is not facing sideways.
+- **A few of them simply push through.** The pushiest eighth need far less of a
+  crush before they put a shoulder in. Everything that makes them pushy points
+  *outward*, at what they are to everybody else; nothing points inward. A bully
+  with a smaller bubble, or one that minds the crowd less, reads like the same idea
+  and behaves like the opposite one — it varies the geometry the whole crowd packs
+  into, and two of forty placements then arched permanently. Measured three ways
+  and dropped three times. What survives gets them through a crush in 395 ticks
+  against the patient quarter's 722.
 - **Some of them press harder.** Assertiveness points *outward*, at what a
   pedestrian is to everybody else: it commands more of the crowd's regard, leans
   harder on whoever is in front, and finds standing still dearer. Letting it point

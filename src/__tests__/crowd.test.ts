@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Agents, packRgb } from '../sim/agents';
 import { SpatialHash } from '../sim/spatialHash';
 import { Navigation } from '../sim/navigation';
+import { SQUASH_MAX } from '../sim/behaviour';
 import { makeWall, rectanglePolygon } from '../state/model';
 import { BLACK, type RGB } from '../palette';
 
@@ -216,8 +217,8 @@ describe('how the crowd moves', () => {
 
   it('waits instead of pushing when the way is blocked', () => {
     // Standing still is the option the ported rule lacked -- a blocked pedestrian
-    // there could only jiggle at random. Nobody may be squeezed into anyone else
-    // while it happens.
+    // there could only jiggle at random. Bodies give a little under the crush at
+    // the gap, but never more than a body gives.
     const gapTop = makeWall([rectanglePolygon([0, -400], [40, -40])]);
     const gapBottom = makeWall([rectanglePolygon([0, 40], [40, 400])]);
     const goal = makeWall([rectanglePolygon([220, -30], [280, 30])]);
@@ -238,7 +239,7 @@ describe('how the crowd moves', () => {
         for (let j = i + 1; j < agents.count; j++) {
           if (agents.arrived[j]) continue;
           const d = Math.hypot(agents.x[i] - agents.x[j], agents.y[i] - agents.y[j]);
-          expect(d).toBeGreaterThanOrEqual(2 * R - 1e-6);
+          expect(d).toBeGreaterThanOrEqual(2 * R - SQUASH_MAX * R - 1e-6);
         }
       }
     }
@@ -366,18 +367,64 @@ describe('crowd pressure', () => {
     expect(sum / n).toBeLessThan(50);
   });
 
-  it('never presses anybody into anybody else', () => {
-    // Pressure lowers what a pedestrian asks for. It does not move it, and bodies
-    // do not compress: the no-overlap rule stays absolute however deep the crowd.
+  it('never presses a body further into another than a body gives', () => {
+    // Bodies give under a crush -- shoulders overlap, chest to back falls below
+    // anything a standing measurement would allow -- and a model that forbids it
+    // has to express the crush some other way. What it reached for was the
+    // deadlock: with no give anywhere the front rank had no legal cell, so it
+    // stopped, so the queue behind it stopped, and a bottleneck arched over and
+    // stayed arched. Giving is bounded, though, and this is the bound.
     const agents = crush();
     for (let i = 0; i < agents.count; i++) {
       if (agents.arrived[i]) continue;
       for (let j = i + 1; j < agents.count; j++) {
         if (agents.arrived[j]) continue;
         const d = Math.hypot(agents.x[i] - agents.x[j], agents.y[i] - agents.y[j]);
-        expect(d).toBeGreaterThanOrEqual(2 * R - 1e-6);
+        expect(d).toBeGreaterThanOrEqual(2 * R - SQUASH_MAX * R - 1e-6);
       }
     }
+  });
+
+  it('leaves a crowd with room to walk in touching nobody at all', () => {
+    // The promise the bound above replaced, kept where it still belongs. Giving is
+    // gated on being leaned on, not on being near, so proximity alone never earns
+    // anybody the right to walk into anybody -- and nobody is ever shoved either.
+    const { nav, goal } = corridor();
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 4, 4, -420, -60, 80);
+
+    for (let t = 0; t < 600; t++) {
+      agents.step(nav, hash, 4, R, 40);
+      expect(agents.carries).toBe(0);
+      for (let i = 0; i < agents.count; i++) {
+        if (agents.arrived[i]) continue;
+        for (let j = i + 1; j < agents.count; j++) {
+          if (agents.arrived[j]) continue;
+          const d = Math.hypot(agents.x[i] - agents.x[j], agents.y[i] - agents.y[j]);
+          expect(d).toBeGreaterThanOrEqual(2 * R - 1e-6);
+        }
+      }
+    }
+  });
+
+  it('moves a pedestrian the crowd will not let stand', () => {
+    // Being carried: the one step in the model nobody decided to take. It fires
+    // only once standing still has already won, so nobody is ever carried out of a
+    // step they would rather have taken.
+    const top = makeWall([rectanglePolygon([0, -500], [40, -35])]);
+    const bottom = makeWall([rectanglePolygon([0, 35], [40, 500])]);
+    const goal = makeWall([rectanglePolygon([260, -40], [340, 40])]);
+    goal.isGoal = true;
+    const nav = new Navigation();
+    nav.rebuild([top, bottom, goal], R);
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 14, 12, -560, -209, 38);
+
+    let shoved = 0;
+    for (let t = 0; t < 400; t++) { agents.step(nav, hash, 4, R, 60); shoved += agents.carries; }
+    expect(shoved).toBeGreaterThan(0);
   });
 });
 
@@ -405,6 +452,42 @@ describe('assertive and polite pedestrians', () => {
     const mean = (xs: number[]) => xs.reduce((s, i) => s + waited[i], 0) / xs.length;
 
     expect(mean(pushy)).toBeLessThan(mean(polite));
+  });
+
+  it('lets the pushiest few through a crush the rest are queuing in', () => {
+    // The rare extreme minority. Everything that makes them pushy points outward,
+    // at what they are to everybody else, plus a readiness to put a shoulder in at
+    // a lighter crush than anybody else would. Nothing points inward: a bully with
+    // a smaller bubble, or one that minds the crowd less, varies the geometry the
+    // whole crowd packs into, and a bottleneck then arches over and stays arched.
+    // Measured across forty layouts, any inward version cost two of them outright.
+    const top = makeWall([rectanglePolygon([0, -500], [40, -35])]);
+    const bottom = makeWall([rectanglePolygon([0, 35], [40, 500])]);
+    const goal = makeWall([rectanglePolygon([260, -40], [340, 40])]);
+    goal.isGoal = true;
+    const nav = new Navigation();
+    nav.rebuild([top, bottom, goal], R);
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 14, 12, -560, -209, 38);
+
+    const order = [...Array(agents.count).keys()]
+      .sort((a, b) => agents.assertiveness[a] - agents.assertiveness[b]);
+    const eighth = Math.floor(agents.count / 8);
+    const polite = order.slice(0, eighth);
+    const pushy = order.slice(-eighth);
+
+    const arrivedAt = new Array<number>(agents.count).fill(-1);
+    for (let t = 0; t < 1200; t++) {
+      agents.step(nav, hash, 4, R, 60);
+      for (const i of agents.justArrived) arrivedAt[i] = t;
+    }
+    const meanTick = (xs: number[]) => {
+      const got = xs.filter((i) => arrivedAt[i] >= 0).map((i) => arrivedAt[i]);
+      return got.reduce((s, x) => s + x, 0) / Math.max(1, got.length);
+    };
+    // They are out well before the patient ones: 407 against 717 when measured.
+    expect(meanTick(pushy)).toBeLessThan(meanTick(polite) * 0.8);
   });
 });
 
