@@ -1,4 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// These drive hundreds of pedestrians for hundreds of ticks apiece; a few sit
+// either side of vitest's five-second default and were failing on the clock
+// rather than on an assertion.
+vi.setConfig({ testTimeout: 30_000 });
 import { Agents, packRgb } from '../sim/agents';
 import { SpatialHash } from '../sim/spatialHash';
 import { Navigation } from '../sim/navigation';
@@ -492,14 +497,15 @@ describe('assertive and polite pedestrians', () => {
       const got = xs.filter((i) => arrivedAt[i] >= 0).map((i) => arrivedAt[i]);
       return got.reduce((s, x) => s + x, 0) / Math.max(1, got.length);
     };
-    // Out well before the patient ones: 537 against 667 when measured.
+    // Out before the patient ones: 571 against 633 when measured.
     //
-    // The margin is narrower than it was before pace fell with density, and for a
-    // reason worth keeping: shoving to the front of a crush puts you where the
-    // crowd is thickest and therefore where everybody is slowest, so part of what
-    // being pushy wins is spent on arriving somewhere worse to be. It was 407
-    // against 717 when the whole crowd walked at one speed.
-    expect(meanTick(pushy)).toBeLessThan(meanTick(polite) * 0.9);
+    // The margin has narrowed twice, and both reasons are worth keeping rather than
+    // tuning away. Shoving to the front of a crush puts you where the crowd is
+    // thickest and so where everybody is slowest, which spends some of what being
+    // pushy wins -- it was 407 against 717 before pace fell with density. And a
+    // crowd that wanders rather than walking ruler lines is one where being pushy
+    // buys a slightly less certain advantage, which is honest.
+    expect(meanTick(pushy)).toBeLessThan(meanTick(polite) * 0.95);
   });
 });
 

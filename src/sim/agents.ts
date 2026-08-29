@@ -1,6 +1,6 @@
 import { randomBrightColor, BLACK, type RGB } from '../palette';
 import { distance, type Point } from './geometry';
-import { Behaviour, SQRT2, interactionReach, paceScale, crowdPace } from './behaviour';
+import { Behaviour, SQRT2, interactionReach, paceScale, crowdPace, STALL_PROGRESS } from './behaviour';
 import type { Navigation } from './navigation';
 import type { SpatialHash } from './spatialHash';
 import type { RestoredAgent } from '../state/scenario';
@@ -59,6 +59,17 @@ export class Agents {
   headingY: Float32Array;
   /** Consecutive steps spent standing still; patience that runs out. */
   waited: Float32Array;
+  /**
+   * Ticks spent getting no closer to the goal, whether or not anybody moved.
+   *
+   * `waited` above cannot see this. A pedestrian jammed head-on against another
+   * has a sidestep available that costs less than standing still does, and taking
+   * it clears `waited` -- so it shuffles on the spot indefinitely, looking busy,
+   * with its patience never accumulating and every mechanism that keys off
+   * patience never firing. This counts progress rather than motion, so shuffling
+   * reads as exactly what it is.
+   */
+  stalled: Float32Array;
   /**
    * How hard the crowd behind is pressing on this pedestrian.
    *
@@ -174,6 +185,7 @@ export class Agents {
     this.headingX = new Float32Array(capacity);
     this.headingY = new Float32Array(capacity);
     this.waited = new Float32Array(capacity);
+    this.stalled = new Float32Array(capacity);
     this.pressure = new Float32Array(capacity);
     this.pushX = new Float32Array(capacity);
     this.pushY = new Float32Array(capacity);
@@ -199,6 +211,7 @@ export class Agents {
     this.headingX[i] = 0;
     this.headingY[i] = 0;
     this.waited[i] = 0;
+    this.stalled[i] = 0;
     this.pressure[i] = 0;
     this.pushX[i] = 0;
     this.pushY[i] = 0;
@@ -293,6 +306,7 @@ export class Agents {
     this.headingX[i] = this.headingX[last];
     this.headingY[i] = this.headingY[last];
     this.waited[i] = this.waited[last];
+    this.stalled[i] = this.stalled[last];
     this.pressure[i] = this.pressure[last];
     this.pushX[i] = this.pushX[last];
     this.pushY[i] = this.pushY[last];
@@ -347,6 +361,7 @@ export class Agents {
     this.headingX.fill(0, 0, n);
     this.headingY.fill(0, 0, n);
     this.waited.fill(0, 0, n);
+    this.stalled.fill(0, 0, n);
     this.pressure.fill(0, 0, n);
     this.pushX.fill(0, 0, n);
     this.pushY.fill(0, 0, n);
@@ -394,6 +409,7 @@ export class Agents {
       this.headingX[i] = 0;
       this.headingY[i] = 0;
       this.waited[i] = 0;
+      this.stalled[i] = 0;
       this.pressure[i] = 0;
       this.pushX[i] = 0;
       this.pushY[i] = 0;
@@ -479,6 +495,13 @@ export class Agents {
       // rather than a block sliding across the map.
       // And slower the tighter it is: the room it managed to keep last step is
       // this model's measure of how packed it is standing.
+      // What the tick is about to be judged against. `costToGoal` is rewritten
+      // whenever a waypoint is fetched, which a moving pedestrian does every step
+      // and a stationary one never does -- so comparing it across the tick asks
+      // "did this one get any closer", which is the question, rather than "did it
+      // move", which a pedestrian shuffling on the spot answers yes to.
+      const costBefore = this.costToGoal[i];
+
       const own = speed * paceScale(this.trait[i]) * crowdPace(this.density[i]);
       const cap = Math.max(own, SQRT2);
       this.speedCounter[i] = Math.min(this.speedCounter[i] + own, cap);
@@ -534,6 +557,10 @@ export class Agents {
           break;
         }
       }
+
+      const gained = costBefore - this.costToGoal[i];
+      if (gained > STALL_PROGRESS) this.stalled[i] = Math.max(0, this.stalled[i] - 2);
+      else this.stalled[i] += 1;
     }
   }
 
@@ -564,6 +591,7 @@ export class Agents {
     this.headingX = copy(this.headingX, (n) => new Float32Array(n));
     this.headingY = copy(this.headingY, (n) => new Float32Array(n));
     this.waited = copy(this.waited, (n) => new Float32Array(n));
+    this.stalled = copy(this.stalled, (n) => new Float32Array(n));
     this.pressure = copy(this.pressure, (n) => new Float32Array(n));
     this.pushX = copy(this.pushX, (n) => new Float32Array(n));
     this.pushY = copy(this.pushY, (n) => new Float32Array(n));

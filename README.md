@@ -294,6 +294,25 @@ Two further departures, both aimed squarely at the same complaint:
   weight of getting out of somebody's way; and it applies only between people bound
   for the same place, since two painted side by side and sent to opposite walls are
   not a party but a collision.
+- **Nobody walks a ruler line.** A slow lateral wander, driven by where a pedestrian
+  is rather than by the clock, so each traces a fixed gentle S through the room and
+  retraces it if sent back. The two coefficients are deliberately incommensurate:
+  equal ones would leave anybody moving along x + y with a frozen phase, walking
+  perfectly straight after all.
+- **Somebody getting nowhere starts trying things.** Two pedestrians in a symmetric
+  standoff evaluate identical options and choose identically, for ever, and the model
+  had exactly one way out of that — the jiggle in `escapeStep`, which is reachable
+  only when the navigation cannot find a route at all. A pedestrian that is
+  thoroughly stuck but perfectly well routed, which is the interesting case, could
+  never reach it. It now fidgets, from a hash of where it is standing, how long it
+  has been stuck and which way it is considering — not `Math.random`, so a run stays
+  reproducible tick for tick while two pedestrians in the same predicament still
+  break their tie differently, because they are never in the same place.
+
+  Being stuck is counted as *not getting closer*, not as *not moving*. `waited`
+  cannot see it: a jammed pedestrian has a sidestep available that costs less than
+  standing still, and taking it clears `waited`, so it shuffles on the spot
+  indefinitely with the patience everything else keys off never accumulating.
 - **A few of them simply push through.** The pushiest eighth need far less of a
   crush before they put a shoulder in. Everything that makes them pushy points
   *outward*, at what they are to everybody else; nothing points inward. A bully

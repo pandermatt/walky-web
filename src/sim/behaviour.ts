@@ -326,6 +326,58 @@ function shoveOf(assertiveness: number): number {
  * anywhere it would not belong.
  */
 const PIN_FLOOR = 0.15;
+
+/**
+ * How much closer to the goal a tick has to get somebody before it counts as
+ * progress rather than as being stuck.
+ *
+ * `waited` cannot answer this. A pedestrian jammed head-on has a sidestep available
+ * that costs less than standing still, and taking it clears `waited` -- so it
+ * shuffles on the spot indefinitely, looking busy, with the patience everything else
+ * keys off never accumulating. This counts getting closer rather than moving.
+ */
+export const STALL_PROGRESS = 0.5;
+
+/**
+ * Restlessness: the fidget of somebody who has been getting nowhere for a while.
+ *
+ * Two pedestrians in a symmetric standoff evaluate identical options and choose
+ * identically, for ever. Every crowd model needs a way out of that and this one had
+ * exactly one -- the jiggle in `escapeStep` -- which is reachable only when the
+ * navigation cannot find a route at all. A pedestrian that is thoroughly stuck but
+ * perfectly well routed, which is the interesting case, could never reach it.
+ *
+ * Deliberately not `Math.random`. The wobble is a hash of where the pedestrian is
+ * standing, how long it has been stuck and which way it is considering, so a run is
+ * still reproducible tick for tick -- several tests depend on that -- while two
+ * pedestrians in the same predicament still break their tie differently, because
+ * they are never in the same place.
+ */
+const NUDGE_AFTER = 12;
+const NUDGE = 0.45;
+
+/**
+ * How far off a straight line somebody wanders, and over what distance.
+ *
+ * Nobody walks a ruler line. The path is a function of where the pedestrian is
+ * rather than of the clock, so each traces a fixed gentle S through the room and
+ * retraces it if sent back -- and the two coefficients are deliberately
+ * incommensurate, or anybody moving along x + y would find their phase standing
+ * still and walk perfectly straight after all.
+ */
+const W_WANDER = 0.16;
+const WANDER_X = 0.031;
+const WANDER_Y = 0.017;
+
+/** A repeatable number in [0,1) from three integers. */
+function wobble(x: number, y: number, salt: number): number {
+  let h = 0x9e3779b9 ^ Math.imul(x | 0, 73856093)
+    ^ Math.imul(y | 0, 19349663) ^ Math.imul(salt | 0, 83492791);
+  h = Math.imul(h ^ (h >>> 15), 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 3266489917);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
 /**
  * Calibrated, not guessed. The load a crowd actually reaches is much smaller than
  * it looks: nought in a crowd with room to walk in, 1.6 at the worst of a busy
@@ -732,6 +784,12 @@ export class Behaviour {
     // east that is south.
     const rightX = -hy;
     const rightY = hx;
+    // Somebody who has been getting nowhere starts trying things.
+    const restless = a.stalled[i] > NUDGE_AFTER
+      ? NUDGE * Math.min(1, (a.stalled[i] - NUDGE_AFTER) / NUDGE_AFTER)
+      : 0;
+    // And nobody walks a ruler line.
+    const wander = W_WANDER * Math.sin(x * WANDER_X + y * WANDER_Y + a.trait[i] * 6.283);
 
     let bestCost = Infinity;
     let bestDx = 0;
@@ -766,7 +824,8 @@ export class Behaviour {
         // Everything is priced per unit of distance travelled, which is what makes
         // a shallow approach angle come out as a staircase: a diagonal must earn
         // its sqrt(2) to beat an axis step.
-        let cost = -(distHere - Math.hypot(target[0] - nx, target[1] - ny)) / len
+        const gain = distHere - Math.hypot(target[0] - nx, target[1] - ny);
+        let cost = -gain / len
           + this.gradX * ux + this.gradY * uy;
 
         if (facing) {
@@ -775,6 +834,10 @@ export class Behaviour {
           if (this.oncoming > 0) {
             cost -= W_SIDE * this.oncoming * (ux * rightX + uy * rightY);
           }
+          cost -= wander * (ux * rightX + uy * rightY);
+        }
+        if (restless > 0) {
+          cost += restless * (wobble(x, y, (dx + 1) * 3 + (dy + 1) + a.stalled[i] * 9) - 0.5);
         }
 
         if (cost < bestCost) {
