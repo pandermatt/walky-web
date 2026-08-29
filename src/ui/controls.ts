@@ -1,4 +1,4 @@
-import type { Settings } from '../state/model';
+import { SETTING_RANGES, type Settings } from '../state/model';
 import { injectStyle, installTheme } from './theme';
 
 /**
@@ -28,12 +28,13 @@ export interface ToggleSpec {
 
 export type ChangeHandler = <K extends keyof Settings>(key: K, value: Settings[K]) => void;
 
+/** Labels here; the ranges come from the model, which is also what a loaded map is clamped to. */
 export const SLIDERS: Record<string, SliderSpec> = {
-  speed: { key: 'speed', label: 'Simulation speed', min: 1, max: 20, step: 1 },
-  pedestrianRadius: { key: 'pedestrianRadius', label: 'Pedestrian radius', min: 3, max: 40, step: 1 },
-  preferredSpace: { key: 'preferredSpace', label: 'Preferred space', min: 0, max: 90, step: 1 },
-  brushSize: { key: 'brushSize', label: 'Brush size', min: 1, max: 8, step: 1 },
-  borderThickness: { key: 'borderThickness', label: 'Border thickness', min: 2, max: 60, step: 1 },
+  speed: { key: 'speed', label: 'Simulation speed', ...SETTING_RANGES.speed },
+  pedestrianRadius: { key: 'pedestrianRadius', label: 'Pedestrian radius', ...SETTING_RANGES.pedestrianRadius },
+  preferredSpace: { key: 'preferredSpace', label: 'Preferred space', ...SETTING_RANGES.preferredSpace },
+  brushSize: { key: 'brushSize', label: 'Brush size', ...SETTING_RANGES.brushSize },
+  borderThickness: { key: 'borderThickness', label: 'Border thickness', ...SETTING_RANGES.borderThickness },
 };
 
 /**

@@ -266,6 +266,7 @@ export class SettingsSheet {
   constructor(
     private settings: Settings,
     onChange: ChangeHandler,
+    private onCopyLink: () => Promise<string>,
     private onCopyMap: () => Promise<string>,
     /** Told whenever the sheet opens or closes, by whatever route. */
     private onOpened: () => void = () => {},
@@ -321,24 +322,48 @@ export class SettingsSheet {
       toggles.appendChild(el);
     }
 
-    // Debugging aid: the whole scenario as JSON, ready to hand to someone else.
-    const copy = document.createElement('button');
-    copy.type = 'button';
-    copy.className = 'wk-btn wk-btn--row';
-    copy.textContent = 'Copy map to clipboard';
     this.note = document.createElement('p');
     this.note.className = 'note';
     this.note.setAttribute('role', 'status');
-    copy.addEventListener('click', async () => {
-      try {
-        this.note.textContent = await this.onCopyMap();
-      } catch {
-        this.note.textContent = 'Clipboard blocked by the browser';
-      }
-    });
+
+    /*
+     * Both ways of handing this map to somebody, sharing first.
+     *
+     * They answer different questions. The link reopens the map, which is what
+     * you want when you are showing someone something; the JSON describes it,
+     * including which pedestrians are stuck, which is what you want when you are
+     * reporting something. They share the note under the group, because only one
+     * of them can have been pressed last.
+     *
+     * `busy` is not decoration: encoding a large crowd takes long enough to press
+     * twice, and two encodes racing to write one note is two answers and one
+     * winner.
+     */
+    let busy = false;
+    const handOver = (label: string, run: () => Promise<string>) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'wk-btn wk-btn--row';
+      button.textContent = label;
+      button.addEventListener('click', async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          this.note.textContent = await run();
+        } catch {
+          this.note.textContent = 'Clipboard blocked by the browser';
+        } finally {
+          busy = false;
+        }
+      });
+      return button;
+    };
+
+    const sharing = group();
+    sharing.appendChild(handOver('Copy link to this map', () => this.onCopyLink()));
+    sharing.appendChild(handOver('Copy map to clipboard', () => this.onCopyMap()));
     // The note sits outside the card: it is the grey footnote under a group,
     // which is where iOS puts the sentence about one.
-    group().appendChild(copy);
     body.appendChild(this.note);
     body.appendChild(this.buildAbout());
 

@@ -3,6 +3,7 @@ import { distance, type Point } from './geometry';
 import { Behaviour, SQRT2 } from './behaviour';
 import type { Navigation } from './navigation';
 import type { SpatialHash } from './spatialHash';
+import type { RestoredAgent } from '../state/scenario';
 
 /**
  * Agent state, kept as a structure of arrays so it can move to a worker and into
@@ -142,6 +143,26 @@ export class Agents {
       this.speedCounter[i] = 0;
       this.stepsTaken[i] = 0;
     }
+  }
+
+  /**
+   * Puts back a pedestrian read off a saved scenario -- the inverse of what the
+   * snapshot writes out, and the only writer of goal and arrived outside a run.
+   *
+   * It goes through `add` rather than filling the arrays itself. `add` is the one
+   * place that knows the whole field list, and `grow` and `removeAt` already
+   * repeat it twice; a third copy is the one that would go stale. What `add`
+   * leaves alone is right to leave alone: the waypoint, the step budget and the
+   * cost to goal are all recomputed on the first tick, and a selection is not
+   * something a shared map carries.
+   */
+  restore(a: RestoredAgent): number {
+    const i = this.add([a.x, a.y], a.color);
+    this.originX[i] = a.originX;
+    this.originY[i] = a.originY;
+    this.goal[i] = a.goal;
+    this.arrived[i] = a.arrived ? 1 : 0;
+    return i;
   }
 
   setGoal(i: number, wallId: number, wallColor: RGB): void {

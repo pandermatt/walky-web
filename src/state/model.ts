@@ -89,8 +89,25 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
 };
 
-export const SPEED_MIN = 1;
-export const SPEED_MAX = 20;
+/**
+ * The legal range of every numeric setting, in one place.
+ *
+ * The sliders are built from this, and so is the clamp that a loaded map goes
+ * through -- a value out of a link is untrusted, and `state/` cannot reach into
+ * `ui/` to find out what a slider would have allowed. It used to be written down
+ * twice, as SPEED_MIN/SPEED_MAX here (which nothing read) and as the slider
+ * specs there.
+ */
+export type NumericSetting =
+  | 'pedestrianRadius' | 'preferredSpace' | 'speed' | 'brushSize' | 'borderThickness';
+
+export const SETTING_RANGES: Record<NumericSetting, { min: number; max: number; step: number }> = {
+  speed: { min: 1, max: 20, step: 1 },
+  pedestrianRadius: { min: 3, max: 40, step: 1 },
+  preferredSpace: { min: 0, max: 90, step: 1 },
+  brushSize: { min: 1, max: 8, step: 1 },
+  borderThickness: { min: 2, max: 60, step: 1 },
+};
 
 /**
  * The four bars of a border frame, overlapping at the corners.

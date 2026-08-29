@@ -76,7 +76,7 @@ function hideToast(): void {
  *   to be neither: an actionable chip skipped the timer and had no way out at
  *   all, so reloading was the only thing that ever removed it.
  */
-function showToast(
+export function showToast(
   stage: HTMLElement,
   text: string,
   action?: { label: string; run: () => void },

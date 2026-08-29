@@ -9,7 +9,11 @@ import {
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { groupWalls, type WallGroup } from './state/groups';
 import { Toolbar, type ActionId } from './ui/toolbar';
-import { serializeScenario, scenarioToJson, type SerializedAgent } from './state/scenario';
+import {
+  buildWorld, clampSettings, serializeScenario, scenarioToJson,
+  type Scenario, type ScenarioCore, type SerializedAgent,
+} from './state/scenario';
+import { LINK_MAX_CHARS, LINK_SAFE_CHARS, shareUrl } from './state/shareLink';
 import { SettingsSheet } from './ui/settingsSheet';
 import { ContextPanel } from './ui/contextPanel';
 import { BorderTool } from './tools/borderTool';
@@ -127,7 +131,8 @@ export class App {
     // for -- and it can close itself, on Done, Escape, the backdrop or the back
     // gesture -- left the button showing the opposite of the truth.
     this.settingsSheet = new SettingsSheet(
-      this.settings, onSettingChange, () => this.copyMapToClipboard(),
+      this.settings, onSettingChange,
+      () => this.copyLinkToClipboard(), () => this.copyMapToClipboard(),
       () => this.toolbar.setPressed('settings', true),
       () => this.toolbar.setPressed('settings', false),
     );
@@ -427,6 +432,23 @@ export class App {
     return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
   }
 
+  /**
+   * Back to an empty map, stopped. What Clear does, and what loading a shared
+   * map does first -- there is one place that knows everything a map is made of,
+   * so the two cannot drift apart.
+   */
+  private resetWorld(): void {
+    this.walls = [];
+    this.trees = [];
+    this.agents.clear();
+    this.running = false;
+    this.toolbar.setRunning(false);
+    this.updateContextPanel();
+    this.navDirty = true;
+    this.tool?.cancel?.();
+    this.touch();
+  }
+
   private runAction(id: ActionId): void {
     switch (id) {
       case 'reset_zoom':
@@ -434,15 +456,7 @@ export class App {
         this.requestRender();
         break;
       case 'clear':
-        this.walls = [];
-        this.trees = [];
-        this.agents.clear();
-        this.running = false;
-        this.toolbar.setRunning(false);
-        this.updateContextPanel();
-        this.navDirty = true;
-        this.tool?.cancel?.();
-        this.touch();
+        this.resetWorld();
         break;
       case 'start':
         this.running = !this.running;
@@ -827,9 +841,10 @@ export class App {
     }
   }
 
-  /** The scenario as JSON, plus a one-line summary. */
-  buildScenarioJson(): { json: string; note: string } {
+  /** Everything on the map, as the plain snapshot the JSON and the link share. */
+  private snapshot(): Scenario {
     const agents: SerializedAgent[] = [];
+    const stuck: boolean[] = [];
     for (let i = 0; i < this.agents.count; i++) {
       const goalId = this.agents.goal[i];
       agents.push({
@@ -839,13 +854,14 @@ export class App {
         originY: this.agents.originY[i],
         goal: goalId,
         arrived: this.agents.arrived[i] === 1,
-        // No route from here: exactly the pedestrians worth looking at.
-        stuck: !this.agents.arrived[i] && goalId >= 0
-          && this.nav.hasGoal(goalId)
-          && this.nav.nextWaypoint([this.agents.x[i], this.agents.y[i]], goalId) === null,
+        color: unpackRgb(this.agents.color[i]),
       });
+      // No route from here: exactly the pedestrians worth looking at.
+      stuck.push(!this.agents.arrived[i] && goalId >= 0
+        && this.nav.hasGoal(goalId)
+        && this.nav.nextWaypoint([this.agents.x[i], this.agents.y[i]], goalId) === null);
     }
-    const scenario = serializeScenario({
+    return serializeScenario({
       settings: this.settings,
       view: {
         targetX: this.viewport.targetX,
@@ -855,10 +871,79 @@ export class App {
       walls: this.walls,
       trees: this.trees,
       agents,
+      stuck,
     });
+  }
+
+  /** The scenario as JSON, plus a one-line summary. */
+  buildScenarioJson(): { json: string; note: string } {
+    const scenario = this.snapshot();
     const note = `${scenario.summary.walls} walls, ${scenario.summary.agents} pedestrians, `
       + `${scenario.summary.stuck} stuck`;
     return { json: scenarioToJson(scenario), note };
+  }
+
+  /**
+   * The map as a link on the clipboard.
+   *
+   * It deliberately does not write the link into the address bar. That would be
+   * a navigation, and it would make the URL a claim about a map that stops being
+   * true the moment anything is drawn -- the same reason a shared link is cleared
+   * once it has been read.
+   */
+  private async copyLinkToClipboard(): Promise<string> {
+    const scenario = this.snapshot();
+    const url = await shareUrl(scenario, location.href);
+    const many = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+    const what = `${many(scenario.summary.walls, 'wall')}, ${many(scenario.summary.agents, 'pedestrian')}`;
+
+    if (url.length > LINK_MAX_CHARS) {
+      // Pedestrians are the bulk of a big map, and a link nobody can open is
+      // worse than none: say so rather than hand over one that fails silently.
+      return `Too big for a link — ${what}. Copy the map as JSON instead`;
+    }
+    const size = url.length.toLocaleString();
+    const long = url.length > LINK_SAFE_CHARS
+      ? `; ${size} characters, which some apps will shorten or cut`
+      : '';
+    try {
+      await navigator.clipboard.writeText(url);
+      return `Link copied — ${what}${long}`;
+    } catch {
+      // Same policy as the JSON button: clipboard access needs a secure context
+      // and a gesture, and can still be refused. Don't lose the link.
+      console.log('[walky] share link:\n' + url);
+      return `${what} — clipboard blocked, link logged to console`;
+    }
+  }
+
+  /**
+   * Replaces the map with a scenario that came from somewhere else.
+   *
+   * Note the settings are assigned *into* the existing object rather than over
+   * it: the same object is handed to the settings sheet and the contextual panel
+   * at construction, and swapping it here would leave both panels editing an
+   * object nothing reads any more.
+   */
+  loadScenario(core: ScenarioCore): void {
+    this.resetWorld();
+
+    Object.assign(this.settings, clampSettings(core.settings));
+
+    const { walls, trees, agents } = buildWorld(core);
+    this.walls = walls;
+    this.trees = trees;
+    for (const agent of agents) this.agents.restore(agent);
+
+    this.viewport.targetX = core.view.targetX;
+    this.viewport.targetY = core.view.targetY;
+    this.viewport.zoomLevel = core.view.zoomLevel;
+
+    this.navDirty = true;
+    this.settingsSheet.sync();
+    this.contextPanel.sync();
+    this.updateContextPanel();
+    this.touch();
   }
 
   private debugLines(): string[] {

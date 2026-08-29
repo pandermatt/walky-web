@@ -154,12 +154,48 @@ Bugs found while porting, all with regression tests:
 
 ### Quality-of-life additions
 
-- **Copy map to clipboard** (in Settings). Puts the whole scenario — walls, goals,
-  pedestrians, settings, camera — on the clipboard as JSON, with each pedestrian
-  flagged `stuck` when it currently has no route, and a summary line. A stuck
-  pedestrian depends on the exact geometry around it, so this makes a case
-  reproducible instead of describable. Falls back to the console if the browser
-  refuses clipboard access.
+- **Copy link to this map** (in Settings). The whole scenario — walls, goals,
+  trees, the crowd with its origins and colours, the camera and the settings —
+  packed into the URL itself, so a map can be handed to someone by pasting a
+  link. There is no backend to upload it to and no account to save it under: the
+  map travels inside the fragment, which is never sent to a server, so nothing
+  about it leaves the device it was drawn on.
+
+  Getting a map into a URL takes some squeezing. As JSON a six-wall map with a
+  hundred and fifty pedestrians is about 37 kB; the same map comes to 817 bytes
+  as packed bytes, and 231 characters of link. Three things do that. Varints,
+  because nearly every number in a map is small and JSON spends a byte a digit on
+  all of them. Deltas, because one running cursor walks every wall vertex and
+  another walks the crowd, so a map drawn far from the origin costs no more than
+  one drawn on it, and a brushed block of pedestrians is a lattice of tiny steps.
+  And no floats at all: every wall vertex and pedestrian position in Walky is
+  already a whole number, so storing them as integers is exact rather than merely
+  close — and NaN and Infinity become unrepresentable, which removes a whole
+  class of bad input rather than validating it. `deflate-raw`, which the browser
+  already has, then takes about another 30% off a real crowd. There is nothing to
+  install for any of it.
+
+  A pasted link is untrusted input, so the decoder refuses rather than guesses:
+  a wrong header, a version it does not know, a count larger than the app could
+  hold, deltas walking off the map, a body that unpacks to more than a megabyte,
+  or a single byte left over at the end. Truncation is the common case — chat
+  apps cut long links — and every truncation of a real payload is an error rather
+  than half a map. The note under the button reports the length and warns past
+  2000 characters, where third-party link handling stops being reliable; past
+  32000 it declines to make a link at all and points at the JSON instead, because
+  handing over a link that silently fails to open is worse than saying so.
+
+  A shared link is read once, at startup, and then taken out of the address bar.
+  A hash that survived the first edit would be a URL claiming to be a map it is
+  no longer, and the reload it invites would throw those edits away without
+  asking. So the URL is touched exactly once, to consume something, and never to
+  publish.
+- **Copy map to clipboard** (in Settings). The same scenario as JSON, with each
+  pedestrian flagged `stuck` when it currently has no route, and a summary line.
+  The link reopens a map; this one describes it, which is what a bug report
+  wants. A stuck pedestrian depends on the exact geometry around it, so this
+  makes a case reproducible instead of describable. Falls back to the console if
+  the browser refuses clipboard access.
 - **Rectangles can be dragged** as well as click-then-click-again.
 - **Freehand walls can be traced** by dragging, as well as placed vertex by vertex.
   A traced stroke is simplified with Ramer-Douglas-Peucker before it is saved:
@@ -432,6 +468,11 @@ no back button, and the edge-swipe gesture is the way out people reach for. It
 needs an entry to pop. Done pops the same one, so leaving by either route costs
 the same and the history does not grow a step per visit. The URL never changes —
 there is one page here, and going back from settings lands where you already are.
+
+A shared map is the one thing that ever writes to it, and it writes once: the
+fragment is read at startup and immediately replaced away, before the sheet can
+push anything of its own. `replaceState` fires no `popstate`, so the token below
+never hears about it.
 
 What that entry is tracked *by* changed, though. `history.back()` is a request the
 browser answers later, and a flag saying "we pushed one" could not tell our own
