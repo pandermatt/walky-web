@@ -147,6 +147,7 @@ export class App {
       const hit = [...this.walls].reverse().find((w) => wallContains(w, at));
       return hit ? (hit.color as unknown as [number, number, number]) : null;
     },
+    worldPerPixel: () => 1 / this.viewport.scale,
     agentPositions: () => {
       const out: Point[] = new Array(this.agents.count);
       for (let i = 0; i < this.agents.count; i++) out[i] = [this.agents.x[i], this.agents.y[i]];
@@ -466,6 +467,7 @@ export class App {
       showConvexHull: this.settings.showConvexHull,
       showDebug: this.settings.showDebug,
       pendingWallPoints: preview.pendingWallPoints,
+      pendingWallTracing: preview.pendingWallTracing,
       pendingRect: preview.pendingRect,
       selectionPolygon: preview.selectionPolygon,
       pendingPedestrians: preview.pendingPedestrians,

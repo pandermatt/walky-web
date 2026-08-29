@@ -111,6 +111,14 @@ Bugs found while porting, all with regression tests:
   reproducible instead of describable. Falls back to the console if the browser
   refuses clipboard access.
 - **Rectangles can be dragged** as well as click-then-click-again.
+- **Freehand walls can be traced** by dragging, as well as placed vertex by vertex.
+  A traced stroke is simplified with Ramer-Douglas-Peucker before it is saved:
+  sampling produces a point every few pixels, and every one would become a polygon
+  vertex. Vertex count drives the whole navigation pipeline — the hull, the split
+  into convex parts, and the O(n²) visibility sweep over the resulting corners —
+  so a traced blob goes from 241 sampled points to 23 vertices, a 10× reduction,
+  with the outline never straying more than about 2.5 screen pixels from what was
+  drawn.
 - **Lasso selection of pedestrians.** Drag around part of a crowd to select it
   (shift adds to the selection); a quick straight drag falls back to a rectangular
   marquee, since a fast drag reports too few points to form a lasso. Selected

@@ -31,6 +31,8 @@ export interface ToolContext {
   colorAt(at: Point): [number, number, number] | null;
   /** Live positions of every pedestrian, for previews that reference them. */
   agentPositions(): Point[];
+  /** World units per screen pixel, so tolerances can be expressed in pixels. */
+  worldPerPixel(): number;
 }
 
 /**
@@ -62,6 +64,8 @@ export interface TargetLines {
 /** Transient state a tool wants drawn on the overlay. */
 export interface ToolPreview {
   pendingWallPoints: Point[];
+  /** True while tracing freehand: draw as a closing outline, not placed vertices. */
+  pendingWallTracing: boolean;
   pendingRect: [Point, Point] | null;
   selectionPolygon: Point[] | null;
   /** Where pedestrians would land if the brush fired now. */
@@ -72,6 +76,7 @@ export interface ToolPreview {
 
 export const EMPTY_PREVIEW: ToolPreview = {
   pendingWallPoints: [],
+  pendingWallTracing: false,
   pendingRect: null,
   selectionPolygon: null,
   pendingPedestrians: [],

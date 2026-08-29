@@ -33,6 +33,7 @@ export interface OverlayState {
   showDebug: boolean;
   /** Points of a wall being drawn right now. */
   pendingWallPoints: Point[];
+  pendingWallTracing: boolean;
   /** Rectangle preview, as two world-space corners. */
   pendingRect: [Point, Point] | null;
   /** Free-form selection outline. */
@@ -74,7 +75,7 @@ export class Overlay {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     if (state.showConvexHull) this.drawConvexHulls(state.hulls);
-    this.drawPendingWall(state.pendingWallPoints, state.mouseWorld);
+    this.drawPendingWall(state.pendingWallPoints, state.mouseWorld, state.pendingWallTracing);
     this.drawPendingRect(state.pendingRect);
     this.drawSelection(state.selectionPolygon);
     this.drawPendingPedestrians(state.pendingPedestrians, state.pedestrianRadius);
@@ -109,15 +110,25 @@ export class Overlay {
   }
 
   /** Ports drawTemporaryBorder()/drawTemporaryEdges(): white, dashed, dots on points. */
-  private drawPendingWall(points: Point[], mouse: Point | null): void {
+  private drawPendingWall(points: Point[], mouse: Point | null, tracing: boolean): void {
     if (points.length === 0) return;
     const { ctx } = this;
     ctx.save();
     ctx.strokeStyle = toCss(WHITE);
     ctx.fillStyle = toCss(WHITE);
     ctx.lineWidth = 1;
-
     ctx.setLineDash(DASH);
+
+    if (tracing) {
+      // A traced stroke is shown closed, since releasing closes it. No vertex
+      // dots: the trace has one point every few pixels and they would read as a
+      // solid smear rather than as vertices.
+      this.tracePath(points, true);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
     this.tracePath(points, false);
     // Rubber-band segment from the last placed point to the cursor.
     if (mouse) {
