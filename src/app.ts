@@ -961,9 +961,15 @@ export class App {
     this.rebuildNavIfNeeded();
     const r = this.settings.pedestrianRadius;
     const n = Math.max(1, this.settings.brushSize);
-    // The original spaced a block by the full interaction diameter, so freshly
-    // painted pedestrians start outside each other's preferred space.
-    const pitch = 2 * (r + this.settings.preferredSpace);
+    // Shoulder to shoulder, and left to sort themselves out.
+    //
+    // The original spaced a block by the full interaction diameter, so a freshly
+    // painted crowd started outside each other's preferred space -- which at a
+    // wide setting means a brush that drops four pedestrians across six hundred
+    // pixels, and a "crowd" you cannot actually paint. Since a crowd now opens out
+    // to the room it wants within a second of being let go, painting it packed and
+    // watching it breathe is both the better tool and the better demonstration.
+    const pitch = 2 * r;
     const half = ((n - 1) * pitch) / 2;
     const minGap = 2 * r;
 

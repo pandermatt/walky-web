@@ -96,7 +96,7 @@ export const SETTING_RANGES: Record<NumericSetting, { min: number; max: number; 
   speed: { min: 1, max: 20, step: 1 },
   pedestrianRadius: { min: 3, max: 40, step: 1 },
   preferredSpace: { min: 0, max: 90, step: 1 },
-  brushSize: { min: 1, max: 8, step: 1 },
+  brushSize: { min: 1, max: 14, step: 1 },
   borderThickness: { min: 2, max: 60, step: 1 },
 };
 
