@@ -1,0 +1,195 @@
+import { toCss, WHITE, YELLOW, type RGB } from '../palette';
+import type { Point } from '../sim/geometry';
+import type { Viewport } from './viewport';
+
+/**
+ * The 2D layer that sits on top of deck.gl: dashed outlines, in-progress tool
+ * previews, and debug text. These are a handful of primitives with dash patterns
+ * and text, which Canvas2D does far better than a GL layer.
+ *
+ * Stroke patterns come from PedestrianPanel:
+ *   dashed    = BasicStroke(1, ..., new float[]{9}, 0)
+ *   fatdashed = BasicStroke(6, ..., {21, 9, 3, 9}, 0)
+ */
+export const DASH = [9, 9];
+export const FAT_DASH = [21, 9, 3, 9];
+
+/** A hull outline to draw, already expanded by the pedestrian radius. */
+export interface HullOutline {
+  points: Point[];
+  color: RGB;
+  /** Convex parts are drawn faintly; the whole-wall hull is drawn solid. */
+  faint: boolean;
+}
+
+export interface OverlayState {
+  hulls: HullOutline[];
+  showConvexHull: boolean;
+  showDebug: boolean;
+  /** Points of a wall being drawn right now. */
+  pendingWallPoints: Point[];
+  /** Rectangle preview, as two world-space corners. */
+  pendingRect: [Point, Point] | null;
+  /** Free-form selection outline. */
+  selectionPolygon: Point[] | null;
+  /** Ghost dots showing where the pedestrian brush would place. */
+  pendingPedestrians: Point[];
+  pedestrianRadius: number;
+  mouseWorld: Point | null;
+  debugLines: string[];
+}
+
+export class Overlay {
+  private ctx: CanvasRenderingContext2D;
+
+  constructor(private canvas: HTMLCanvasElement, private viewport: Viewport) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('2D context unavailable for the overlay canvas');
+    this.ctx = ctx;
+  }
+
+  resize(cssWidth: number, cssHeight: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.round(cssWidth * dpr);
+    this.canvas.height = Math.round(cssHeight * dpr);
+    this.canvas.style.width = `${cssWidth}px`;
+    this.canvas.style.height = `${cssHeight}px`;
+  }
+
+  render(state: OverlayState): void {
+    const { ctx } = this;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+    if (state.showConvexHull) this.drawConvexHulls(state.hulls);
+    this.drawPendingWall(state.pendingWallPoints, state.mouseWorld);
+    this.drawPendingRect(state.pendingRect);
+    this.drawSelection(state.selectionPolygon);
+    this.drawPendingPedestrians(state.pendingPedestrians, state.pedestrianRadius);
+    if (state.showDebug) this.drawDebug(state.debugLines);
+  }
+
+  /**
+   * Ports drawConvexHulls(): dashed, in each wall's own colour.
+   *
+   * The outline drawn is the hull *expanded by the pedestrian radius* -- the same
+   * geometry the navigation graph and the legality checks use. Drawing the raw
+   * hull instead would show a boundary that pedestrians appear to cross, because
+   * what actually cannot enter the wall is a circle, not a point. Expanded, the
+   * dashed line is exactly where a pedestrian's centre is allowed to go.
+   */
+  private drawConvexHulls(hulls: HullOutline[]): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.setLineDash(DASH);
+    ctx.lineWidth = 1;
+    for (const hull of hulls) {
+      if (hull.points.length < 2) continue;
+      ctx.globalAlpha = hull.faint ? 0.35 : 1;
+      ctx.strokeStyle = toCss(hull.color);
+      this.tracePath(hull.points, true);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  /** Ports drawTemporaryBorder()/drawTemporaryEdges(): white, dashed, dots on points. */
+  private drawPendingWall(points: Point[], mouse: Point | null): void {
+    if (points.length === 0) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = toCss(WHITE);
+    ctx.fillStyle = toCss(WHITE);
+    ctx.lineWidth = 1;
+
+    ctx.setLineDash(DASH);
+    this.tracePath(points, false);
+    // Rubber-band segment from the last placed point to the cursor.
+    if (mouse) {
+      const last = this.viewport.worldToScreen(points[points.length - 1]);
+      const m = this.viewport.worldToScreen(mouse);
+      ctx.moveTo(last[0], last[1]);
+      ctx.lineTo(m[0], m[1]);
+    }
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    for (const p of points) {
+      const s = this.viewport.worldToScreen(p);
+      ctx.beginPath();
+      ctx.arc(s[0], s[1], 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawPendingRect(rect: [Point, Point] | null): void {
+    if (!rect) return;
+    const { ctx } = this;
+    const a = this.viewport.worldToScreen(rect[0]);
+    const b = this.viewport.worldToScreen(rect[1]);
+    ctx.save();
+    ctx.setLineDash(DASH);
+    ctx.strokeStyle = toCss(WHITE);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+    ctx.restore();
+  }
+
+  /**
+   * Ports drawTemporaryPedestrians(): white dots where the brush would drop
+   * pedestrians. Only legal spots are passed in, so a position already taken by
+   * another pedestrian simply shows nothing.
+   */
+  private drawPendingPedestrians(points: Point[], radius: number): void {
+    if (points.length === 0) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.fillStyle = toCss(WHITE);
+    ctx.globalAlpha = 0.55;
+    const r = Math.max(1, radius * this.viewport.scale);
+    for (const p of points) {
+      const s = this.viewport.worldToScreen(p);
+      ctx.beginPath();
+      ctx.arc(s[0], s[1], r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawSelection(poly: Point[] | null): void {
+    if (!poly || poly.length < 2) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.setLineDash(DASH);
+    ctx.strokeStyle = toCss(YELLOW);
+    ctx.lineWidth = 1;
+    this.tracePath(poly, true);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Ports drawInformationString(): white text pinned to the top-left. */
+  private drawDebug(lines: string[]): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.fillStyle = toCss(WHITE);
+    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textBaseline = 'alphabetic';
+    lines.forEach((line, i) => ctx.fillText(line, 20, 20 + i * 20));
+    ctx.restore();
+  }
+
+  private tracePath(points: Point[], close: boolean): void {
+    const { ctx } = this;
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      const s = this.viewport.worldToScreen(p);
+      if (i === 0) ctx.moveTo(s[0], s[1]);
+      else ctx.lineTo(s[0], s[1]);
+    });
+    if (close) ctx.closePath();
+  }
+}
