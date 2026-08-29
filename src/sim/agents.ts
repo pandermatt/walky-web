@@ -1,6 +1,6 @@
 import { randomBrightColor, BLACK, type RGB } from '../palette';
 import { distance, type Point } from './geometry';
-import { Behaviour, SQRT2, interactionReach, paceScale } from './behaviour';
+import { Behaviour, SQRT2, interactionReach, paceScale, crowdPace } from './behaviour';
 import type { Navigation } from './navigation';
 import type { SpatialHash } from './spatialHash';
 import type { RestoredAgent } from '../state/scenario';
@@ -81,6 +81,15 @@ export class Agents {
   pushX: Float32Array;
   pushY: Float32Array;
   /**
+   * How many others were within arm's reach at the last step.
+   *
+   * Density, in the plainest form the model has, and the input to how fast this one
+   * walks. The room it manages to keep would seem the obvious measure and is not:
+   * that figure is floored and saturating by the time anything reads it, so a crowd
+   * packed to a standstill and one merely busy come out a few percent apart.
+   */
+  density: Float32Array;
+  /**
    * A stable number in [0,1) that makes this pedestrian slightly its own person:
    * how much room it keeps and how briskly it walks are both scaled by it.
    *
@@ -154,6 +163,7 @@ export class Agents {
     this.pressure = new Float32Array(capacity);
     this.pushX = new Float32Array(capacity);
     this.pushY = new Float32Array(capacity);
+    this.density = new Float32Array(capacity);
     this.trait = new Float32Array(capacity);
     this.assertiveness = new Float32Array(capacity);
     this.effectiveSpace = new Float32Array(capacity);
@@ -177,6 +187,7 @@ export class Agents {
     this.pressure[i] = 0;
     this.pushX[i] = 0;
     this.pushY[i] = 0;
+    this.density[i] = 0;
     this.trait[i] = traitOf(at[0], at[1], SPACE_SEED);
     this.assertiveness[i] = traitOf(at[0], at[1], NERVE_SEED);
     this.effectiveSpace[i] = 0;
@@ -247,6 +258,7 @@ export class Agents {
     this.pressure[i] = this.pressure[last];
     this.pushX[i] = this.pushX[last];
     this.pushY[i] = this.pushY[last];
+    this.density[i] = this.density[last];
     this.trait[i] = this.trait[last];
     this.assertiveness[i] = this.assertiveness[last];
     this.effectiveSpace[i] = this.effectiveSpace[last];
@@ -299,6 +311,7 @@ export class Agents {
     this.pressure.fill(0, 0, n);
     this.pushX.fill(0, 0, n);
     this.pushY.fill(0, 0, n);
+    this.density.fill(0, 0, n);
     this.effectiveSpace.fill(0, 0, n);
     // Not derived from the tick but from the pedestrian: recomputed rather than
     // restored, so it comes back identical without being stored.
@@ -344,6 +357,7 @@ export class Agents {
       this.pressure[i] = 0;
       this.pushX[i] = 0;
       this.pushY[i] = 0;
+      this.density[i] = 0;
       this.effectiveSpace[i] = 0;
     }
   }
@@ -422,7 +436,9 @@ export class Agents {
       // Not everyone walks at the setting. Slower neighbours give the brisker ones
       // someone to overtake, which is most of what makes a crowd look like a crowd
       // rather than a block sliding across the map.
-      const own = speed * paceScale(this.trait[i]);
+      // And slower the tighter it is: the room it managed to keep last step is
+      // this model's measure of how packed it is standing.
+      const own = speed * paceScale(this.trait[i]) * crowdPace(this.density[i]);
       const cap = Math.max(own, SQRT2);
       this.speedCounter[i] = Math.min(this.speedCounter[i] + own, cap);
 
@@ -510,6 +526,7 @@ export class Agents {
     this.pressure = copy(this.pressure, (n) => new Float32Array(n));
     this.pushX = copy(this.pushX, (n) => new Float32Array(n));
     this.pushY = copy(this.pushY, (n) => new Float32Array(n));
+    this.density = copy(this.density, (n) => new Float32Array(n));
     this.trait = copy(this.trait, (n) => new Float32Array(n));
     this.assertiveness = copy(this.assertiveness, (n) => new Float32Array(n));
     this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));

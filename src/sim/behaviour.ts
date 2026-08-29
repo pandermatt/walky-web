@@ -121,6 +121,48 @@ const PACE_SPREAD = 0.15;
 export function paceScale(trait: number): number {
   return 1 + PACE_SPREAD * trait;
 }
+
+/** The room this one would keep if nobody were in the way. */
+export function wantedSpace(trait: number, personalSpace: number): number {
+  return personalSpace * (1 - SPACE_SPREAD * trait);
+}
+
+/**
+ * What a pedestrian's pace comes to at a given amount of elbow room.
+ *
+ * The fundamental diagram from the other end. Personal space already gives way as
+ * a crowd packs; this is what that costs in speed, and without it a jam is a crowd
+ * standing at full stride, which is the one thing a jam is not.
+ *
+ * Weidmann fits an exponential in the density, and it is read off a plain count of
+ * who is within arm's reach. The room a pedestrian manages to keep looks like the
+ * measure to use and is not: by the time anything reads that figure it has been
+ * floored and saturated, so a crowd packed to a standstill and one merely busy come
+ * out a few percent apart -- the curve fitted to it never left 0.95.
+ *
+ * Reading last step's count is not a compromise: what it describes is a crowd, and
+ * a crowd does not reorganise itself inside one tick.
+ *
+ * Flat until the crowd is genuinely a crowd, which is the shape of the measured
+ * curve -- free flow holds its speed until a critical density and only then falls
+ * away. It is also what keeps the promise made above about giving: slowing people
+ * down makes them wait, waiting is what builds pressure, and pressure is what opens
+ * the valve. Without the free-flow allowance a comfortably spaced crowd walking to
+ * a goal generated just enough of it to start touching, which is exactly what the
+ * valve is not for.
+ *
+ * At the slowest speed setting this takes the step budget below one, and a
+ * pedestrian then moves every second or third tick rather than every tick. That
+ * looks coarse and is not: it is what walking slowly looks like on a lattice, and
+ * it only ever happens where the crowd is genuinely packed.
+ */
+const CROWD_PACE_FLOOR = 0.65;
+const PACE_DECAY = 0.22;
+export function crowdPace(density: number): number {
+  const over = density - FREE_NEIGHBOURS;
+  if (over <= 0) return 1;
+  return CROWD_PACE_FLOOR + (1 - CROWD_PACE_FLOOR) * Math.exp(-PACE_DECAY * over);
+}
 /**
  * A pedestrian's share of the personal-space setting: between 0.8 and 1 of it.
  *
@@ -213,9 +255,13 @@ const NERVE_LEAN = 1.0;
  * stays arched. Real crowds arch at a gap too; they do not do it permanently, and
  * what breaks the arch is that somebody gets squeezed.
  *
- * Two properties keep this honest. It is nought at nought pressure, so a crowd
- * nobody is leaning on behaves exactly as it did before -- being close to somebody
- * never earns you the right to walk into them, only being crushed does.
+ * Two properties keep this honest. It is nought below a threshold set above
+ * anything a walking crowd produces, so being close to somebody never earns you the
+ * right to walk into them -- only being genuinely crushed does. The threshold is
+ * measured, not guessed: a comfortably spaced crowd walking round an obstacle peaks
+ * at 1.05, a busy corridor at 1.29, and the front of a deep crush at 3.5. Because
+ * the allowance is exactly nought below it, no temperament can switch it on --
+ * aggression only scales something that is already zero.
  *
  * And the cap is per *pair*, not on the total. "No worse than now" is judged on the
  * sum, and a move that gathers the same sum onto one neighbour drives one body much
@@ -226,6 +272,9 @@ const NERVE_LEAN = 1.0;
  */
 export const SQUASH_MAX = 0.15;
 const SQUASH_HALF = 4;
+const SQUASH_ONSET = 1.5;
+/** How much sooner the pushiest start giving -- never below a calm crowd's peak. */
+const SHOVE_ONSET = 0.25;
 
 /**
  * Where the pushy end of the crowd begins, and how little room it settles for.
@@ -316,6 +365,17 @@ const FREE_NEIGHBOURS = 2;
  * loosened, and leaving the dial doing nothing at all.
  */
 const DENSITY_WINDOW = 3;
+/**
+ * The wider window pace is judged in, also as a multiple of the body radius.
+ *
+ * Wider than the one above, and it has to be. Personal space is judged at arm's
+ * reach because that is where being crowded starts to feel like something; but a
+ * crowd that has settled into the spacing these rules give it sits *outside* arm's
+ * reach almost everywhere, so a count taken there reads about one neighbour whether
+ * the corridor is busy or nearly empty. Pace needs to know how full the place is,
+ * not how pressed one pedestrian feels, and that is a question about a wider circle.
+ */
+const PACE_WINDOW = 5;
 
 /**
  * How far a pedestrian can be influenced from: its own body, its personal space,
@@ -403,16 +463,23 @@ export class Behaviour {
     // The pushy need far less of a crush before they start squeezing in, but they
     // still need some: nobody earns the right to walk through a standing crowd.
     const squashHalf = SQUASH_HALF * (1 - SHOVE_SQUEEZE * shove);
-    this.squash = SQUASH_MAX * radius * (load0 / (load0 + squashHalf));
-    const densityWindow = DENSITY_WINDOW * radius;
-    const densityWindow2 = densityWindow * densityWindow;
+    // A pushy one starts putting a shoulder in at a lighter crush than anybody
+    // else, which is the whole of what makes it pushy -- but not at a lighter one
+    // than a calm crowd ever reaches, or the promise above stops being a promise.
+    const crushed = Math.max(0, load0 - SQUASH_ONSET * (1 - SHOVE_ONSET * shove));
+    this.squash = SQUASH_MAX * radius * (crushed / (crushed + squashHalf));
+    const densityWindow2 = (DENSITY_WINDOW * radius) ** 2;
+    const paceWindow2 = (PACE_WINDOW * radius) ** 2;
     let crowd = 0;
+    let about = 0;
     for (let k = 0; k < n; k++) {
       const j = found[k];
       if (a.arrived[j]) continue;
       const cx = a.x[j] - a.x[self];
       const cy = a.y[j] - a.y[self];
-      if (cx * cx + cy * cy < densityWindow2) crowd++;
+      const c2 = cx * cx + cy * cy;
+      if (c2 < densityWindow2) crowd++;
+      if (c2 < paceWindow2) about++;
     }
     const compression = Math.max(
       COMPRESS_FLOOR,
@@ -423,7 +490,7 @@ export class Behaviour {
     // Two separate things: how much room this one likes, and whether it is the sort
     // to insist on it. Most of the crowd is not pushy at all and this second factor
     // is exactly 1 for them.
-    const wanted = personalSpace * (1 - SPACE_SPREAD * a.trait[self]);
+    const wanted = wantedSpace(a.trait[self], personalSpace);
     const space = wanted * Math.max(COMPRESS_FLOOR, Math.min(compression, pressed));
     // Being shoved from behind makes you tolerate the back of the person in front
     // of you. It does not make you willing to walk into somebody coming the other
@@ -436,6 +503,7 @@ export class Behaviour {
     // and counterflow arrivals fell by a third.
     const openSpace = wanted * compression;
     a.effectiveSpace[self] = space;
+    a.density[self] = about;
     const bubble = 2 * radius + space;
     const decay = Math.max(1, DECAY_FRACTION * bubble);
     const openBubble = 2 * radius + openSpace;

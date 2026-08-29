@@ -252,13 +252,19 @@ describe('how the crowd moves', () => {
     // x100 penalty on a crowd bound elsewhere makes them mutually repulsive -- but
     // never settled who passed on which side. A consistent passing side does.
     //
-    // Measured over several layouts, and deliberately not over one. Counterflow is
-    // the least reproducible thing this model does: shifting where the crowd is
-    // placed by a single pixel, which changes nothing anyone could describe, swings
-    // how many get through from 12 of 112 to 102. An earlier version of this test
-    // asserted 90% arrival from one layout that happened to land near the top of
-    // that range, which measured the layout rather than the model. What survives
-    // across layouts is that the streams separate, and that they do not seize up.
+    // Measured over several layouts, and deliberately not over one -- nor over
+    // three, which is what this used to do. Counterflow is the least reproducible
+    // thing this model does: shifting where the crowd is placed by a single pixel,
+    // which changes nothing anyone could describe, swings how many get through from
+    // 12 of 112 to 102. Three layouts read the mean separation as 24 where six read
+    // it as 42, so a sample this small measures the layout rather than the model.
+    // An even earlier version asserted 90% arrival from a single layout that landed
+    // near the top of that range.
+    //
+    // Nine hundred ticks rather than six, because a crowd that slows down when it
+    // is packed takes longer to cross the same corridor. That is the fundamental
+    // diagram doing its job, not the streams struggling: over these layouts the
+    // arrivals went *up* when it landed, from 108 to 110 of 112.
     const run = (shift: number) => {
       const top = makeWall([rectanglePolygon([-700, -220], [700, -170])]);
       const bottom = makeWall([rectanglePolygon([-700, 170], [700, 220])]);
@@ -288,7 +294,7 @@ describe('how the crowd moves', () => {
       }
 
       let separation = 0;
-      for (let t = 0; t < 600; t++) {
+      for (let t = 0; t < 900; t++) {
         agents.step(nav, hash, 4, R, 30);
         // How far apart the streams sit across the corridor, while both are in it.
         let ey = 0, en = 0, wy = 0, wn = 0;
@@ -301,16 +307,16 @@ describe('how the crowd moves', () => {
       return { separation, arrived: arrivedCount(agents), count: agents.count };
     };
 
-    const runs = [run(0), run(3), run(5)];
+    const runs = [run(0), run(1), run(2), run(3), run(4), run(5)];
     const mean = (pick: (r: typeof runs[0]) => number) =>
       runs.reduce((sum, r) => sum + pick(r), 0) / runs.length;
 
     // The streams find their own sides of the corridor rather than mixing.
     expect(mean((r) => r.separation)).toBeGreaterThan(30);
-    // And keep going. Some of them get through on every layout, and most do on
-    // average -- the ported rule managed 2 of 112.
-    for (const r of runs) expect(r.arrived).toBeGreaterThan(r.count * 0.1);
-    expect(mean((r) => r.arrived)).toBeGreaterThan(runs[0].count * 0.4);
+    // And keep going. The ported rule managed 2 of 112; this clears nearly all of
+    // them on every layout tried.
+    for (const r of runs) expect(r.arrived).toBeGreaterThan(r.count * 0.7);
+    expect(mean((r) => r.arrived)).toBeGreaterThan(runs[0].count * 0.9);
   });
 });
 
@@ -486,8 +492,72 @@ describe('assertive and polite pedestrians', () => {
       const got = xs.filter((i) => arrivedAt[i] >= 0).map((i) => arrivedAt[i]);
       return got.reduce((s, x) => s + x, 0) / Math.max(1, got.length);
     };
-    // They are out well before the patient ones: 407 against 717 when measured.
-    expect(meanTick(pushy)).toBeLessThan(meanTick(polite) * 0.8);
+    // Out well before the patient ones: 537 against 667 when measured.
+    //
+    // The margin is narrower than it was before pace fell with density, and for a
+    // reason worth keeping: shoving to the front of a crush puts you where the
+    // crowd is thickest and therefore where everybody is slowest, so part of what
+    // being pushy wins is spent on arriving somewhere worse to be. It was 407
+    // against 717 when the whole crowd walked at one speed.
+    expect(meanTick(pushy)).toBeLessThan(meanTick(polite) * 0.9);
+  });
+});
+
+describe('pace in a crowd', () => {
+  /** A corridor holds a crowd at a density; open ground lets it spread instead. */
+  function walk(n: number, pitch: number, halfHeight: number, ticks: number) {
+    const top = makeWall([rectanglePolygon([-900, -halfHeight - 60], [900, -halfHeight])]);
+    const bottom = makeWall([rectanglePolygon([-900, halfHeight], [900, halfHeight + 60])]);
+    const goal = makeWall([rectanglePolygon([820, -60], [900, 60])]);
+    goal.isGoal = true;
+    const nav = new Navigation();
+    nav.rebuild([top, bottom, goal], R);
+
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const y = -((n - 1) * pitch) / 2 + j * pitch;
+        if (Math.abs(y) > halfHeight - R - 2) continue;
+        const k = agents.add([-800 + i * pitch, y]);
+        agents.setGoal(k, goal.id, goal.color);
+      }
+    }
+    const px = Float32Array.from(agents.x.slice(0, agents.count));
+    const py = Float32Array.from(agents.y.slice(0, agents.count));
+    let distance = 0;
+    let steps = 0;
+    for (let t = 0; t < ticks; t++) {
+      agents.step(nav, hash, 4, R, 40);
+      for (let i = 0; i < agents.count; i++) {
+        if (agents.arrived[i]) continue;
+        distance += Math.hypot(agents.x[i] - px[i], agents.y[i] - py[i]);
+        steps++;
+        px[i] = agents.x[i];
+        py[i] = agents.y[i];
+      }
+    }
+    return distance / steps;
+  }
+
+  it('walks slower in a crowd than in a clear corridor', () => {
+    // The fundamental diagram. Without it a jam is a crowd standing at full stride,
+    // which is the one thing a jam is not -- pedestrians only ever slowed here by
+    // being blocked outright, never by the place filling up.
+    const clear = walk(6, 90, 300, 300);
+    const packed = walk(14, 30, 120, 300);
+    // Measured at 4.00 against 2.61 px a tick.
+    expect(packed).toBeLessThan(clear * 0.8);
+    // But a crowd is not treacle: it still gets on with it.
+    expect(packed).toBeGreaterThan(clear * 0.4);
+  });
+
+  it('leaves a pedestrian with room to itself walking at full pace', () => {
+    // Flat until the crowd is genuinely a crowd, which is the shape of the measured
+    // curve and also what keeps the giving shut: slowing people makes them wait,
+    // waiting builds pressure, and pressure is what lets bodies give.
+    const clear = walk(6, 90, 300, 300);
+    expect(clear).toBeGreaterThan(3.9);
   });
 });
 

@@ -262,6 +262,24 @@ Two further departures, both aimed squarely at the same complaint:
   it would take the pedestrian out of the pressure sum that is moving it, and the
   crowd would lurch on alternate ticks — and it does not turn the head either,
   because somebody shoved sideways is not facing sideways.
+- **A crowd walks slower than one person does.** The speed–density curve, and the
+  most validated result in the field. Pace was constant before, so pedestrians only
+  ever slowed by being blocked outright — a jam was a crowd standing at full stride,
+  which is the one thing a jam is not. It is flat until the place is genuinely full
+  and falls away after, which is the shape of the measured curve and not a straight
+  line through the same two ends: 4.0px a tick in a clear corridor against 2.6 in a
+  packed one. The flat start is load-bearing rather than cosmetic — slowing people
+  makes them wait, waiting is what builds pressure, and pressure is what lets bodies
+  give, so a curve that bit at low density quietly opened the valve in a crowd that
+  had room to walk in.
+
+  It is read off a plain count of who is within about five body radii. The room a
+  pedestrian manages to keep looks like the measure to use and is not: by the time
+  anything reads that figure it has been floored and saturated, and a curve fitted
+  to it never left 95% of full speed. The window is also wider than the one personal
+  space is judged in, because a crowd that has settled into the spacing these rules
+  give it sits *outside* arm's reach almost everywhere — counted there, a busy
+  corridor and an empty one read the same.
 - **A few of them simply push through.** The pushiest eighth need far less of a
   crush before they put a shoulder in. Everything that makes them pushy points
   *outward*, at what they are to everybody else; nothing points inward. A bully
