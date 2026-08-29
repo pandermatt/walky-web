@@ -222,6 +222,7 @@ const AGENT_ORIGIN_DIFFERS = 2;
 const AGENT_COLOR_REPEATS = 4;
 
 const WALL_IS_GOAL = 1;
+const WALL_IS_BORDER = 2;
 
 // ---- header ----------------------------------------------------------------
 
@@ -274,9 +275,10 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
   let cy = 0;
   let previousId = 0;
   core.walls.forEach((wall, index) => {
-    // One flag so far, and a whole byte for it: the room is what lets a wall
-    // gain a boolean without the format needing a new version.
-    w.byte(wall.isGoal ? WALL_IS_GOAL : 0);
+    // Two flags so far, and a whole byte for them: the room is what let the
+    // border flag be added without the format needing a new version. A link
+    // from before it simply has the bit clear, which is an ordinary wall.
+    w.byte((wall.isGoal ? WALL_IS_GOAL : 0) | (wall.isBorder ? WALL_IS_BORDER : 0));
     w.rgb(wall.color);
     // Ids run upward from a counter that never resets, so after the first one a
     // delta is almost always a single byte.
@@ -398,6 +400,7 @@ export function decodeScenarioBody(bytes: Uint8Array): ScenarioCore {
       polygons,
       color,
       isGoal: (bits & WALL_IS_GOAL) !== 0,
+      isBorder: (bits & WALL_IS_BORDER) !== 0,
     });
   }
 

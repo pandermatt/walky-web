@@ -22,7 +22,7 @@ function core(over: Partial<ScenarioCore> = {}): ScenarioCore {
 }
 
 function wall(id: number, polygons: Point[][], over: Partial<SerializedWall> = {}): SerializedWall {
-  return { id, polygons, color: [200, 30, 90], isGoal: false, ...over };
+  return { id, polygons, color: [200, 30, 90], isGoal: false, isBorder: false, ...over };
 }
 
 function box(x: number, y: number, w = 40, h = 30): Point[] {
@@ -52,7 +52,8 @@ function richScenario(): ScenarioCore {
     view: { targetX: 812.5, targetY: -344.25, zoomLevel: -3.5 },
     walls: [
       // A border frame: one wall, four overlapping bars.
-      wall(7, [box(0, 0, 400, 12), box(0, 300, 400, 12), box(0, 0, 12, 312), box(388, 0, 12, 312)]),
+      wall(7, [box(0, 0, 400, 12), box(0, 300, 400, 12), box(0, 0, 12, 312), box(388, 0, 12, 312)],
+        { isBorder: true }),
       // A traced shape, which is the kind that is not outlined on its own.
       wall(8, [Array.from({ length: 24 }, (_, i): Point => [500 + i * 7, 100 + (i % 5) * 11])],
         { color: [12, 240, 60] }),
@@ -123,6 +124,14 @@ describe('the scenario codec', () => {
     expect(Math.abs(after.view.targetX - 812.53)).toBeLessThanOrEqual(1 / 16);
     expect(Math.abs(after.view.targetY - -344.29)).toBeLessThanOrEqual(1 / 16);
     expect(Math.abs(after.view.zoomLevel - -3.51)).toBeLessThanOrEqual(1 / 256);
+  });
+
+  it('keeps the border flag, so a frame does not come back as an ordinary wall', () => {
+    const before = core({
+      walls: [wall(20, [box(0, 0)], { isBorder: true }), wall(21, [box(200, 0)])],
+    });
+    const after = decodeScenario(encodeScenario(before));
+    expect(after.walls.map((w) => w.isBorder)).toEqual([true, false]);
   });
 
   it('carries every goal to the right wall, and drops one that names no wall', () => {

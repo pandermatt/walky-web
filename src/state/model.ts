@@ -18,6 +18,18 @@ export interface Wall {
   hull: Point[];
   color: RGB;
   isGoal: boolean;
+  /**
+   * Set on the frame the border tool commits, and on nothing else.
+   *
+   * An enclosure is the one shape whose convex hull says something false: the
+   * hull of a frame is the solid rectangle it encloses, so the outline would
+   * claim the room's walkable interior as part of the obstacle, and every shape
+   * inside or against the frame would be swallowed into that one group and lose
+   * its own outline. So a border is left out of the hull grouping entirely --
+   * see groupWalls. It is a wall like any other everywhere else: it blocks,
+   * navigates, colours, selects and deletes the same.
+   */
+  isBorder: boolean;
   selected: boolean;
 }
 
@@ -132,16 +144,19 @@ export function allPoints(wall: Wall): Point[] {
 
 export interface WallOptions {
   color?: RGB;
+  /** True only for a border frame; see Wall.isBorder. */
+  isBorder?: boolean;
 }
 
 export function makeWall(polygons: Point[][], options: WallOptions = {}): Wall {
-  const { color = randomBrightColor() } = options;
+  const { color = randomBrightColor(), isBorder = false } = options;
   return {
     id: nextId++,
     polygons,
     hull: monotoneChainHull(polygons.flat()),
     color,
     isGoal: false,
+    isBorder,
     selected: false,
   };
 }

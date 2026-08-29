@@ -12,11 +12,19 @@ import { polygonsOverlap, type Wall } from './model';
  * its own identity, colour and (eventually) deletability -- the grouping is
  * recomputed from scratch whenever walls change, so it can never accumulate.
  *
- * One group per connected set of shapes, one hull over all of it, with nothing
- * left out: a shape touching nothing is a group of one and is hulled just the
- * same, and a freehand trace shapes the hull of whatever it touches like any
- * other member -- a squiggle laid across two buildings puts all three under one
- * outline.
+ * One group per connected set of shapes, one hull over all of it: a shape
+ * touching nothing is a group of one and is hulled just the same, and a freehand
+ * trace shapes the hull of whatever it touches like any other member -- a
+ * squiggle laid across two buildings puts all three under one outline.
+ *
+ * Border frames are the one exception, and are skipped entirely: they get no
+ * outline, and they join nothing to anything. A frame's hull is the solid
+ * rectangle it encloses, so it would draw the room's walkable interior as if it
+ * were the obstacle -- and since a frame reaches all the way round the map,
+ * everything inside it touches it and would collapse into that single hull,
+ * leaving the buildings inside with no outline of their own. Skipping the frame
+ * is what lets two rectangles drawn inside an enclosure be hulled as the two
+ * rectangles they are.
  */
 export interface WallGroup {
   /** Every wall in the group, lowest id first. */
@@ -46,7 +54,8 @@ function wallsTouchWithin(a: Wall, b: Wall, tolerance: number): boolean {
   return false;
 }
 
-export function groupWalls(walls: Wall[], tolerance = GROUP_TOLERANCE): WallGroup[] {
+export function groupWalls(allWalls: Wall[], tolerance = GROUP_TOLERANCE): WallGroup[] {
+  const walls = allWalls.filter((w) => !w.isBorder);
   const n = walls.length;
   if (n === 0) return [];
 

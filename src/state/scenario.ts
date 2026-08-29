@@ -17,8 +17,10 @@ import {
  * matters now that a snapshot can be opened again rather than only read: a
  * pedestrian takes the colour of the goal it is heading for, so a snapshot
  * without it describes a map that looks different from the one it was taken of.
+ * Version 3 added the border flag, for the same reason: a frame reopened as an
+ * ordinary wall would swallow every outline on the map.
  */
-export const SCENARIO_VERSION = 2;
+export const SCENARIO_VERSION = 3;
 
 /**
  * A pedestrian as it is stored: where it is, where it started, and what it is
@@ -53,6 +55,8 @@ export interface SerializedWall {
   polygons: Point[][];
   color: RGB;
   isGoal: boolean;
+  /** Whether this wall is a border frame; see Wall.isBorder. */
+  isBorder: boolean;
 }
 
 /**
@@ -109,6 +113,7 @@ export function serializeCore(input: ScenarioInput): ScenarioCore {
       polygons: w.polygons.map((poly) => poly.map(([x, y]) => [round(x), round(y)] as Point)),
       color: w.color,
       isGoal: w.isGoal,
+      isBorder: w.isBorder,
     })),
     agents: input.agents.map((a) => ({
       x: round(a.x),
@@ -209,7 +214,9 @@ export function buildWorld(core: ScenarioCore): { walls: Wall[]; agents: Restore
   for (const sw of core.walls) {
     const polygons = sw.polygons.filter((poly) => poly.length >= 3);
     if (polygons.length === 0) continue;
-    const wall = makeWall(polygons, { color: sw.color });
+    // `=== true` rather than a plain read: a report written before the flag
+    // existed simply has no field there, and that is an ordinary wall.
+    const wall = makeWall(polygons, { color: sw.color, isBorder: sw.isBorder === true });
     wall.isGoal = sw.isGoal;
     walls.push(wall);
     idMap.set(sw.id, wall.id);

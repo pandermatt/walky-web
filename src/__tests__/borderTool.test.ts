@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { borderFrame, borderFits, makeWall, rectanglePolygon } from '../state/model';
+import { BorderTool } from '../tools/borderTool';
+import type { PointerInfo, ToolContext } from '../tools/types';
+import {
+  DEFAULT_SETTINGS, borderFrame, borderFits, makeWall, rectanglePolygon, type WallOptions,
+} from '../state/model';
 import { Navigation } from '../sim/navigation';
 import { Agents } from '../sim/agents';
 import { SpatialHash } from '../sim/spatialHash';
@@ -99,5 +103,51 @@ describe('an enclosure encloses', () => {
       agents.step(nav, hash, 6, R, PREF);
     }
     expect(agents.arrived[i]).toBe(1);
+  });
+});
+
+describe('BorderTool', () => {
+  /** A context that records what the tool commits and nothing else. */
+  function stubContext(): { ctx: ToolContext; walls: { polygons: Point[][]; options?: WallOptions }[] } {
+    const walls: { polygons: Point[][]; options?: WallOptions }[] = [];
+    const ctx = {
+      addWall: () => true,
+      addWallShape: (polygons: Point[][], options?: WallOptions) => {
+        walls.push({ polygons, options });
+        return true;
+      },
+      settings: () => DEFAULT_SETTINGS,
+      pedestrianBlock: () => [],
+      addPedestrians: () => {},
+      setGoalAt: () => {},
+      selectPedestrianAt: () => {},
+      selectPedestriansIn: () => {},
+      clearSelection: () => {},
+      selectionCount: () => 0,
+      deactivateTool: () => {},
+      panBy: () => {},
+      requestRender: () => {},
+      colorAt: () => null,
+      agentPositions: () => [],
+      worldPerPixel: () => 1,
+    } satisfies ToolContext;
+    return { ctx, walls };
+  }
+
+  function at(world: Point, buttons = 1): PointerInfo {
+    return { world, screen: world, dxScreen: 0, dyScreen: 0, shiftKey: false, buttons };
+  }
+
+  it('marks the frame it commits as a border, so the hull grouping skips it', () => {
+    const { ctx, walls } = stubContext();
+    const tool = new BorderTool();
+
+    tool.onPointerDown(at(A), ctx);
+    tool.onPointerMove(at(B), ctx);
+    tool.onPointerUp(at(B, 0), ctx);
+
+    expect(walls).toHaveLength(1);
+    expect(walls[0].polygons).toHaveLength(4);
+    expect(walls[0].options?.isBorder).toBe(true);
   });
 });

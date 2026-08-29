@@ -53,9 +53,12 @@ describe('groupWalls', () => {
     }
   });
 
-  it('groups the bars of a border frame as one, since it is one wall', () => {
-    const frame = makeWall(borderFrame([0, 0] as Point, [400, 300] as Point, 12));
-    expect(groupWalls([frame])).toHaveLength(1);
+  it('groups the shapes of a multi-polygon wall as one, since it is one wall', () => {
+    const twoBars = makeWall([
+      rectanglePolygon([0, 0], [400, 12]),
+      rectanglePolygon([0, 288], [400, 300]),
+    ]);
+    expect(groupWalls([twoBars])).toHaveLength(1);
   });
 
   it('handles an empty map', () => {
@@ -98,5 +101,47 @@ describe('groupWalls', () => {
     expect(groups[0].hull).toEqual(monotoneChainHull([
       ...left.polygons.flat(), ...right.polygons.flat(), ...bridge.polygons.flat(),
     ]));
+  });
+});
+
+/**
+ * A border frame is left out of the hull grouping. Its hull is the room it
+ * encloses, and since it reaches around the whole map, everything inside touches
+ * it -- grouped, the frame's outline would be the only one left on the map.
+ */
+describe('groupWalls and border frames', () => {
+  const frame = () => makeWall(borderFrame([-500, -340] as Point, [400, 310] as Point, 4), { isBorder: true });
+
+  it('draws no outline for a border frame on its own', () => {
+    expect(groupWalls([frame()])).toEqual([]);
+  });
+
+  it('does not swallow a shape that pokes through the frame', () => {
+    // The reported scenario: a rectangle overlapping the frame's left bar.
+    const building = makeWall([rectanglePolygon([-560, -76], [-303, -12])]);
+    const groups = groupWalls([frame(), building]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].wallIds).toEqual([building.id]);
+    expect(groups[0].hull).toEqual(monotoneChainHull(building.polygons.flat()));
+  });
+
+  it('hulls two shapes inside a frame to themselves, not to the frame', () => {
+    const across = makeWall([rectanglePolygon([-560, -76], [-303, -12])]);
+    const upright = makeWall([rectanglePolygon([-407, -204], [-335, -34])]);
+    const groups = groupWalls([frame(), across, upright]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].wallIds).toEqual([across.id, upright.id].sort((x, y) => x - y));
+    // The two rectangles, not the frame: nothing reaches the frame's corners.
+    expect(groups[0].hull).toEqual(
+      monotoneChainHull([...across.polygons.flat(), ...upright.polygons.flat()]),
+    );
+  });
+
+  it('does not join two shapes that only touch each other through the frame', () => {
+    const west = makeWall([rectanglePolygon([-560, -76], [-303, -12])]);
+    const east = makeWall([rectanglePolygon([300, -76], [500, -12])]);
+    expect(groupWalls([frame(), west, east])).toHaveLength(2);
   });
 });

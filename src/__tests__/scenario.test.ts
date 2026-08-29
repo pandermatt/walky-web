@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   SCENARIO_VERSION, buildWorld, clampSettings, scenarioToJson, serializeCore, serializeScenario,
-  type ScenarioCore, type SerializedAgent,
+  type ScenarioCore, type SerializedAgent, type SerializedWall,
 } from '../state/scenario';
 import { DEFAULT_SETTINGS, makeWall, rectanglePolygon, type Settings } from '../state/model';
 import { BLACK } from '../palette';
@@ -117,8 +117,8 @@ describe('settings out of an untrusted map', () => {
 describe('building a world out of a snapshot', () => {
   const snapshot = () => core({
     walls: [
-      { id: 100, polygons: [rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false },
-      { id: 101, polygons: [rectanglePolygon([20, 0], [30, 10])], color: [255, 190, 0], isGoal: true },
+      { id: 100, polygons: [rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false, isBorder: false },
+      { id: 101, polygons: [rectanglePolygon([20, 0], [30, 10])], color: [255, 190, 0], isGoal: true, isBorder: false },
     ],
     agents: [
       agent({ x: 1, y: 1, goal: 101, color: [255, 190, 0] }),
@@ -148,6 +148,17 @@ describe('building a world out of a snapshot', () => {
     expect(walls.map((w) => w.color)).toEqual([[1, 2, 3], [255, 190, 0]]);
   });
 
+  it('brings a border frame back as a border, and a report without the field as an ordinary wall', () => {
+    const restored = buildWorld(core({
+      walls: [
+        { id: 1, polygons: [rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false, isBorder: true },
+        // A report written before the flag existed: no field at all.
+        { id: 2, polygons: [rectanglePolygon([20, 0], [30, 10])], color: [1, 2, 3], isGoal: false } as unknown as SerializedWall,
+      ],
+    }));
+    expect(restored.walls.map((w) => w.isBorder)).toEqual([true, false]);
+  });
+
   it('recomputes the hull rather than trusting a stored one', () => {
     const { walls } = buildWorld(snapshot());
     expect(walls[0].hull.length).toBe(4);
@@ -162,8 +173,8 @@ describe('building a world out of a snapshot', () => {
   it('drops a shape too thin to be one, and a wall left with none', () => {
     const world = buildWorld(core({
       walls: [
-        { id: 1, polygons: [[[0, 0], [1, 1]]], color: [1, 2, 3], isGoal: false },
-        { id: 2, polygons: [[[0, 0]], rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false },
+        { id: 1, polygons: [[[0, 0], [1, 1]]], color: [1, 2, 3], isGoal: false, isBorder: false },
+        { id: 2, polygons: [[[0, 0]], rectanglePolygon([0, 0], [10, 10])], color: [1, 2, 3], isGoal: false, isBorder: false },
       ],
       agents: [agent({ goal: 1 })],
     }));

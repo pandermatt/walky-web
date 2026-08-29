@@ -90,7 +90,9 @@ export class BorderTool implements Tool {
 
   private commit(a: Point, b: Point, ctx: ToolContext): void {
     if (borderFits(a, b, this.thickness, this.radius)) {
-      ctx.addWallShape(borderFrame(a, b, this.thickness));
+      // Flagged as a border: the dashed hull skips it, since a frame's hull is
+      // the room it encloses rather than the shape itself. See Wall.isBorder.
+      ctx.addWallShape(borderFrame(a, b, this.thickness), { isBorder: true });
     }
     this.cancel();
     ctx.requestRender();
