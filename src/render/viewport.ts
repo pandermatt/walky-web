@@ -47,9 +47,26 @@ export class Viewport {
 
   /** Zoom by whole notches, keeping the world point under the cursor fixed. */
   zoomAt(screen: Point, notches: number): void {
+    this.zoomAbout(screen, this.zoomLevel + notches);
+  }
+
+  /**
+   * Zoom by a scale ratio -- what a pinch measures -- about a screen point.
+   *
+   * Fingers have no detents, so this lands between the original's stops where
+   * the wheel never could. Those stops are ZoomMouseListener's, and
+   * ZoomMouseListener had a wheel and no fingers to be faithful to; the level
+   * stays the source of truth either way, it simply stops being a whole number.
+   */
+  zoomByRatio(screen: Point, ratio: number): void {
+    if (!(ratio > 0) || !Number.isFinite(ratio)) return;
+    this.zoomAbout(screen, this.zoomLevel - Math.log(ratio) / Math.log(ZOOM_FACTOR));
+  }
+
+  /** Move to a zoom level with one screen point left over the same world point. */
+  private zoomAbout(screen: Point, level: number): void {
     const before = this.screenToWorld(screen);
-    const next = this.zoomLevel + notches;
-    this.zoomLevel = Math.max(ZOOM_LEVEL_MIN, Math.min(ZOOM_LEVEL_MAX, next));
+    this.zoomLevel = Math.max(ZOOM_LEVEL_MIN, Math.min(ZOOM_LEVEL_MAX, level));
     const after = this.screenToWorld(screen);
     this.targetX += before[0] - after[0];
     this.targetY += before[1] - after[1];

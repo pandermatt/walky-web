@@ -140,6 +140,16 @@ Bugs found while porting, all with regression tests:
   see the effect immediately, without leaving the tool you are holding. Picking any
   tool closes the settings panel, which otherwise sits over the canvas you are
   about to draw on, and the settings button shows a pressed state while it is open.
+- **Two fingers pinch to zoom**, and carry the map with them as they go: a pinch
+  that only scaled would feel as if the map had come loose from the fingers. The
+  wheel keeps `ZoomMouseListener`'s stops, 1.1× a notch; fingers have no detents,
+  so a pinch lands between them and the zoom level simply stops being a whole
+  number. The second finger also takes back whatever the first one started —
+  which is why, on a touchscreen only, a tool is told about a press when the
+  finger moves or lifts rather than when it lands. A tool that has already
+  dropped a pedestrian or reassigned every goal cannot be talked out of it by a
+  `cancel()` afterwards, and the second finger of a pinch always arrives after
+  the first.
 - **One-shot tools disarm themselves.** Assigning a goal clears the selection and
   steps off the tool, so the next click cannot reassign by accident. Escape does
   the same from anywhere.

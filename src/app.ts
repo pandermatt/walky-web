@@ -51,6 +51,17 @@ export class App {
   private tool: Tool | null = null;
   private mouseWorld: Point | null = null;
   private lastScreen: Point | null = null;
+  /** Every finger currently down on the canvas, in element space. */
+  private pointers = new Map<number, Point>();
+  /** Gap and midpoint of the two fingers as of the last move, while pinching. */
+  private pinch: { gap: number; mid: Point } | null = null;
+  /**
+   * A touch's pointerdown, held back until it is clear the finger is drawing
+   * rather than opening a pinch.
+   */
+  private pendingTouch: { id: number; info: PointerInfo } | null = null;
+  /** Set once the pinch has taken the gesture, until the last finger lifts. */
+  private gestureTaken = false;
   private frameRequested = false;
   /** Bumped on map edits only -- walls and trees. */
   private worldRevision = 0;
@@ -207,13 +218,57 @@ export class App {
       if (ev.button === 2) return;
       (el as HTMLElement).setPointerCapture?.(ev.pointerId);
       const e = info(ev);
+      this.pointers.set(ev.pointerId, e.screen);
+
+      if (this.pointers.size === 2) {
+        // A second finger says the first one was never a stroke. Whatever it
+        // began is taken back here, before the map starts moving under it.
+        this.pendingTouch = null;
+        this.tool?.cancel?.();
+        this.lastScreen = null;
+        this.gestureTaken = true;
+        this.pinch = this.measurePinch();
+        this.requestRender();
+        return;
+      }
+      if (this.pointers.size > 2 || this.gestureTaken) return;
+
       this.lastScreen = e.screen;
+      if (ev.pointerType === 'touch') {
+        /*
+         * Held rather than delivered. A tool that has already dropped a
+         * pedestrian or reassigned a goal cannot be talked out of it by a
+         * cancel(), and the second finger of a pinch arrives after the first --
+         * so on a touchscreen the tool hears about the press only once the
+         * finger has moved or lifted, which is when it is certainly a stroke.
+         */
+        this.pendingTouch = { id: ev.pointerId, info: e };
+        return;
+      }
       this.tool?.onPointerDown?.(e, this.context);
       this.requestRender();
     });
 
     el.addEventListener('pointermove', (ev) => {
       const e = info(ev);
+
+      if (this.pinch) {
+        this.pointers.set(ev.pointerId, e.screen);
+        const now = this.measurePinch();
+        if (now && this.pinch.gap > 0) {
+          // The midpoint carries the map with it, so the same gesture pans:
+          // two fingers travelling together are a drag, and holding the view
+          // still under them would feel like the map had come loose.
+          this.viewport.panBy(now.mid[0] - this.pinch.mid[0], now.mid[1] - this.pinch.mid[1]);
+          this.viewport.zoomByRatio(now.mid, now.gap / this.pinch.gap);
+          this.pinch = now;
+          this.requestRender();
+        }
+        return;
+      }
+      if (this.gestureTaken) return;
+      if (this.pendingTouch?.id === ev.pointerId) this.flushPendingTouch();
+
       this.mouseWorld = e.world;
       this.tool?.onPointerMove?.(e, this.context);
       this.lastScreen = e.screen;
@@ -221,8 +276,20 @@ export class App {
     });
 
     el.addEventListener('pointerup', (ev) => {
+      if (this.releasePointer(ev.pointerId)) return;
+      if (this.pendingTouch?.id === ev.pointerId) this.flushPendingTouch();
       const e = info(ev);
       this.tool?.onPointerUp?.(e, this.context);
+      this.lastScreen = null;
+      this.requestRender();
+    });
+
+    // The browser taking a gesture back mid-stroke: nothing was finished, so
+    // nothing should be committed.
+    el.addEventListener('pointercancel', (ev) => {
+      this.releasePointer(ev.pointerId);
+      this.pendingTouch = null;
+      this.tool?.cancel?.();
       this.lastScreen = null;
       this.requestRender();
     });
@@ -245,8 +312,46 @@ export class App {
     });
   }
 
+  /** Gap and midpoint of the first two fingers down, or null if fewer than two. */
+  private measurePinch(): { gap: number; mid: Point } | null {
+    const [a, b] = [...this.pointers.values()];
+    if (!a || !b) return null;
+    return {
+      gap: Math.hypot(b[0] - a[0], b[1] - a[1]),
+      mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+    };
+  }
+
+  /** Hands the tool the press it was not told about at the time. */
+  private flushPendingTouch(): void {
+    const held = this.pendingTouch;
+    if (!held) return;
+    this.pendingTouch = null;
+    this.lastScreen = held.info.screen;
+    this.tool?.onPointerDown?.(held.info, this.context);
+  }
+
+  /**
+   * Forgets a finger.
+   *
+   * @returns true when the release belonged to the pinch and the tool should
+   *   hear nothing about it -- including the finger still down after the other
+   *   has gone, which is a leftover rather than the start of a stroke.
+   */
+  private releasePointer(id: number): boolean {
+    this.pointers.delete(id);
+    const wasGesture = this.gestureTaken;
+    if (this.pinch && this.pointers.size < 2) this.pinch = null;
+    else if (this.pinch) this.pinch = this.measurePinch();
+    if (this.pointers.size === 0) this.gestureTaken = false;
+    if (wasGesture) this.lastScreen = null;
+    return wasGesture;
+  }
+
   private setTool(id: ToolId | null): void {
     this.tool?.cancel?.();
+    // A press held back for the old tool is not the new tool's to receive.
+    this.pendingTouch = null;
     this.tool = id ? this.tools.get(id) ?? null : null;
     this.toolbar.selectTool(this.tool ? this.tool.id : null, true);
     // Picking a tool means you are done with settings; leaving it open would sit
