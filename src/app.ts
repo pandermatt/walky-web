@@ -4,7 +4,7 @@ import { Viewport } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
   DEFAULT_SETTINGS, makeWall, makeTree, wallContains,
-  type Settings, type Tree, type Wall,
+  type Settings, type Tree, type Wall, type WallOptions,
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { groupWalls, type WallGroup } from './state/groups';
@@ -115,8 +115,8 @@ export class App {
   // ---- world mutations exposed to tools -----------------------------------
 
   private context: ToolContext = {
-    addWall: (polygon) => this.addWall(polygon),
-    addWallShape: (polygons) => this.addWallShape(polygons),
+    addWall: (polygon, options) => this.addWall(polygon, options),
+    addWallShape: (polygons, options) => this.addWallShape(polygons, options),
     settings: () => this.settings,
     addTree: (at) => { this.trees = [...this.trees, makeTree(at)]; this.touch(); },
     pedestrianBlock: (at) => this.pedestrianBlock(at),
@@ -336,16 +336,16 @@ export class App {
    *
    * Shapes that touch are still drawn under one outline; see groupWalls.
    */
-  private addWall(polygon: Point[]): boolean {
-    return this.addWallShape([polygon]);
+  private addWall(polygon: Point[], options?: WallOptions): boolean {
+    return this.addWallShape([polygon], options);
   }
 
   /** Adds one wall built from several polygons, as the border tool needs. */
-  private addWallShape(polygons: Point[][]): boolean {
+  private addWallShape(polygons: Point[][], options?: WallOptions): boolean {
     const usable = polygons.filter((p) => p.length >= 3);
     if (usable.length === 0) return false;
 
-    const wall = makeWall(usable);
+    const wall = makeWall(usable, options);
     this.walls = [...this.walls, wall];
     this.removeAgentsUnder(wall);
     this.navDirty = true;

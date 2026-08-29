@@ -33,6 +33,22 @@ describe('isVisible', () => {
   });
 });
 
+describe('walls left out of the convex hull calculation', () => {
+  const U: Point[] = [[0, 0], [200, 0], [200, 60], [60, 60], [60, 200], [200, 200], [200, 260], [0, 260]];
+
+  it('get no shell, but the same obstacles, nodes and blocking as a hulled wall', () => {
+    const hulled = buildVisibilityGraph([makeWall([U])], RADIUS);
+    const freehand = buildVisibilityGraph([makeWall([U], { hulled: false })], RADIUS);
+
+    expect(hulled.shells).toHaveLength(1);
+    expect(freehand.shells).toHaveLength(0);
+    // The broad phase is all that is lost: the parts come from the polygon.
+    expect(freehand.obstacles.map((o) => o.hull)).toEqual(hulled.obstacles.map((o) => o.hull));
+    expect(freehand.nodes).toEqual(hulled.nodes);
+    expect(isVisible([-40, 130], [240, 130], freehand)).toBe(false);
+  });
+});
+
 describe('buildVisibilityGraph', () => {
   it('puts nodes clear of the wall, with room to stand', () => {
     const wall = makeWall([rectanglePolygon([0, 0], [100, 100])]);

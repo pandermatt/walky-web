@@ -1,5 +1,5 @@
 import type { Point } from '../sim/geometry';
-import type { Settings } from '../state/model';
+import type { Settings, WallOptions } from '../state/model';
 
 export type ToolId =
   | 'wall' | 'rectangle' | 'border' | 'pedestrian'
@@ -7,9 +7,9 @@ export type ToolId =
 
 /** What a tool is allowed to do to the world, kept narrow on purpose. */
 export interface ToolContext {
-  addWall(polygon: Point[]): boolean;
+  addWall(polygon: Point[], options?: WallOptions): boolean;
   /** Adds one wall made of several polygons, as a border frame is. */
-  addWallShape(polygons: Point[][]): boolean;
+  addWallShape(polygons: Point[][], options?: WallOptions): boolean;
   /** Current settings, for tools that need sizes at preview time. */
   settings(): Readonly<Settings>;
   /** Legal positions in the brush block centred on `at`, for placement and preview. */

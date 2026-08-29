@@ -15,10 +15,10 @@ import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type Tool
  *
  * A traced stroke is simplified before it becomes a wall. Sampling produces a
  * point every few pixels -- hundreds for one shape -- and each would be a polygon
- * vertex. Vertex count drives the whole navigation pipeline: the convex hull, the
- * split into convex parts, and the O(n^2) visibility sweep over the resulting
- * corners. Simplifying first keeps the shape while cutting that cost by an order
- * of magnitude.
+ * vertex. Vertex count drives the whole navigation pipeline: the split into
+ * convex parts, and the O(n^2) visibility sweep over the resulting corners.
+ * Simplifying first keeps the shape while cutting that cost by an order of
+ * magnitude.
  */
 
 /** Minimum gap between placed vertices in click mode, in world units. */
@@ -29,6 +29,19 @@ const SAMPLE_SPACING_PX = 3;
 const SIMPLIFY_TOLERANCE_PX = 2.5;
 /** Past this, a press-and-release counts as a trace rather than a click. */
 const DRAG_THRESHOLD_PX = 5;
+
+/**
+ * Shapes from this tool are left out of the convex hull calculation.
+ *
+ * The hull is a summary that only reads as one for a roughly convex shape. What
+ * this tool makes is a freehand outline -- an S, a spiral, a room traced by hand
+ * -- and its hull is a blob that bears no resemblance to what was drawn, and that
+ * drags every wall it touches into the same blob, since the dashed outline is
+ * drawn per connected group. Navigation is unaffected: it runs on the convex
+ * decomposition of the polygon, not on this hull, so the shape blocks and is
+ * walked around exactly as before. See Wall.hulled.
+ */
+const NOT_HULLED = { hulled: false } as const;
 
 export class WallTool implements Tool {
   readonly id = 'wall' as const;
@@ -84,7 +97,7 @@ export class WallTool implements Tool {
 
   onDoubleClick(e: PointerInfo, ctx: ToolContext): void {
     this.addPoint(e.world, true);
-    if (this.points.length >= 3) ctx.addWall(this.points);
+    if (this.points.length >= 3) ctx.addWall(this.points, NOT_HULLED);
     this.cancel();
     ctx.requestRender();
   }
@@ -113,7 +126,7 @@ export class WallTool implements Tool {
     const tolerance = SIMPLIFY_TOLERANCE_PX * ctx.worldPerPixel();
     const simplified = simplifyClosed(this.stroke, tolerance)
       .map((p) => [Math.round(p[0]), Math.round(p[1])] as Point);
-    if (simplified.length >= 3) ctx.addWall(simplified);
+    if (simplified.length >= 3) ctx.addWall(simplified, NOT_HULLED);
     this.cancel();
     ctx.requestRender();
   }
