@@ -43,7 +43,7 @@ export interface ToolContext {
  * always previews the real thing at the real size, the way the pedestrian brush
  * already did.
  */
-export type GhostKind = 'square' | 'point' | 'tree' | 'target' | 'none';
+export type GhostKind = 'square' | 'squiggle' | 'tree' | 'target' | 'none';
 
 export interface CursorGhost {
   kind: GhostKind;

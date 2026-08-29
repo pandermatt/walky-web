@@ -42,7 +42,7 @@ export class WallTool implements Tool {
     return {
       ...EMPTY_PREVIEW,
       pendingWallPoints: this.points,
-      cursorGhost: this.mouse ? { kind: 'point', at: this.mouse, size: 5 } : null,
+      cursorGhost: this.mouse ? { kind: 'squiggle', at: this.mouse, size: 14 } : null,
     };
   }
 

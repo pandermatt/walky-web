@@ -243,12 +243,28 @@ export class Overlay {
         ctx.strokeRect(x, y, size, size);
         break;
       }
-      case 'point':
-        ctx.globalAlpha = 0.8;
-        ctx.beginPath();
-        ctx.arc(at[0], at[1], 4, 0, Math.PI * 2);
-        ctx.fill();
+      case 'squiggle': {
+        // The freehand wall tool's badge, in the same spot and colour as the
+        // rectangle tool's square: a hand-drawn wave for a hand-drawn polygon.
+        const size = 14;
+        const gap = 3;
+        const x = at[0] + gap;
+        const y = at[1] + gap;
+        const wave = new Path2D();
+        wave.moveTo(x, y + size * 0.72);
+        wave.quadraticCurveTo(x + size * 0.22, y + size * 1.05, x + size * 0.5, y + size * 0.42);
+        wave.quadraticCurveTo(x + size * 0.78, y - size * 0.22, x + size, y + size * 0.2);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        // A dark pass underneath keeps it legible over a bright wall.
+        ctx.strokeStyle = GHOST_BLUE_EDGE;
+        ctx.lineWidth = 4.5;
+        ctx.stroke(wave);
+        ctx.strokeStyle = GHOST_BLUE;
+        ctx.lineWidth = 2.5;
+        ctx.stroke(wave);
         break;
+      }
       case 'tree':
         ctx.globalAlpha = 0.5;
         ctx.beginPath();
