@@ -10,38 +10,42 @@ import { debugTextOrigin, labelBox } from '../render/overlay';
 /** Five lines of the widest thing debugLines() writes, near enough. */
 const LINES = 5;
 const TEXT_W = 200;
+/** A laptop window, in CSS pixels. */
+const VIEW = { width: 1000, height: 800 };
 /** The browser strip: a column of 40px cells, 6px padding, 12px in from both edges. */
-const COLUMN = { left: 12, top: 12, right: 64, bottom: 612 };
+const COLUMN = { left: 12, top: 12, right: 64, bottom: 788 };
+/** The baseline of the first of five lines, sitting 20px off the bottom edge. */
+const FIRST = VIEW.height - 20 - (LINES - 1) * 20;
 
 describe('debugTextOrigin', () => {
-  it('keeps the original corner when nothing is in the way', () => {
-    expect(debugTextOrigin(LINES, TEXT_W, null)).toEqual([20, 20]);
+  it('sits in the bottom-left corner when nothing is in the way', () => {
+    expect(debugTextOrigin(LINES, TEXT_W, null, VIEW)).toEqual([20, FIRST]);
   });
 
-  it('indents past the browser toolbar, which shares that corner', () => {
-    expect(debugTextOrigin(LINES, TEXT_W, COLUMN)).toEqual([76, 20]);
+  it('indents past the browser toolbar, whose column reaches that corner', () => {
+    expect(debugTextOrigin(LINES, TEXT_W, COLUMN, VIEW)).toEqual([76, FIRST]);
   });
 
-  it('stays in the corner when the bar is across the bottom, as installed', () => {
-    const bar = { left: 12, top: 700, right: 800, bottom: 780 };
-    expect(debugTextOrigin(LINES, TEXT_W, bar)).toEqual([20, 20]);
+  it('stays in the corner when the column stops short of the readout', () => {
+    // A column of a few buttons on a tall window: nowhere near the bottom.
+    const bar = { left: 12, top: 12, right: 64, bottom: 300 };
+    expect(debugTextOrigin(LINES, TEXT_W, bar, VIEW)).toEqual([20, FIRST]);
   });
 
   it('stays in the corner when the bar is off to the right of the text', () => {
-    const bar = { left: 900, top: 12, right: 952, bottom: 612 };
-    expect(debugTextOrigin(LINES, TEXT_W, bar)).toEqual([20, 20]);
+    const bar = { left: 900, top: 12, right: 952, bottom: 788 };
+    expect(debugTextOrigin(LINES, TEXT_W, bar, VIEW)).toEqual([20, FIRST]);
   });
 
-  it('leaves a short readout alone once the bar starts below it', () => {
-    // One line, so the block is 20px tall; a bar beginning at 300 is past it.
-    const bar = { left: 12, top: 300, right: 64, bottom: 612 };
-    expect(debugTextOrigin(1, TEXT_W, bar)).toEqual([20, 20]);
-    // The same bar does overlap a readout long enough to reach it.
-    expect(debugTextOrigin(20, TEXT_W, bar)).toEqual([76, 20]);
+  it('lifts above a full-width bar, as the strip is when installed', () => {
+    // Nothing to the right of it to step into, so the block goes above instead:
+    // the last baseline 12px over the bar, the rest stacked up from there.
+    const bar = { left: 12, top: 700, right: 988, bottom: 780 };
+    expect(debugTextOrigin(LINES, TEXT_W, bar, VIEW)).toEqual([20, 688 - (LINES - 1) * 20]);
   });
 
   it('has nothing to place when there are no lines', () => {
-    expect(debugTextOrigin(0, 0, COLUMN)).toEqual([20, 20]);
+    expect(debugTextOrigin(0, 0, COLUMN, VIEW)).toEqual([20, VIEW.height - 20]);
   });
 });
 

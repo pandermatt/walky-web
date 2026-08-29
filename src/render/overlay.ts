@@ -32,7 +32,7 @@ const GHOST_BLUE_EDGE = '#1B4E9E';
 const GHOST_RED = '#D43A2D';
 const GHOST_RED_EDGE = '#8E241B';
 
-/** How far in from the top-left the readout starts, as drawInformationString had it. */
+/** How far in from the edges the readout sits, as drawInformationString had it. */
 const DEBUG_MARGIN = 20;
 /** Baseline to baseline, also from the original. */
 const DEBUG_LINE_H = 20;
@@ -104,39 +104,55 @@ export interface ScreenRect {
   bottom: number;
 }
 
+/** The canvas the readout is being placed on, in CSS pixels. */
+export interface ScreenSize {
+  width: number;
+  height: number;
+}
+
 /**
  * Where the debug readout starts, given the box the toolbar occupies.
  *
- * The readout belongs in the top-left corner -- that is where it has always
- * been, and it is the corner of the map with the least in it. In a browser the
- * toolbar is there too, a column of capsules 12px in from both edges over the
- * top of the canvas, and it was covering the first few characters of every
- * line: "Pedestrians Alive: 6" read as "strians Alive: 6". Installed on a phone
- * the strip is a bar across the bottom instead and the corner is free.
+ * The readout lives in the bottom-left corner. It began in the top-left, which
+ * is where drawInformationString had it, but that corner has since filled up:
+ * the toolbar is a column of capsules there in a browser, and the contextual
+ * panel -- "Simulation speed" and whatever else the current tool carries -- is
+ * a card immediately to the right of it, sitting squarely over the lines. The
+ * bottom of the map is the empty one now.
  *
- * So rather than choosing a corner per platform, or repeating the media query
- * that moves the bar, the text steps around wherever the bar actually is: an
- * intersection test against its measured box, indenting past its right edge
- * only when it genuinely overlaps. The width is measured rather than guessed
- * because it is what decides whether a bar off to one side is in the way at all.
+ * The text is still placed against the bar rather than parked blindly, because
+ * the bar moves: a column down the left in a browser, a strip across the bottom
+ * when installed on a phone, which is the corner the readout has just moved
+ * into. So an intersection test against its measured box, and two ways out of
+ * an overlap -- step in past its right edge where there is room beside it, as
+ * the column leaves, and lift the block above its top edge where there is not,
+ * as the full-width strip leaves. The width is measured rather than guessed
+ * because it is what decides whether either escape fits.
  */
 export function debugTextOrigin(
   lineCount: number,
   textWidth: number,
   bar: ScreenRect | null,
+  view: ScreenSize,
 ): Point {
-  const origin: Point = [DEBUG_MARGIN, DEBUG_MARGIN];
+  // The baseline of the last line is the anchor; the first one is however many
+  // lines back up from it.
+  const rows = Math.max(lineCount, 1) - 1;
+  const bottom = view.height - DEBUG_MARGIN;
+  const origin: Point = [DEBUG_MARGIN, bottom - rows * DEBUG_LINE_H];
   if (!bar || lineCount === 0) return origin;
 
   // The block of text: the top of the first line up to the baseline of the last.
   // Close enough for an overlap test -- a descender either side of it changes
   // nothing about whether a 600px column of buttons is in the way.
-  const top = DEBUG_MARGIN - DEBUG_LINE_H;
-  const bottom = DEBUG_MARGIN + (lineCount - 1) * DEBUG_LINE_H;
+  const top = origin[1] - DEBUG_LINE_H;
   const overlaps = bar.left < DEBUG_MARGIN + textWidth && bar.right > DEBUG_MARGIN
     && bar.top < bottom && bar.bottom > top;
+  if (!overlaps) return origin;
 
-  if (overlaps) origin[0] = bar.right + DEBUG_CLEARANCE;
+  const indented = bar.right + DEBUG_CLEARANCE;
+  if (indented + textWidth <= view.width - DEBUG_MARGIN) origin[0] = indented;
+  else origin[1] = bar.top - DEBUG_CLEARANCE - rows * DEBUG_LINE_H;
   return origin;
 }
 
@@ -686,8 +702,8 @@ export class Overlay {
   }
 
   /**
-   * Ports drawInformationString(): white text pinned to the top-left, stepped
-   * around the toolbar where the two share that corner (see debugTextOrigin).
+   * Ports drawInformationString(): white text pinned to the bottom-left, out of
+   * the way of the toolbar wherever that is (see debugTextOrigin).
    *
    * The font is set before the text is measured because measureText answers for
    * whatever font the context is carrying, which on a fresh frame is the
@@ -695,12 +711,14 @@ export class Overlay {
    */
   private drawDebug(lines: string[], toolbarBox: ScreenRect | null): void {
     const { ctx } = this;
+    const dpr = window.devicePixelRatio || 1;
     ctx.save();
     ctx.fillStyle = toCss(WHITE);
     ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textBaseline = 'alphabetic';
     const width = lines.reduce((w, line) => Math.max(w, ctx.measureText(line).width), 0);
-    const [x, y] = debugTextOrigin(lines.length, width, toolbarBox);
+    const view = { width: this.canvas.width / dpr, height: this.canvas.height / dpr };
+    const [x, y] = debugTextOrigin(lines.length, width, toolbarBox, view);
     lines.forEach((line, i) => ctx.fillText(line, x, y + i * DEBUG_LINE_H));
     ctx.restore();
   }
