@@ -1,16 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <!--
-    An eraser held at the angle a hand holds one, resting on the line it is
-    rubbing out. Flat black strokes on nothing, to sit with the 2016 icons:
-    the strip is light and the rest of the set is black line art, so a filled
-    or coloured badge would read as belonging to a different toolbar.
-  -->
-  <g fill="none" stroke="#000" stroke-width="14" stroke-linejoin="round" stroke-linecap="round">
-    <!-- The block, a rectangle leaning to the right. -->
-    <path d="M96 190 L38 132a16 16 0 0 1 0-23L133 15a16 16 0 0 1 23 0l58 58a16 16 0 0 1 0 23l-94 94z"/>
-    <!-- The seam between the used end and the rest of it. -->
-    <path d="M84 64 L165 145"/>
-    <!-- The surface it is working on. -->
-    <path d="M96 190 H226"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><g fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"><path d="M96 190 L38 132a16 16 0 0 1 0-23L133 15a16 16 0 0 1 23 0l58 58a16 16 0 0 1 0 23l-94 94z"/><path d="M84 64 L165 145"/><path d="M96 190 H226"/></g></svg>
