@@ -107,6 +107,21 @@ export function pointInPolygon(poly: Point[], p: Point): boolean {
 }
 
 /**
+ * How far a corner may reach past the vertex it belongs to, as a multiple of the
+ * offset amount.
+ *
+ * A pure miter reaches `amount / sin(theta / 2)` from the corner, which is
+ * unbounded as the corner sharpens: a 1.8 degree needle -- the kind
+ * convexDecompose produces from a freehand outline -- offset by a pedestrian
+ * radius of 13 puts the corner over 800 units away, a spike longer than the map
+ * is wide. Those spikes are not merely ugly: the same hulls are what isVisible
+ * treats as solid, so each one is a phantom wall blocking open ground.
+ *
+ * 2 leaves every corner wider than 60 degrees exactly where it was.
+ */
+export const MITER_LIMIT = 2;
+
+/**
  * Offsets a convex polygon outward by `amount`.
  *
  * Ports PolygonEnlarger.expandPolygon: shift each edge along its outward normal,
@@ -115,18 +130,35 @@ export function pointInPolygon(poly: Point[], p: Point): boolean {
  * the direction comes from the signed area and the result stays in floats, which
  * removes the "gibt manchmal nan zurueck" case the original left a comment about.
  *
+ * Corners past `miterLimit` are cut off, so the result is usually but not always
+ * one vertex per input edge: a cut corner contributes two. The cut is the line
+ * perpendicular to the corner's bisector at `miterLimit * amount` from the
+ * vertex, which is tangent to a circle of that radius about the vertex. Since
+ * that circle contains the clearance circle of radius `amount`, the cut can
+ * never bring the outline closer to the wall than `amount` -- the whole point of
+ * the offset. Joining the two shifted edge ends directly instead (an ordinary
+ * bevel) would: on a needle it cuts a chord straight past the tip and leaves
+ * barely any clearance at all.
+ *
+ * The limit bounds the cut along the bisector; a cut vertex also lies up to
+ * `amount` to the side, so a corner reaches at most
+ * `amount * hypot(miterLimit, 1)` from its vertex -- about 29 for the default
+ * limit at a pedestrian radius of 13, against the 800-plus a needle used to give.
+ *
  * Requires a convex polygon with no repeated or collinear consecutive vertices --
- * which is exactly what monotoneChainHull returns.
+ * which is exactly what monotoneChainHull returns. Clipping a corner is a
+ * half-plane cut, so the result stays convex.
  */
-export function expandPolygon(poly: Point[], amount: number): Point[] {
+export function expandPolygon(poly: Point[], amount: number, miterLimit = MITER_LIMIT): Point[] {
   const n = poly.length;
   if (n < 3 || amount === 0) return poly.map((p) => [p[0], p[1]] as Point);
 
   // Outward normal depends on winding: (dy, -dx) for CCW, negated for CW.
   const sign = signedArea2(poly) > 0 ? 1 : -1;
 
-  // Each edge becomes a line offset outward by `amount`.
-  const shifted: { p: Point; q: Point }[] = [];
+  // Each edge becomes a line offset outward by `amount`. `v` is the vertex the
+  // edge ends at, i.e. the corner the next intersection is meant to round off.
+  const shifted: { p: Point; q: Point; v: Point }[] = [];
   for (let i = 0; i < n; i++) {
     const a = poly[i];
     const b = poly[(i + 1) % n];
@@ -136,9 +168,10 @@ export function expandPolygon(poly: Point[], amount: number): Point[] {
     if (len === 0) continue;
     const nx = (sign * dy / len) * amount;
     const ny = (-sign * dx / len) * amount;
-    shifted.push({ p: [a[0] + nx, a[1] + ny], q: [b[0] + nx, b[1] + ny] });
+    shifted.push({ p: [a[0] + nx, a[1] + ny], q: [b[0] + nx, b[1] + ny], v: b });
   }
 
+  const maxReach = Math.abs(miterLimit * amount);
   const out: Point[] = [];
   for (let i = 0; i < shifted.length; i++) {
     const cur = shifted[i];
@@ -146,9 +179,39 @@ export function expandPolygon(poly: Point[], amount: number): Point[] {
     const hit = lineIntersection(cur.p, cur.q, next.p, next.q);
     // Parallel consecutive edges cannot happen on a strict convex hull, but if
     // they do the shared corner is already correct.
-    out.push(hit ?? cur.q);
+    if (!hit) { out.push(cur.q); continue; }
+
+    const [vx, vy] = cur.v;
+    const reach = Math.hypot(hit[0] - vx, hit[1] - vy);
+    if (reach <= maxReach) { out.push(hit); continue; }
+
+    // The bisector runs from the vertex to the miter apex; cut perpendicular to
+    // it, `maxReach` along. Solving each shifted edge against that cut directly
+    // beats a second lineIntersection call, which would have to build the cut
+    // from two nearby points and lose precision doing it.
+    const bx = (hit[0] - vx) / reach;
+    const by = (hit[1] - vy) / reach;
+    out.push(cutEdge(cur.p, cur.q, vx, vy, bx, by, maxReach) ?? cur.q);
+    out.push(cutEdge(next.p, next.q, vx, vy, bx, by, maxReach) ?? next.p);
   }
   return out;
+}
+
+/**
+ * Where the line through ab meets the cut: the line perpendicular to the unit
+ * bisector (bx, by) at distance `reach` from the vertex (vx, vy). Null when ab
+ * runs along the cut, which cannot happen for an edge whose miter apex lies past
+ * it, but is worth not dividing by.
+ */
+function cutEdge(
+  a: Point, b: Point, vx: number, vy: number, bx: number, by: number, reach: number,
+): Point | null {
+  const ux = b[0] - a[0];
+  const uy = b[1] - a[1];
+  const along = ux * bx + uy * by;
+  if (along === 0) return null;
+  const t = (reach - ((a[0] - vx) * bx + (a[1] - vy) * by)) / along;
+  return [a[0] + t * ux, a[1] + t * uy];
 }
 
 /** Intersection of the infinite lines through p1p2 and p3p4, or null if parallel. */

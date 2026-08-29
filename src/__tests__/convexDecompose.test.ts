@@ -10,6 +10,26 @@ import { makeWall, rectanglePolygon } from '../state/model';
 
 const area = (p: Point[]) => Math.abs(signedArea2(p)) / 2;
 
+/** Interior angles of a ring, in degrees. */
+function interiorAngles(poly: Point[]): number[] {
+  return poly.map((at, i) => {
+    const prev = poly[(i - 1 + poly.length) % poly.length];
+    const next = poly[(i + 1) % poly.length];
+    const ux = prev[0] - at[0], uy = prev[1] - at[1];
+    const vx = next[0] - at[0], vy = next[1] - at[1];
+    const cos = (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy));
+    return Math.acos(Math.min(1, Math.max(-1, cos))) * 180 / Math.PI;
+  });
+}
+
+/** A blob off a real map, traced freehand: 25 vertices, none of them sharp. */
+const TRACED: Point[] = [
+  [-91, -204], [-97, -198], [-116, -155], [-116, -131], [-90, -115], [-33, -94],
+  [-23, -87], [-15, -68], [-14, -52], [-27, -23], [-27, 1], [-15, 20], [7, 18],
+  [43, 42], [80, 51], [91, 21], [90, -46], [84, -64], [70, -71], [60, -87],
+  [57, -110], [61, -119], [80, -137], [81, -157], [66, -173],
+];
+
 const U: Point[] = [[0, 0], [200, 0], [200, 60], [60, 60], [60, 200], [200, 200], [200, 260], [0, 260]];
 const L: Point[] = [[0, 0], [200, 0], [200, 80], [80, 80], [80, 240], [0, 240]];
 
@@ -93,5 +113,26 @@ describe('a goal inside a U-shaped wall', () => {
       expect(x > 0 && x < 200 && y > 0 && y < 60).toBe(false);
     }
     expect(agents.arrived[i]).toBe(1);
+  });
+});
+
+describe('decomposing a traced outline', () => {
+  const parts = convexDecompose(TRACED);
+
+  it('tiles the polygon exactly', () => {
+    expect(parts.every(isConvex)).toBe(true);
+    const sum = parts.reduce((total, p) => total + area(p), 0);
+    expect(sum).toBeCloseTo(area(TRACED), 6);
+  });
+
+  it('does not invent corners far sharper than the outline has', () => {
+    // The outline's own sharpest corner is 96 degrees. Ear clipping cannot always
+    // match that, but picking the roundest ear keeps it in the same world: taking
+    // the first ear instead produced 13 pieces with corners under 2 degrees, which
+    // expandPolygon then threw hundreds of units across the map.
+    const sharpest = Math.min(...parts.flatMap(interiorAngles));
+    expect(Math.min(...interiorAngles(TRACED))).toBeGreaterThan(90);
+    expect(sharpest).toBeGreaterThan(5);
+    expect(parts.length).toBeLessThanOrEqual(9);
   });
 });
