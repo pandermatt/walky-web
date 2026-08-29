@@ -22,6 +22,32 @@
     <meta name="apple-mobile-web-app-title" content="Walky" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <title>Walky</title>
+
+    <!--
+      Absolute URLs, unlike every other asset reference on this page.
+      Vite's base is './' so the bundle stays portable, but link scrapers fetch
+      these tags without a document base to resolve against: X and Slack in
+      particular drop a relative og:image rather than guessing at it.
+    -->
+    <link rel="canonical" href="https://walky.ch/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Walky" />
+    <meta property="og:url" content="https://walky.ch/" />
+    <meta property="og:title" content="Walky - a pedestrian simulator in the browser" />
+    <meta
+      property="og:description"
+      content="A pedestrian simulator that runs entirely in the browser. Draw walls, mark a goal, paint a crowd, and watch it find its way."
+    />
+    <meta property="og:image" content="https://walky.ch/images/og.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A crowd of coloured dots funnelling through a gap between two walls and fanning out toward two goals, their routes drawn in orange over a dark background."
+    />
+    <!-- Without summary_large_image, X crops the picture to a small square. -->
+    <meta name="twitter:card" content="summary_large_image" />
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1E1E1E; }
       /* Without this Safari starts a text/element drag from the canvas and swaps

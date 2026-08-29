@@ -743,6 +743,43 @@ the offline behaviour: load the page once, then kill the network and reload.
 npm test
 ```
 
+## The share image
+
+The Open Graph image at `public/images/og.png` is a real simulation frame, not a
+mock-up. `tools/ogImage.ts` builds a scenario with the same model helpers the app
+uses, steps it with the same `Agents.step`, and draws it from the same state the
+renderer reads — `nav.shells`, `nav.obstacles`, `nav.pathFromNode`,
+`agents.x/y/color`. The walls are colours the palette rule allows, the black
+pedestrians are black because they arrived, and the routes are whatever Dijkstra
+returned. It takes the paused branch of `goalPaths`, because a still is a paused
+frame.
+
+```bash
+npx vite-node tools/ogImage.ts
+```
+
+It writes the PNG through `rsvg-convert` and is deliberately not part of
+`npm run build`: the image is committed, so regenerating it is a decision, and a
+diff on the PNG means the render changed. That only holds because the frame is
+reproducible — the wall colours are named constants rather than
+`randomBrightColor()` draws, and `Math.random` is seeded in the script, since
+`Behaviour` leans on it for tie-breaks.
+
+Two things in the image differ from what the app draws, both because a link
+preview is looked at small rather than panned around: strokes are 1.6× wider, and
+22 routes are drawn rather than the app's cap of 1500. Colours, geometry and the
+9-on-9-off dash rhythm are untouched.
+
+The starting crowd is jittered off its lattice. A block placed on an exact grid
+and walked unobstructed keeps that grid exactly, so the tail of the queue reaches
+the bottleneck in machine-straight rows and the picture reads as a rendering
+artefact rather than as a crowd.
+
+`tools/` and `bench/` are type-checked with `src` rather than left out of it. The
+image script broke silently once when `makeWall` grew an options argument — it
+kept running and quietly rendered every wall in a random colour, because nothing
+was checking it.
+
 ## Credits
 
 Google Sans Flex by **David Berlow**, under the SIL Open Font License 1.1 —

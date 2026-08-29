@@ -12,7 +12,9 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    // bench/ and tools/ run under vite-node and import with explicit .ts paths.
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client", "node"]
   },
-  "include": ["src"]
+  "include": ["src", "bench", "tools"]
 }
