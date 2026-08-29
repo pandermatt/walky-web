@@ -27,6 +27,7 @@ import { GoalTool } from './tools/goalTool';
 import { Navigation } from './sim/navigation';
 import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
 import { Plops } from './audio/plops';
+import { showToast } from './pwa';
 import { SpatialHash } from './sim/spatialHash';
 import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolId } from './tools/types';
 
@@ -192,9 +193,7 @@ export class App {
       const hit = [...this.walls].reverse().find((w) => wallContains(w, at));
       if (!hit) return;
       this.checkpoint();
-      for (const w of this.walls) w.isGoal = w.id === hit.id;
-      this.navDirty = true;
-      this.rebuildNavIfNeeded();
+      hit.isGoal = true;
       // With a selection, the goal applies to it alone; with nothing selected it
       // applies to everyone, as Map.setGoalForSelectedPedestrians did.
       const onlySelected = this.agents.selectionCount > 0;
@@ -202,6 +201,11 @@ export class App {
         if (onlySelected && !this.agents.selected[i]) continue;
         this.agents.setGoal(i, hit.id, hit.color);
       }
+      this.pruneGoals(hit.id);
+      this.navDirty = true;
+      // Before the render: it draws the route of every agent to its own goal,
+      // which reads the field this rebuild produces.
+      this.rebuildNavIfNeeded();
       this.touch();
     },
     selectPedestrianAt: (at, extend) => {
@@ -222,6 +226,8 @@ export class App {
     clearSelection: () => { this.agents.clearSelection(); this.touch(); },
     selectionCount: () => this.agents.selectionCount,
     deactivateTool: () => this.setTool(null),
+    activateTool: (id) => this.setTool(id),
+    notify: (message) => showToast(this.stage, message),
     panBy: (dx, dy) => this.viewport.panBy(dx, dy),
     requestRender: () => this.requestRender(),
     colorAt: (at) => {
@@ -751,6 +757,25 @@ export class App {
       }
     }
     return chosen;
+  }
+
+  /**
+   * Drops the goal flag from walls nobody is walking to.
+   *
+   * Several walls can be goals at once -- that is the point of selecting a group
+   * and sending it somewhere of its own -- but a goal is not free: Navigation
+   * runs a Dijkstra over the whole graph per goal wall, on every rebuild. So a
+   * wall stays marked only while it is the one just picked, or while some
+   * pedestrian still has it as their goal. Arrived pedestrians count: a crowd
+   * standing at its goal is still standing at a goal.
+   */
+  private pruneGoals(justMarked: number): void {
+    const wanted = new Set<number>([justMarked]);
+    for (let i = 0; i < this.agents.count; i++) {
+      const g = this.agents.goal[i];
+      if (g >= 0) wanted.add(g);
+    }
+    for (const w of this.walls) w.isGoal = wanted.has(w.id);
   }
 
   private rebuildNavIfNeeded(): void {

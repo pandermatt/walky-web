@@ -29,6 +29,13 @@ export interface ToolContext {
    * completed, so the next click cannot repeat it by accident.
    */
   deactivateTool(): void;
+  /**
+   * Hand the next click to another tool. Used to carry a gesture on to the step
+   * that always follows it -- a selection is made in order to be sent somewhere.
+   */
+  activateTool(id: ToolId): void;
+  /** Say something to the user, as the chip that shared maps and updates use. */
+  notify(message: string): void;
   panBy(dxScreen: number, dyScreen: number): void;
   requestRender(): void;
   /** Colour of the wall under a point, if any -- used to tint the goal preview. */

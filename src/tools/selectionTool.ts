@@ -10,6 +10,10 @@ import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type Tool
  *
  * Holding shift adds to the current selection instead of replacing it, matching
  * the original's "extend mode".
+ *
+ * A gesture that ends with pedestrians selected hands over to the goal tool, the
+ * step that always follows. One that catches nobody says so and keeps the tool
+ * in hand instead.
  */
 const DRAG_THRESHOLD = 5;
 /** Don't record a lasso point for every pixel of pointer movement. */
@@ -48,7 +52,9 @@ export class SelectionTool implements Tool {
     this.pressAt = null;
     if (!press) return;
 
-    if (this.dragging) {
+    const before = ctx.selectionCount();
+    const wasDrag = this.dragging;
+    if (wasDrag) {
       ctx.selectPedestriansIn(this.outline(press, e.world), e.shiftKey);
     } else {
       ctx.selectPedestrianAt(press, e.shiftKey);
@@ -56,6 +62,26 @@ export class SelectionTool implements Tool {
     this.lasso = [];
     this.dragging = false;
     ctx.requestRender();
+
+    // Whether this gesture caught anyone -- not whether anything is selected.
+    // Extending a selection over empty ground leaves the old one standing, so
+    // the count alone would read as a hit.
+    const caught = e.shiftKey ? ctx.selectionCount() > before : ctx.selectionCount() > 0;
+    if (!caught) {
+      // Walls, the background and the empty gaps in a crowd are not selectable,
+      // and a gesture that lands on one looks exactly like a gesture that
+      // failed. Say so, and stay in hand so the next try needs no toolbar trip.
+      ctx.notify(wasDrag
+        ? 'No pedestrians in there — the selection tool picks pedestrians, not walls.'
+        : 'Nothing to select there — the selection tool picks pedestrians, not walls.');
+      return;
+    }
+
+    // A group is picked in order to be sent somewhere, so the goal tool is what
+    // comes next; arming it here saves a trip back to the toolbar. Not while
+    // shift is down -- that is extend mode, and the selection is still being
+    // built.
+    if (!e.shiftKey) ctx.activateTool('goal');
   }
 
   cancel(): void {

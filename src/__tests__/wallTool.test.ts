@@ -31,6 +31,8 @@ function stubContext(): { ctx: ToolContext; walls: Committed[] } {
     clearSelection: () => {},
     selectionCount: () => 0,
     deactivateTool: () => {},
+    activateTool: () => {},
+    notify: () => {},
     panBy: () => {},
     requestRender: () => {},
     colorAt: () => null,
