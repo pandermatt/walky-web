@@ -20,6 +20,11 @@
 /manifest.webmanifest
   Cache-Control: no-cache
 
+# The font's name carries no content hash, but it is a font: it changes when the
+# family is replaced, not when the app is rebuilt.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /icons/*
   Cache-Control: public, max-age=604800
 
