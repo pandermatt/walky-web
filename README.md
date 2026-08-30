@@ -362,20 +362,50 @@ Two further departures, both aimed squarely at the same complaint:
   the geometry the crowd packs into, and a narrow bottleneck then arches over and
   *stays* arched: even a five percent spread took a 64-strong crowd from all
   through to as few as two.
+- **Somebody stuck long enough stops being polite.** Past three seconds of getting
+  nowhere, a pedestrian's *effective* nerve ramps to the top of the temperament
+  scale over four more, and everything assertiveness touches follows — presence,
+  lean, impatience, and eventually shove. All of it points outward or at its own
+  patience: the desperate mind the crowd exactly as much as they ever did, they
+  just stop asking permission. Self-limiting by construction — desperation is
+  what moves them, moving decays the stall, the nerve settles back.
+
+  And the ramp reaches one thing temperament deliberately never does: deference
+  to the crowd bound the *other* way. None of the four nerve effects could free
+  somebody blocked head-on by an opposing crowd, because none touch the term
+  that pins them — an oncoming stranger weighs ×2.5 against a bubble a crush
+  never closes, so the cheapest move is a sideways shuffle for ever, and
+  shuffling resets the patience that pressure and shove are gated on. Desperation
+  now eases both halves of that deference toward what a same-goal neighbour gets
+  — the extra weight toward one, never below it; the open bubble toward the
+  crushed one. Gated on the stall ramp rather than on nerve, which is the whole
+  safety argument: nerve would hold the gate open for the pushiest eighth on
+  every ordinary tick, where the ramp opens it only for the provably stuck and
+  closes it the moment they move. Measured: two crowds meeting head-on in a
+  corridor clear with worst stalls down a sixth to a quarter (524 → 441 narrow,
+  747 → 561 dense), the crossing map's crossers went from 45 to 53 in total with
+  every layout's worst stall about a third shorter, and lane separation on the
+  six counterflow layouts is unchanged (64.2 → 63.7) — a flowing stream has
+  nobody desperate in it. An earlier onset (one second) was tried and rejected:
+  the merely slowed started discounting the oncoming crowd too, one dense meet
+  got worse, and lanes measurably loosened.
 
 Two things pressure must not do, both found the hard way. It must combine with
 density by taking whichever asks for less, never by multiplying — the product runs
 to nothing in a few ticks, the crowd packs to body contact where "no worse than
 now" has no move to offer anyone, and a bottleneck arches permanently: 64 through
 became 12 through and then nothing for eighteen hundred further ticks. And a crush
-must only close up the space kept from people going the *same* way. Tolerating an
-oncoming stream at close range is not a queue, it is a collision, and it quietly
-dismantles lane formation.
+must only close up the space kept from people going the *same* way — with the
+one desperation-gated exception above. Tolerating an oncoming stream at close
+range is not a queue, it is a collision, and it quietly dismantles lane
+formation.
 
 **×100 became ×2.5.** With an exponential falloff and a passing side already
 separating counterflow, the original multiplier was no longer doing that work,
 only distorting it — it made two streams mutually repulsive without ever settling
-who went which way, so they held each other up.
+who went which way, so they held each other up. (And ×2.5 becomes ×1 for the
+desperate, per the bullet above — a stuck pedestrian treats the opposing crowd
+like its own, not like something to walk into.)
 
 Counterflow deserves a caveat rather than a number, and it is the honest weak spot
 of the model. Two streams through one corridor is by far the least reproducible
