@@ -129,3 +129,70 @@ describe('Agents.allArrived', () => {
     expect(agents.allArrived).toBe(false);
   });
 });
+
+/**
+ * A retreat is per-tick working state, so none of the three ways a crowd is put
+ * back may leave one half-walked. A pedestrian restored mid-retreat would come
+ * back white, walking away from a goal it no longer remembers giving up on.
+ */
+describe('a retreat does not survive being put back', () => {
+  /** A crowd with the middle one part-way through giving up. */
+  function fleeing() {
+    const agents = new Agents(8);
+    agents.add([10, 20], [255, 0, 0]);
+    agents.add([30, 40], [0, 255, 0]);
+    agents.add([50, 60], [0, 0, 255]);
+    for (let i = 0; i < 3; i++) agents.setGoal(i, 7, [1, 2, 3]);
+    agents.crush[1] = 40;
+    agents.fleeLeft[1] = 120;
+    agents.refugeX[1] = -400;
+    agents.refugeY[1] = -400;
+    agents.surrenders = 1;
+    return agents;
+  }
+
+  it('undo clears it', () => {
+    const agents = fleeing();
+    agents.restore(agents.snapshot());
+    for (let i = 0; i < agents.count; i++) {
+      expect(agents.fleeLeft[i]).toBe(0);
+      expect(agents.crush[i]).toBe(0);
+    }
+    expect(agents.surrenders).toBe(0);
+  });
+
+  it('reset clears it', () => {
+    const agents = fleeing();
+    agents.resetPositions(new Map([[7, [1, 2, 3] as const]]));
+    for (let i = 0; i < agents.count; i++) {
+      expect(agents.fleeLeft[i]).toBe(0);
+      expect(agents.crush[i]).toBe(0);
+    }
+    expect(agents.surrenders).toBe(0);
+  });
+
+  it('erasing a pedestrian moves the retreat with the one that fills the slot', () => {
+    // removeAt swaps the last agent down, so every field has to travel together.
+    // A missed one leaves the survivor wearing somebody else's retreat.
+    const agents = fleeing();
+    agents.fleeLeft[2] = 90;
+    agents.refugeX[2] = 11;
+    agents.refugeY[2] = 22;
+    agents.removeAt(0);
+    expect(agents.count).toBe(2);
+    // Slot 0 now holds what was slot 2.
+    expect(agents.fleeLeft[0]).toBe(90);
+    expect([agents.refugeX[0], agents.refugeY[0]]).toEqual([11, 22]);
+    expect(agents.fleeLeft[1]).toBe(120);
+    expect([agents.refugeX[1], agents.refugeY[1]]).toEqual([-400, -400]);
+  });
+
+  it('losing the goal ends the retreat, so nothing is left white', () => {
+    const agents = fleeing();
+    agents.clearGoal(7);
+    for (let i = 0; i < agents.count; i++) {
+      expect(agents.fleeLeft[i]).toBe(0);
+      expect(agents.crush[i]).toBe(0);
+    }
+  });
+});

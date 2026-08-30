@@ -1,6 +1,9 @@
 import { randomBrightColor, BLACK, type RGB } from '../palette';
 import { distance, type Point } from './geometry';
-import { Behaviour, SQRT2, interactionReach, paceScale, crowdPace, STALL_PROGRESS } from './behaviour';
+import {
+  Behaviour, SQRT2, interactionReach, paceScale, crowdPace, STALL_PROGRESS,
+  surrenderSteps, SURRENDER_FROM, RELIEF, FLEE_STEPS,
+} from './behaviour';
 import type { Navigation } from './navigation';
 import type { SpatialHash } from './spatialHash';
 import type { RestoredAgent } from '../state/scenario';
@@ -152,6 +155,27 @@ export class Agents {
   effectiveSpace: Float32Array;
   /** Remaining distance to the goal; lower means higher priority in a crowd. */
   costToGoal: Float32Array;
+  /**
+   * How long this one has been squeezed, in ticks: up while the crowd is pressing
+   * hard enough to be moving it about, down faster than that when it lets up.
+   *
+   * The measure is pressure and not patience on purpose. Patience already runs out
+   * for anybody held up at all -- a polite queue behind a corner runs it out -- and
+   * what earns giving up is not being delayed, it is being crushed.
+   */
+  crush: Float32Array;
+  /**
+   * Ticks of retreat left, and the whole definition of having given up: above
+   * nought this pedestrian is walking away from its goal rather than towards it.
+   *
+   * One number rather than a mode and a timer, because the retreat and the wait at
+   * the end of it are the same thing seen from either end -- it walks while it has
+   * somewhere to get to and stands once it is there, and both run off this.
+   */
+  fleeLeft: Float32Array;
+  /** Where it is retreating to; meaningless unless fleeLeft is above nought. */
+  refugeX: Float32Array;
+  refugeY: Float32Array;
   /** Lassoed by the selection tool; the mark-goal tool acts on these alone. */
   selected: Uint8Array;
   /**
@@ -177,6 +201,12 @@ export class Agents {
    * with room to walk in" is not otherwise checkable.
    */
   carries = 0;
+  /**
+   * Pedestrians that have given up since the crowd was made, for the same reason
+   * `carries` is here: "nobody gives up in a crowd with room to walk in" is not
+   * otherwise checkable, and it is the one claim this behaviour has to keep.
+   */
+  surrenders = 0;
   count = 0;
 
   constructor(private capacity = 4096) {
@@ -205,6 +235,10 @@ export class Agents {
     this.party = new Int32Array(capacity);
     this.effectiveSpace = new Float32Array(capacity);
     this.costToGoal = new Float32Array(capacity).fill(Infinity);
+    this.crush = new Float32Array(capacity);
+    this.fleeLeft = new Float32Array(capacity);
+    this.refugeX = new Float32Array(capacity);
+    this.refugeY = new Float32Array(capacity);
     this.selected = new Uint8Array(capacity);
     this.spawned = new Uint8Array(capacity);
   }
@@ -232,6 +266,10 @@ export class Agents {
     this.party[i] = partyOf(at[0], at[1]);
     this.effectiveSpace[i] = 0;
     this.costToGoal[i] = Infinity;
+    this.crush[i] = 0;
+    this.fleeLeft[i] = 0;
+    this.refugeX[i] = 0;
+    this.refugeY[i] = 0;
     this.selected[i] = 0;
     this.spawned[i] = 0;
     return i;
@@ -308,6 +346,10 @@ export class Agents {
       this.arrived[i] = 0;
       this.hasWaypoint[i] = 0;
       this.costToGoal[i] = Infinity;
+      // A retreat is from somewhere to somewhere. With the goal gone there is
+      // nothing to have given up on, and leaving it fleeing would leave it white.
+      this.crush[i] = 0;
+      this.fleeLeft[i] = 0;
     }
   }
 
@@ -340,6 +382,9 @@ export class Agents {
     this.party[i] = this.party[last];
     this.effectiveSpace[i] = this.effectiveSpace[last];
     this.costToGoal[i] = this.costToGoal[last];
+    this.crush[i] = this.crush[last];
+    this.fleeLeft[i] = this.fleeLeft[last];
+    this.refugeX[i] = this.refugeX[last]; this.refugeY[i] = this.refugeY[last];
     this.selected[i] = this.selected[last];
     this.spawned[i] = this.spawned[last];
   }
@@ -430,6 +475,8 @@ export class Agents {
     this.density.fill(0, 0, n);
     this.stepDist.fill(0, 0, n);
     this.effectiveSpace.fill(0, 0, n);
+    this.crush.fill(0, 0, n);
+    this.fleeLeft.fill(0, 0, n);
     // Not derived from the tick but from the pedestrian: recomputed rather than
     // restored, so it comes back identical without being stored.
     for (let i = 0; i < n; i++) {
@@ -440,6 +487,7 @@ export class Agents {
     this.costToGoal.fill(Infinity, 0, n);
     this.justArrived.length = 0;
     this.carries = 0;
+    this.surrenders = 0;
     this.count = n;
   }
 
@@ -478,7 +526,10 @@ export class Agents {
       this.density[i] = 0;
       this.stepDist[i] = 0;
       this.effectiveSpace[i] = 0;
+      this.crush[i] = 0;
+      this.fleeLeft[i] = 0;
     }
+    this.surrenders = 0;
   }
 
   /**
@@ -552,6 +603,28 @@ export class Agents {
       // "did this one get any closer", which is the question, rather than "did it
       // move", which a pedestrian shuffling on the spot answers yes to.
       const costBefore = this.costToGoal[i];
+      // The same reading for a retreat, taken before the surrender below can
+      // change where the refuge is.
+      const refugeBefore = Math.hypot(this.refugeX[i] - this.x[i], this.refugeY[i] - this.y[i]);
+
+      // Whether it is still trying. Pressure carries last tick's figure here,
+      // which is the same deal density takes a few lines down and for the same
+      // reason: it is measured by the pass that would need it, and a crowd does
+      // not reorganise itself inside one tick.
+      if (this.fleeLeft[i] > 0) {
+        if (--this.fleeLeft[i] <= 0) this.resume(i);
+      } else {
+        this.crush[i] = this.pressure[i] >= SURRENDER_FROM
+          ? this.crush[i] + 1
+          : Math.max(0, this.crush[i] - RELIEF);
+        if (this.crush[i] >= surrenderSteps(this.assertiveness[i])) {
+          // Nowhere to go is not a reason to stand still in a crush, so a
+          // pedestrian that cannot find a refuge keeps walking and keeps its
+          // counter, and asks again next tick.
+          const refuge = behaviour.chooseRefuge(i, radius);
+          if (refuge) this.surrender(i, refuge);
+        }
+      }
 
       // How far this one walks this tick: its own pace, spent as it goes rather
       // than banked. The tick is walked in substeps of at most a pixel -- the
@@ -571,6 +644,18 @@ export class Agents {
       let left = own;
       let stepTaken = true;
       while (left > 1e-6 && stepTaken) {
+        if (this.fleeLeft[i] > 0) {
+          // Backing out of a crush. The refuge is a place, not a route: there is
+          // no waypoint to take, no corner to cut ahead to, and nothing to arrive
+          // at. Standing on it beats every other option on cost alone, so the
+          // wait at the end of the retreat needs no code of its own.
+          const away: Point = [this.refugeX[i], this.refugeY[i]];
+          const out = behaviour.stepTowards(i, away, radius, personalSpace, Math.min(SQRT2, left));
+          stepTaken = out.length > 0;
+          left -= stepTaken ? out.length : left;
+          continue;
+        }
+
         if (!this.hasWaypoint[i]) {
           const next = nav.nextWaypoint([this.x[i], this.y[i]], goalId);
           if (!next) {
@@ -629,15 +714,76 @@ export class Agents {
       // diagram wants is progress made, and a shuffle on the spot is none.
       this.stepDist[i] = Math.hypot(this.x[i] - here[0], this.y[i] - here[1]);
 
-      const gained = costBefore - this.costToGoal[i];
-      if (gained > STALL_PROGRESS) this.stalled[i] = Math.max(0, this.stalled[i] - 2);
+      // Getting nowhere, judged against wherever this one is actually trying to
+      // get to. For most of the crowd that is the goal, read off `costToGoal`.
+      //
+      // For somebody retreating it is the refuge, and it has to be, twice over.
+      // A retreat fetches no waypoint, so `costToGoal` cannot move and the goal
+      // test would score every tick of it as getting nowhere -- inflating the one
+      // figure that says how long anybody was pinned, when a retreat is the
+      // opposite of pinned. And it is the honest question to ask: a pedestrian
+      // walking freely out of a crush is not stuck and should not start shoving,
+      // while one whose way out is blocked is exactly who the desperation ramp
+      // was built for, and now earns it the same way everybody else does.
+      //
+      // Standing on the refuge is not stalling either. It is where it meant to
+      // be, and the wait there is the point of the whole manoeuvre.
+      const stalling = this.fleeLeft[i] > 0
+        ? refugeBefore - Math.hypot(this.refugeX[i] - this.x[i], this.refugeY[i] - this.y[i])
+        : costBefore - this.costToGoal[i];
+      const resting = this.fleeLeft[i] > 0
+        && Math.hypot(this.refugeX[i] - this.x[i], this.refugeY[i] - this.y[i]) <= radius;
+      if (stalling > STALL_PROGRESS || resting) this.stalled[i] = Math.max(0, this.stalled[i] - 2);
       else this.stalled[i] += 1;
     }
+  }
+
+  /**
+   * The one place an agent gives up, so nothing that watches it is missed.
+   *
+   * Nothing here grants it the right of way, which took a wrong turn first. On
+   * its own the retreat cannot work: it runs straight into everybody still
+   * walking at the goal, and a pedestrian that defers to the whole crowd cannot
+   * move against it -- measured against the pecking order alone, retreats got a
+   * median of four pixels from where they started before their time ran out.
+   *
+   * Desperation already answers that, and answers it better than reaching into
+   * `costToGoal` here would. Somebody about to give up has by definition been
+   * getting nowhere, so it is deep into the ramp before this is called; and
+   * because a retreat fetches no waypoint, `costToGoal` stops moving and the
+   * stall goes on counting for the whole of it. It stays desperate until it is
+   * out, which is exactly the pedestrian that should be let through.
+   */
+  private surrender(i: number, refuge: Point): void {
+    this.refugeX[i] = refuge[0];
+    this.refugeY[i] = refuge[1];
+    this.fleeLeft[i] = FLEE_STEPS;
+    this.hasWaypoint[i] = 0;
+    this.surrenders++;
+  }
+
+  /**
+   * The retreat is over and it is walking to its goal again, with its patience
+   * whole. Clearing the crush is what makes this a retry rather than a loop: it
+   * has to be squeezed all over again, from nothing, before it will give up twice.
+   */
+  private resume(i: number): void {
+    this.fleeLeft[i] = 0;
+    this.crush[i] = 0;
+    this.hasWaypoint[i] = 0;
   }
 
   /** The one place an agent becomes arrived, so nothing that watches it is missed. */
   private markArrived(i: number): void {
     this.arrived[i] = 1;
+    // Any retreat is over, whatever it had left to run. A pedestrian can arrive
+    // mid-retreat -- it is walking, and a refuge on the far side of the goal hull
+    // takes it past the tolerance -- and the step loop skips whoever has arrived,
+    // so nothing else would ever wind the counter down. It would sit at whatever
+    // it was for the rest of the run, and since the render reads it rather than
+    // the colour, this one would finish the run white instead of black.
+    this.fleeLeft[i] = 0;
+    this.crush[i] = 0;
     this.color[i] = packRgb(BLACK); // matches IntelligentPedestrian:113
     this.justArrived.push(i);
   }
@@ -672,6 +818,10 @@ export class Agents {
     this.party = copy(this.party, (n) => new Int32Array(n));
     this.effectiveSpace = copy(this.effectiveSpace, (n) => new Float32Array(n));
     this.costToGoal = copy(this.costToGoal, (n) => new Float32Array(n));
+    this.crush = copy(this.crush, (n) => new Float32Array(n));
+    this.fleeLeft = copy(this.fleeLeft, (n) => new Float32Array(n));
+    this.refugeX = copy(this.refugeX, (n) => new Float32Array(n));
+    this.refugeY = copy(this.refugeY, (n) => new Float32Array(n));
     this.selected = copy(this.selected, (n) => new Uint8Array(n));
     this.spawned = copy(this.spawned, (n) => new Uint8Array(n));
     this.capacity = next;
