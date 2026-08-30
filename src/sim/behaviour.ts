@@ -615,8 +615,8 @@ const REFUGE_REACH = 10;
  * hold: every retreat reaches its refuge and finds room there, and four in five
  * gain ground on the goal as well.
  */
-const REFUGE_ARCS = 9;
-const REFUGE_RANGES = 3;
+const REFUGE_ARCS = 13;
+const REFUGE_RANGES = 5;
 /** How much of a half turn the fan covers; 1 is the full one. */
 const REFUGE_ARC = 0.7;
 /**
@@ -634,21 +634,34 @@ const REFUGE_ARC = 0.7;
 const W_REFUGE_CROWD = 1.0;
 const W_REFUGE_WALK = 0.5;
 /**
- * How many others may already be standing in a refuge -- and the answer is very
- * nearly none, which is the difference between this behaviour helping and hurting.
+ * How much emptier than here a refuge has to be.
  *
- * Without the bar, the best candidate wins whether or not it is any good, so a
- * pedestrian with nowhere to go gives up anyway and walks into whatever is behind
- * it. Two crowds meeting head-on in a corridor are the case that shows it: there
- * is no room anywhere, every refuge is just more crowd, and pedestrians spent
- * their retreats walking into the people they had come through -- three of sixty
- * never arrived at all.
+ * There has to be a bar. Without one the best candidate wins whether or not it is
+ * any good, so a pedestrian with nowhere to go gives up anyway and walks into
+ * whatever is behind it -- two crowds meeting head-on in a corridor have no room
+ * anywhere, every refuge is just more crowd, and three of sixty then never
+ * arrived. Having nowhere to go has to be answered by not giving up, and it costs
+ * nothing to answer it that way: somebody with no way out and no way back is
+ * exactly who the desperation ramp is for.
  *
- * With the bar, having nowhere to go is answered by not giving up. That is the
- * right answer and it costs nothing: somebody with no way out and no way back is
- * exactly who the desperation ramp is for, and it is still there.
+ * But the bar has to be relative, and the first one was not. "At most one other
+ * person within five radii" sounds like a modest ask and is not: it means
+ * deserted, and it is unreachable anywhere a crowd is actually deep. On a busy
+ * map -- four doors, six hundred people, jams against every corner -- it rejected
+ * every candidate for every pedestrian, all eleven hundred of them, and the whole
+ * behaviour never fired once while the crush counter ran past nine hundred.
+ * Judged against here instead, that same map has refuges everywhere: standing
+ * with three people near you beside a jam of fourteen is relief, and calling it
+ * one because it is not solitude is how a valve rusts shut.
+ *
+ * Relative also keeps the promise the absolute bar was bought for, and keeps it
+ * for the right reason rather than by accident. Where there is genuinely nowhere
+ * to go, nowhere is emptier than here by any margin, so nobody gives up -- and
+ * that now holds at whatever density the map runs at, instead of only at the one
+ * the figure was picked against.
  */
-const REFUGE_EMPTY = 1;
+const REFUGE_RELIEF = 0.5;
+const REFUGE_CAP = 3;
 
 /**
  * How much of its own weight a pedestrian can still put behind a lean.
@@ -1328,6 +1341,8 @@ export class Behaviour {
     // direction says which way to walk; it does not say how far away the goal is.
     const [goalX, goalY] = this.nav.goalAnchor(a.goal[i], here) ?? [here[0] + gx * reach, here[1] + gy * reach];
     const goalHere = Math.hypot(here[0] - goalX, here[1] - goalY);
+    // What it is escaping, and so what a refuge has to beat.
+    const hereCrowd = this.crowdAt(here, room, i);
 
     let best: Point | null = null;
     let bestScore = Infinity;
@@ -1347,8 +1362,8 @@ export class Behaviour {
         if (this.insideAnyWall(p)) continue;
         if (!this.nav.canSee(here, p)) continue;
         const crowd = this.crowdAt(p, room, i);
-        // Not a refuge if the crowd is already there.
-        if (crowd > REFUGE_EMPTY) continue;
+        // Not a refuge unless it is meaningfully emptier than where it stands.
+        if (crowd > hereCrowd * REFUGE_RELIEF || crowd > REFUGE_CAP) continue;
         // Ground gained on the goal, which is the thing asked for, rather than
         // ground covered -- a long walk straight across the queue's flank is the
         // same distance from the goal as standing still was.
