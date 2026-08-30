@@ -6,26 +6,33 @@ import { SHORTCUTS } from '../ui/toolbar';
  * promise the numbers make: the digits are the tools, in the order you see them.
  * Insert a tool without renumbering and this is what says so.
  *
- * The eraser is eighth, the text tool ninth and the generator tenth for that
- * reason, and all three keep their numbers on a touch device even though none of
- * the cells is shown there -- the app is what refuses to arm them (see
- * App.setTool), not the list of keys.
+ * The order is by subject -- the geometry, then the people and where they are
+ * going, then the two tools that act on what is already down, then the label
+ * that is for the reader rather than the simulation. The eraser, the text tool
+ * and the generator used to be appended past the end of that for the sake of
+ * not renumbering anybody, which is the thing this list stopped promising.
  *
- * The tenth is on 0, because ten is where a row of digits runs out and 0 is the
- * key that follows 9 along it. An eleventh tool has nowhere to go, which is a
- * fact about the keyboard rather than a rule of ours.
+ * Pan is tenth and on 0 because it sits in the view capsule, below the tools,
+ * beside the reset that undoes it: the digit counts down the whole strip and not
+ * down one capsule. Ten is where a row of digits runs out and 0 is the key that
+ * follows 9 along it, so an eleventh tool has nowhere to go -- a fact about the
+ * keyboard rather than a rule of ours.
+ *
+ * The generator, the text tool and the eraser keep their numbers on a touch
+ * device even though none of the cells is shown there -- the app is what refuses
+ * to arm them (see App.setTool), not the list of keys.
  */
 
 const TOOLS_IN_ORDER = [
-  'wall', 'rectangle', 'border', 'pedestrian', 'goal', 'select', 'shift', 'erase', 'text',
-  'generator',
+  'wall', 'rectangle', 'border', 'pedestrian', 'generator', 'goal', 'select', 'erase', 'text',
+  'shift',
 ];
 
-/** The digit a tool sits on: its place down the capsule, with the tenth on 0. */
+/** The digit a tool sits on: its place down the strip, with the tenth on 0. */
 const digit = (index: number) => String((index + 1) % 10);
 
 describe('the keyboard shortcuts', () => {
-  it('number the tools down the capsule', () => {
+  it('number the tools down the strip', () => {
     TOOLS_IN_ORDER.forEach((id, i) => {
       expect(SHORTCUTS.get(digit(i))).toEqual({ key: id, kind: 'tool' });
     });

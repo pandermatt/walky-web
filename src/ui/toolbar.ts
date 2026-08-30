@@ -32,12 +32,21 @@ interface ButtonSpec {
 }
 
 /**
- * Button order and icons follow gui/ToolboxPanel.
+ * The strip, in three capsules: what the simulation is doing, what you draw it
+ * with, and where you are looking from.
  *
- * Its separators are groups here rather than divider elements: each group is
- * laid out as its own capsule, and a rule cannot make a bar out of buttons that
- * only have a line drawn between them. The gap between two capsules is what the
- * separator was saying.
+ * Inside each capsule the order is by subject, which it was not always. The
+ * eraser, the text tool and the generator were each appended to the end of the
+ * tools capsule as they were built, so that adding one would not renumber the
+ * digits of tools people already knew -- which left a generator ten cells away
+ * from the pedestrian brush it is a variety of. A shortcut is learnt once and a
+ * neighbour is read every time, so the tools are sorted by what they do now and
+ * the digits follow them.
+ *
+ * The separators of the original gui/ToolboxPanel are these groups rather than
+ * divider elements: each group is laid out as its own capsule, and a rule cannot
+ * make a bar out of buttons that only have a line drawn between them. The gap
+ * between two capsules is what the separator was saying.
  *
  * The strip is light because the original icons were drawn for Swing's light
  * toolbar -- border.png in particular is a black outline that would vanish on a
@@ -49,50 +58,68 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
     buttons: [
       { key: 'start', icon: 'start.png', title: 'Start / pause', kind: 'action', shortcut: 'Space', press: ' ' },
       { key: 'reset_pedestrians', icon: 'reset_pedestrians.png', title: 'Reset pedestrians', kind: 'action' },
-      // Between resetting and clearing, which is where the actions that take
-      // something back belong. The 2016 toolbar had no undo to place.
-      // The shortcut moved out of the title so that every one of them is written
-      // by the same rule, rather than this one being spelt inside a label.
+      // Beside start rather than below clear: what a recording captures is a
+      // run, so it belongs with the buttons that run one. A toggle rather than
+      // a one-shot, because a recording is a state you are in, and the pressed
+      // cell is the only thing on the strip that says you are in it.
+      { key: 'record', icon: 'record.png', title: 'Record', kind: 'toggle' },
+      // Then the two that take something back, kept together and kept last so
+      // that the capsule reads forwards before it reads backwards. The 2016
+      // toolbar had no undo to place. Its shortcut is written in the tooltip by
+      // the same rule as every other, rather than spelt inside this one label.
       { key: 'undo', icon: 'undo.png', title: 'Undo', kind: 'action', shortcut: 'Ctrl+Z' },
       { key: 'clear', icon: 'clear.png', title: 'Clear map', kind: 'action' },
-      // A toggle rather than a one-shot: a recording is a state you are in, and
-      // the pressed cell is the only thing on the strip that says you are in it.
-      { key: 'record', icon: 'record.png', title: 'Record', kind: 'toggle' },
     ],
   },
   {
     name: 'tools',
     buttons: [
-      // 1 to 7 down the capsule, in the order they are drawn: the number is
+      // 1 to 9 down the capsule, in the order they are drawn: the number is
       // "how far down the tools are you", which is a thing you can see, rather
       // than an initial you have to have been told (w for wall, but which of
       // rectangle, record and reset gets r?).
+      //
+      // Sorted by what a tool puts on the map. First the geometry the map is
+      // made of, coarse to fine:
       { key: 'wall', icon: 'addWall.png', title: 'Wall tool', kind: 'tool', shortcut: '1', press: '1' },
       { key: 'rectangle', icon: 'addWallSquare.png', title: 'Rectangle wall tool', kind: 'tool', shortcut: '2', press: '2' },
       { key: 'border', icon: 'border.png', title: 'Border tool', kind: 'tool', shortcut: '3', press: '3' },
+      // then the people and the business they have there. A generator is the
+      // pedestrian brush that keeps brushing and a goal is where whatever either
+      // one drops is headed, so the three of them only make sense read together;
+      // the generator spent its first life on 0, at the far end of the capsule
+      // from the tool it is a variety of.
       { key: 'pedestrian', icon: 'pedestrian.png', title: 'Add pedestrians', kind: 'tool', shortcut: '4', press: '4' },
-      { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool', shortcut: '5', press: '5' },
-      { key: 'select', icon: 'select.png', title: 'Selection tool', kind: 'tool', shortcut: '6', press: '6' },
-      { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool', shortcut: '7', press: '7' },
-      // Eighth rather than slotted in beside the drawing tools it undoes: the
-      // digits mean how far down the capsule a tool is, so putting the eraser
-      // among them would renumber three tools people already know in order to
-      // group it with the ones it is about.
+      { key: 'generator', icon: 'generator.svg', title: 'Add generator', kind: 'tool', shortcut: '5', press: '5', desktopOnly: true },
+      { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool', shortcut: '6', press: '6' },
+      // then the pair that acts on what is already down instead of adding to it.
+      // The eraser is next to the selection tool and not next to the walls it
+      // eats, because what it has in common with them is its subject and what it
+      // has in common with select is what you are doing: picking out one shape
+      // that is already there.
+      { key: 'select', icon: 'select.png', title: 'Selection tool', kind: 'tool', shortcut: '7', press: '7' },
       { key: 'erase', icon: 'erase.svg', title: 'Erase shapes', kind: 'tool', shortcut: '8', press: '8', desktopOnly: true },
-      // Ninth for the same reason, and last because it is the one tool that adds
-      // nothing to the simulation: a label is for the person reading the map.
+      // and last the one tool that adds nothing to the simulation: a label is
+      // for the person reading the map, not for anybody walking on it.
       { key: 'text', icon: 'text.svg', title: 'Add text', kind: 'tool', shortcut: '9', press: '9', desktopOnly: true },
-      // Tenth, appended for the reason the eraser and the text tool were: the
-      // digit is how far down the capsule a tool is, and slotting a generator in
-      // beside the pedestrian brush -- where it belongs by subject -- would
-      // renumber five tools people already know. Ten is where a single digit runs
-      // out, and 0 is the key that follows 9 along the row.
-      { key: 'generator', icon: 'generator.svg', title: 'Add generator', kind: 'tool', shortcut: '0', press: '0', desktopOnly: true },
     ],
   },
   {
     name: 'view',
     buttons: [
+      // Pan is down here rather than among the tools because it does not touch
+      // the map at all -- it moves the camera, and reset_zoom directly below it
+      // is the button that puts the camera back. It stays a tool, with a tool's
+      // pressed cell, because that is what it is: ported from
+      // ZoomMouseListener.shiftView, where dragging panned only while it was the
+      // selected tool, so there is no global drag-to-pan for it to be a shorthand
+      // for.
+      //
+      // So it keeps a digit, and the digit keeps its meaning by widening from
+      // the capsule to the strip: Pan is the tenth tool counting down the
+      // document, which puts it on 0 -- ten is where a row of single digits runs
+      // out and 0 is the key that follows 9 along it.
+      { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool', shortcut: '0', press: '0' },
       { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom and position', kind: 'action' },
       { key: 'settings', icon: 'settings.png', title: 'Settings', kind: 'toggle' },
     ],
@@ -110,8 +137,10 @@ export interface Shortcut {
  * What a bare keypress arms, keyed by `KeyboardEvent.key`.
  *
  * Derived from the strip rather than written out again next to the key handler:
- * the numbers mean the order the buttons are in, so a list of them kept
- * somewhere else is a list that goes wrong the first time a tool is inserted.
+ * the digits mean how far down the strip a tool is -- counted across the
+ * capsules, which is why Pan down in the view group is still the tenth -- so a
+ * list of them kept somewhere else is a list that goes wrong the first time a
+ * tool moves.
  * The app does the listening -- a shortcut is not the toolbar's to take from
  * whatever else has the keyboard -- and this is what it looks up.
  */
@@ -151,7 +180,7 @@ export const TOOLBAR_CSS = `
   top: calc(12px + env(safe-area-inset-top, 0px));
   left: calc(12px + env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
-  /* Fourteen buttons do not fit a short window; without this the lower tools,
+  /* Seventeen buttons do not fit a short window; without this the lower tools,
      settings among them, are simply unreachable. A wheel over a capsule scrolls
      this, since the capsule is what takes the pointer. */
   max-height: calc(100vh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
@@ -247,11 +276,19 @@ export const TOOLBAR_CSS = `
  * wants it.
  *
  * The capsules wrap, so the layout follows the screen instead of being told
- * about it: portrait puts the seven tools on their own row nearest the thumb
- * with the six others above, and landscape fits all three side by side.
- * \`order\` is what moves the tools capsule last; the buttons stay in
- * ToolboxPanel's order for anything reading the document rather than looking at
- * it.
+ * about it: portrait puts the tools on the row nearest the thumb with the run
+ * controls above them, and landscape fits all three side by side.
+ * \`order\` is what moves the tools capsule last, because the tools are what a
+ * hand on a phone is reaching for all afternoon.
+ *
+ * The view capsule is ordered between the two rather than left up beside run.
+ * Pan lives there now, and there is no drag-to-pan gesture behind it (see
+ * tools/shiftTool.ts) -- pressing that cell is the only way to move the map, so
+ * it wants to be near the hand too. It cannot have the bottom row, which the
+ * tools have the better claim on, so it takes the one above.
+ *
+ * The buttons stay in document order for anything reading the strip rather than
+ * looking at it, which is also the order the digits are numbered in.
  */
 @media ${TOUCH} {
   html[data-standalone] #toolbar {
@@ -264,7 +301,8 @@ export const TOOLBAR_CSS = `
     max-height: none; overflow: visible;
   }
   html[data-standalone] #toolbar .group { flex-direction: row; }
-  html[data-standalone] #toolbar .group[data-group="tools"] { order: 1; }
+  html[data-standalone] #toolbar .group[data-group="view"] { order: 1; }
+  html[data-standalone] #toolbar .group[data-group="tools"] { order: 2; }
 }
 
 /*
