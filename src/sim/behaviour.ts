@@ -172,6 +172,26 @@ export function crowdPace(density: number): number {
   if (over <= 0) return 1;
   return CROWD_PACE_FLOOR + (1 - CROWD_PACE_FLOOR) * Math.exp(-PACE_DECAY * over);
 }
+
+/**
+ * The same curve read the other way, for the router: how many times longer a
+ * stretch of ground takes to walk when this many people stand on it.
+ *
+ * Deliberately not 1 / crowdPace. The floor above says a pedestrian in any
+ * crush still shuffles at 65% pace, which caps 1/pace at 1.5 -- but a route
+ * planner asking "should I go round?" is asking about the queue, not the
+ * shuffle: time through a jam is dominated by waiting in it, which the pace
+ * curve never sees. So the slowdown keeps the curve's shape and decay but is
+ * let run past the shuffle floor, capped at three times the clear walk --
+ * enough to prefer a detour twice as long around a real jam, and little
+ * enough that a merely busy stretch never scares anybody off it.
+ */
+const SLOWDOWN_MAX = 3;
+export function crowdSlowdown(density: number): number {
+  const over = density - FREE_NEIGHBOURS;
+  if (over <= 0) return 1;
+  return Math.min(SLOWDOWN_MAX, 1 + PACE_DECAY * over);
+}
 /**
  * A pedestrian's share of the personal-space setting: between 0.8 and 1 of it.
  *

@@ -32,7 +32,7 @@ import { EraseTool } from './tools/eraseTool';
 import { TextTool } from './tools/textTool';
 import { GeneratorTool } from './tools/generatorTool';
 import { TextCaret } from './ui/textCaret';
-import { Navigation } from './sim/navigation';
+import { Navigation, RECOST_TICKS } from './sim/navigation';
 import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
 import { Plops } from './audio/plops';
 import { MAX_MS, Recorder, canRecord, recordingFilename, saveBlob, type CropRect } from './render/recorder';
@@ -201,6 +201,8 @@ export class App {
   private clock = new Clock();
   /** Speed, density and flow in the literature's units, for the debug readout. */
   private metrics = new Metrics();
+  /** Simulation ticks since the app started; the congestion recost's cadence. */
+  private simTicks = 0;
 
   /** Bumped on map edits only -- the walls. */
   private worldRevision = 0;
@@ -1739,6 +1741,13 @@ export class App {
     // While justArrived still holds the tick's arrivals, and before the removal
     // below shuffles anybody between slots.
     this.metrics.sample(this.agents, this.settings.pedestrianRadius);
+    // Every couple of seconds the routing field takes the crowd into account,
+    // so the approaching walk around a jam instead of joining it. The hash is
+    // the one agents.step just built, one tick fresh.
+    this.simTicks++;
+    if (this.simTicks % RECOST_TICKS === 0) {
+      this.nav.recost(this.hash, this.agents.x, this.agents.y, this.agents.count);
+    }
     this.playArrivals();
     // After the sound and before the frame: the plop is placed by where a
     // pedestrian landed, so the arrivals have to still be there to be heard,
