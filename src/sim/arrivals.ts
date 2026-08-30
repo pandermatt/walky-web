@@ -1,5 +1,6 @@
 import { traitOf } from './agents';
 import type { Point } from './geometry';
+import { TICKS_PER_SECOND } from './units';
 
 /**
  * When a generator lets people out, and how many at a time.
@@ -27,8 +28,13 @@ import type { Point } from './geometry';
  * for whoever sent it.
  */
 
-/** Frames a second, which is what a browser hands out when it can keep up. */
-export const TICKS_PER_SECOND = 60;
+/**
+ * Sixty by definition rather than by hope, now that the loop owes the
+ * simulation its steps off the wall clock instead of taking the display's
+ * frame rate on faith. Re-exported so a door's rate stays written against
+ * the same clock everything else keeps.
+ */
+export { TICKS_PER_SECOND } from './units';
 
 /**
  * How big a clump is on average, and the least it may shrink to.

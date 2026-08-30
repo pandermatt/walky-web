@@ -8,6 +8,7 @@ import {
   type Generator, type Label, type LabelStyle, type Settings, type Wall, type WallOptions,
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
+import { Clock } from './sim/clock';
 import { groupWalls, type WallGroup } from './state/groups';
 import { SHORTCUTS, Toolbar, type ActionId } from './ui/toolbar';
 import {
@@ -192,6 +193,10 @@ export class App {
   private crowdFinishedAt = 0;
   /** When the recent frames were painted, for the debug readout's rate. */
   private frameTimes: number[] = [];
+  /** When the recent simulation steps ran, for the debug readout's tick rate. */
+  private stepTimes: number[] = [];
+  /** Owes the simulation its sixty steps a second, whatever the display does. */
+  private clock = new Clock();
 
   /** Bumped on map edits only -- the walls. */
   private worldRevision = 0;
@@ -847,6 +852,9 @@ export class App {
     if (on) this.plops.arm();
     this.toolbar.setRunning(on);
     this.updateContextPanel();
+    // A fresh account either way: the pause was not time owed, and play must
+    // not open on a burst of catch-up steps.
+    this.clock.reset();
     if (on) this.startLoop();
   }
 
@@ -1665,34 +1673,53 @@ export class App {
    * a still picture on a running clock rather than a video that stops dead and
    * resumes minutes later on the same frame.
    */
-  private tick = (): void => {
+  private tick = (frameMs?: number): void => {
     if (!this.running && !this.recorder.active) {
       this.looping = false;
+      this.clock.reset();
       return;
     }
     if (this.running) {
-      this.rebuildNavIfNeeded();
-      this.emit();
-      this.agents.step(
-        this.nav, this.hash,
-        this.settings.speed, this.settings.pedestrianRadius, this.settings.personalSpace,
-      );
-      this.playArrivals();
-      // After the sound and before the frame: the plop is placed by where a
-      // pedestrian landed, so the arrivals have to still be there to be heard,
-      // and nothing should be drawn standing on a goal it has already left.
-      this.agents.removeArrivedSpawned();
-      this.agentRevision++;
+      // The clock decides how many steps this frame owes -- one on a 60Hz
+      // display, every other frame on 120Hz, two or three when a slow frame
+      // has to catch up -- so the crowd crosses the room in the same number
+      // of seconds whatever the monitor does.
+      const now = frameMs ?? performance.now();
+      const steps = this.clock.advance(now);
+      for (let s = 0; s < steps; s++) this.stepOnce();
+      if (steps > 0) {
+        this.agentRevision++;
+        this.markSteps(steps, now);
+      }
       if (this.recorder.active) this.stopWhenCrowdArrives();
+    } else {
+      // Paused under a running recording: time spent posing is not owed.
+      this.clock.reset();
     }
     this.render();
     requestAnimationFrame(this.tick);
   };
 
+  /** One tick of simulated time: a sixtieth of a second, however long the frame. */
+  private stepOnce(): void {
+    this.rebuildNavIfNeeded();
+    this.emit();
+    this.agents.step(
+      this.nav, this.hash,
+      this.settings.speed, this.settings.pedestrianRadius, this.settings.personalSpace,
+    );
+    this.playArrivals();
+    // After the sound and before the frame: the plop is placed by where a
+    // pedestrian landed, so the arrivals have to still be there to be heard,
+    // and nothing should be drawn standing on a goal it has already left.
+    this.agents.removeArrivedSpawned();
+  }
+
   /** Starts the loop if it is not already turning. The guard is the whole point. */
   private startLoop(): void {
     if (this.looping) return;
     this.looping = true;
+    this.clock.reset();
     this.tick();
   }
 
@@ -1768,6 +1795,28 @@ export class App {
     const n = this.frameTimes.length;
     if (n < 2) return 0;
     const span = this.frameTimes[n - 1] - this.frameTimes[0];
+    return span > 0 ? Math.round(((n - 1) / span) * 1000) : 0;
+  }
+
+  /** Notes the simulation steps a frame ran, and forgets the too-old ones. */
+  private markSteps(steps: number, now: number): void {
+    for (let s = 0; s < steps; s++) this.stepTimes.push(now);
+    while (this.stepTimes.length > 0 && now - this.stepTimes[0] > FPS_WINDOW_MS) {
+      this.stepTimes.shift();
+    }
+  }
+
+  /**
+   * Simulation steps a second over the last second. The number the fixed
+   * timestep exists to hold at sixty: on any display faster than the sim rate
+   * it reads 60 while FPS reads whatever the monitor does, and reading under
+   * 60 means the machine is genuinely too slow and simulated time is running
+   * behind the wall clock.
+   */
+  private get tps(): number {
+    const n = this.stepTimes.length;
+    if (n < 2) return 0;
+    const span = this.stepTimes[n - 1] - this.stepTimes[0];
     return span > 0 ? Math.round(((n - 1) / span) * 1000) : 0;
   }
 
@@ -2142,6 +2191,7 @@ export class App {
       // no frame rate to report, because Swing repainted on a timer and the
       // number would have been the timer's.
       `FPS: ${this.fps}`,
+      `TPS: ${this.running ? this.tps : 0}`,
     ];
   }
 
