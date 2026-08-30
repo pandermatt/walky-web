@@ -20,8 +20,8 @@ import { BLACK, type RGB } from '../palette';
  * cover: with the ported step rule, raising the preferred space made the crowd
  * worse, and every assertion in the older file stayed green while it did.
  *
- * The simulation is deterministic for these scenarios -- the only randomness is
- * the wall-escape jiggle, which none of them reach -- so the thresholds are set
+ * The simulation is deterministic -- every draw anywhere in the model is a
+ * hash, held to the pixel by determinism.test.ts -- so the thresholds are set
  * close to measured behaviour rather than left loose.
  */
 

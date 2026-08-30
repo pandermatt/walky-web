@@ -1654,10 +1654,11 @@ export class App {
    * across, so it squeezes out over several frames, which is exactly what a burst
    * coming through a door looks like.
    *
-   * Counted in frames rather than off the clock because everything else in the
-   * model is: `speed` is a per-frame step budget, so on a machine that cannot
-   * hold sixty the crowd and the doors slow down together rather than the doors
-   * running on ahead into a room nobody can walk across.
+   * Counted in ticks rather than off the wall clock because everything else in
+   * the model is, and the fixed-timestep loop now owes those ticks to the wall
+   * clock itself. The one machine where they part ways -- too slow for even the
+   * clamped substeps -- slows the crowd and the doors together rather than the
+   * doors running on ahead into a room nobody can walk across.
    *
    * A generator with no goal is skipped. It has nowhere to send anybody, and
    * since its pedestrians only leave the map by arriving, what it would make is a

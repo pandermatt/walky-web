@@ -126,21 +126,54 @@ Supporting changes:
   rather than one: a needle part can have a far sharper corner than the hull does,
   and its miter-limited corner then reaches further out than the hull's.
 
+#### Routing around a jam
+
+The fields used to be priced on clear ground once per map edit, so every
+pedestrian walked the geometrically shortest route into whatever crowd was
+already stuck on it — congestion was a thing each of them met in person. Every
+two seconds (`RECOST_TICKS`) the navigation re-prices its edges off the crowd:
+each edge is sampled every hundred pixels, each sample counts heads in the same
+window the walkers judge their own pace in, and the per-sample slowdown — the
+walkers' own speed–density curve read as time, capped at three times the clear
+walk — is averaged along the edge, which is what an integral of traversal time
+actually is, so a long clear edge with one busy patch is priced as mostly
+clear. The result lands through a half-weight EMA (a route flips after a jam
+has held for two looks, and unflips as gradually), and one goal's Dijkstra is
+re-run per recost, round-robin, bounding the cost however many goals the map
+has. Everybody picks the new field up for free: a moving pedestrian re-queries
+its waypoint every tick, the queued keep theirs — so the approaching re-route
+around a jam while the jammed drain where they stand.
+
+Two stated limits. The direct-line shortcut stays congestion-blind — an open
+room with the goal in sight has no route structure to choose between, and
+local avoidance is already doing that job. And an empty map prices exactly as
+it did before anybody walked on it, which a test asserts to the byte.
+Measured on a two-channel map (a plugged short gap passing a trickle, a
+detour half a map longer): 44 of 48 arrive inside a simulated minute with the
+recost against 30 without. `src/__tests__/congestion.test.ts` holds the
+margin, the empty-map identity, and that a replayed run re-routes to the
+same pixel.
+
 ### Crowd behaviour
 
-The lattice is the original's: eight integer directions, a speed counter where a
-diagonal costs √2, and a pecking order by remaining distance to the goal.
-Neighbour lookup is a spatial hash rebuilt each tick by counting sort, replacing
-the original's scan over every pedestrian. How a pedestrian *chooses* among those
-eight directions is not the original's, and the rest of this section is why.
+The search is still the original's eight directions and a pecking order by
+remaining distance to the goal — but the lattice itself is gone: positions are
+continuous, a tick's pace is spent in substeps with a fractional tail, and the
+chosen direction is refined between the eight spokes (see **Off the lattice**
+below). Neighbour lookup is a spatial hash rebuilt each tick by counting sort,
+replacing the original's scan over every pedestrian. How a pedestrian *chooses*
+among its options is not the original's either, and the rest of this section is
+why.
 
 Bugs found while porting, all with regression tests:
 
-- **A float32 deadlock.** The step budget is clamped to exactly √2 and a diagonal
-  costs exactly √2. Held in a `Float32Array` the clamp rounds *down* below the
+- **A float32 deadlock.** The step budget was clamped to exactly √2 and a diagonal
+  cost exactly √2. Held in a `Float32Array` the clamp rounds *down* below the
   cost, so the moment a pedestrian banked enough straight steps to want a diagonal
   it could never afford one and froze with a full counter. Java used `double`; the
-  step accounting is `Float64Array`.
+  step accounting became `Float64Array`. (The budget counter has since retired
+  with the lattice — nothing banks any more — and the regression test now asserts
+  the promise rather than the mechanism: a shallow approach keeps making distance.)
 - **A missing pecking order.** `Map.getColosionPedestrian` only counts a neighbour
   as blocking if you do *not* outrank it, ranked by remaining distance to goal.
   Without that filter every member of a dense crowd yields to every other and the
@@ -374,6 +407,82 @@ drift, at 2,000 agents: p50 within a few percent, p95 about 8% higher.
 `behaviour.test.ts` asserts the invariants — nobody overlaps, nobody enters a
 wall, everybody arrives — and every one of them stayed green throughout the
 behaviour it describes, which is why the second file exists.
+
+#### The clock and the units
+
+For most of its life the model ran one step per animation frame and knew no
+unit but the pixel — which meant the crowd walked at whatever rate the monitor
+refreshed (double speed on a 120Hz display, half on a struggling laptop, and
+the doors' per-second rates only true at exactly sixty frames), and no number
+it produced could be compared against published pedestrian data.
+
+Both are fixed in `src/sim/units.ts` and `src/sim/clock.ts`. A tick is a
+sixtieth of a second *by definition*: an accumulator banks the wall-clock time
+each frame actually took and pays it out in whole steps, at most three a frame
+so a slow machine degrades to slower simulated time instead of spiralling, and
+pausing forgets the account so resuming never opens on a burst of catch-up
+steps. A `TPS` line beside `FPS` in the debug readout shows the decoupling
+working: it holds at 60 on any display that keeps up.
+
+The units anchor on the body, the one pixel quantity that is unarguably a
+physical thing: the default 13px radius stands for Weidmann's 0.23m shoulder
+radius, which fixes the scale at **56px to the metre**. At that rate the
+long-standing default speed of 4px per tick turned out to be a 4.3 m/s jog, so
+the speed slider now speaks metres per second — 0.4 to 3.0, defaulting to
+Weidmann's 1.34 m/s free walking speed — with the sim core keeping its
+px/tick currency and the app converting at the one boundary. On the wire,
+speed rides as centi-m/s behind a header flag; an old link's whole number is
+read as the px/tick it always was and folded through the exchange rate, so
+every link ever pasted still opens at about the pace its author saw.
+
+#### Off the lattice: continuous motion
+
+Pedestrians used to live on integer coordinates and move in whole 1px hops
+bought from a banked budget, which had two visible costs: a slow crowd
+stuttered — banking budget and lurching every second or third tick — and every
+path was a staircase of 45° segments.
+
+Positions are now continuous, and a tick's pace is spent as it goes: substeps
+of at most √2 (the farthest a lattice decision ever moved anybody, kept as the
+decision cadence so a tick costs the surveys it always cost) with a fractional
+tail, so a slow pedestrian drifts a fraction of a pixel every tick. A
+direction is a direction rather than a geometry — a diagonal travels the same
+distance as an axis step instead of paying √2 for extra reach. And after the
+eight-way scan picks its spoke, the cost is priced at the winner's two angular
+neighbours — pure arithmetic against the survey gradient, no second pass over
+the crowd — and the move slides to the minimum of the parabola through the
+three, which retires the last of the 45° robotics: paths bend by degrees.
+
+The scored decision rule survived the substrate whole. Every cost was already
+priced per unit of distance, which is what makes the same comparison valid at
+any step length, and the legality rules never cared about integers. Measured
+against the lattice: reversal rates hold at 0.1–1.2% across the corridor
+sweep, the bottleneck crush improves to 49 arrivals in 400 ticks against 38,
+with less of the crowd stalled at any moment and pressure at the front
+unchanged — so the carry machinery fires as calibrated.
+
+One thing was built here, measured, and rejected, per house rule: a 1.2 m/s²
+acceleration ramp on each pedestrian. Physically right for setting off, but
+the model's queues move by full stops and restarts, and charging seconds of
+ramp at every restart turned every queue into a crawl — the crush fell to 27
+arrivals and one crossing layout starved outright. The ramp is out until
+stop-and-go stops being binary.
+
+#### What the crowd measures about itself
+
+Whether the model is realistic used to be answerable only by writing a test;
+now the run answers while it walks. A metrics pass (`src/sim/metrics.ts`)
+reads the three numbers the pedestrian literature reports off state the model
+already keeps — mean walking speed in m/s, crowding in persons per square
+metre, arrivals per second over a five-second window — and accumulates the
+run's own speed-against-density table, the fundamental diagram that is the
+standard realism check for a pedestrian model. The debug overlay shows the
+three readouts; `walkyMetrics()` in the console hands the diagram over as
+JSON for plotting against Weidmann offline.
+
+Nothing feeds back. The crowd cannot see its own readout, and a test runs the
+same walk measured and unmeasured and requires every pedestrian on the same
+pixel.
 
 ### Quality-of-life additions
 
@@ -852,6 +961,13 @@ Two honest caveats:
   about 8% above it on p95, so the guidance above still holds. The legality check
   used to be the remaining hot spot and is no longer — a step makes one
   spatial-hash query where it used to make about seven.
+- It also predates continuous motion and the m/s speed setting. The benchmark now
+  runs at the shipped default pace (1.35 m/s through the units conversion) rather
+  than the old 4px/tick jog, and a walking crowd buys fewer substeps than a
+  jogging one — on the machine the recent work was measured on, p50 at 20,000
+  agents came out about a third *lower* than the same scenario on the lattice at
+  the old default. The congestion recost adds one edge sweep every 120 ticks,
+  which did not move the numbers.
 
 ## Running it
 
