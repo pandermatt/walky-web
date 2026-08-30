@@ -7,7 +7,7 @@ vi.setConfig({ testTimeout: 30_000 });
 import { Agents, packRgb } from '../sim/agents';
 import { SpatialHash } from '../sim/spatialHash';
 import { Navigation } from '../sim/navigation';
-import { SQUASH_MAX } from '../sim/behaviour';
+import { SQUASH_MAX, REFUGE_ROOM } from '../sim/behaviour';
 import { makeWall, rectanglePolygon } from '../state/model';
 import { BLACK, type RGB } from '../palette';
 
@@ -881,5 +881,135 @@ describe('crowd state stays sound', () => {
     agents.resetPositions(new Map());
     const black = packRgb(BLACK);
     for (let i = 0; i < agents.count; i++) expect(agents.color[i]).not.toBe(black);
+  });
+});
+
+/**
+ * The one thing a pedestrian here can do that is not walking.
+ *
+ * The behaviour is a release valve, so what these cover is a valve's two failure
+ * modes rather than the animation: it has to open where it is meant to, and it
+ * must not weep everywhere else. The third is that opening it costs the crowd
+ * nothing -- a drain that empties the jam by never delivering anybody is not a
+ * drain -- which is why every case here still checks that everyone arrives.
+ */
+describe('giving up', () => {
+  /** The deep crowd at a gap again, run long enough for the jam to build and clear. */
+  function jam() {
+    const top = makeWall([rectanglePolygon([0, -500], [40, -35])]);
+    const bottom = makeWall([rectanglePolygon([0, 35], [40, 500])]);
+    const goal = makeWall([rectanglePolygon([260, -40], [340, 40])]);
+    goal.isGoal = true;
+    const nav = new Navigation();
+    nav.rebuild([top, bottom, goal], R);
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 14, 12, -560, -209, 38);
+    return { agents, nav, hash, goal };
+  }
+
+  /** Distance to the middle of the goal, which is the direction of interest. */
+  const toGoal = (a: Agents, i: number) => Math.hypot(a.x[i] - 300, a.y[i]);
+
+  /** Others still walking within the window a refuge is judged in. */
+  function neighbours(a: Agents, i: number): number {
+    let n = 0;
+    for (let j = 0; j < a.count; j++) {
+      if (j === i || a.arrived[j]) continue;
+      if (Math.hypot(a.x[j] - a.x[i], a.y[j] - a.y[i]) < REFUGE_ROOM * R) n++;
+    }
+    return n;
+  }
+
+  it('opens where it is for: a crush eventually makes somebody give up', () => {
+    const { agents, nav, hash } = jam();
+    for (let t = 0; t < 800; t++) agents.step(nav, hash, 4, R, 60);
+    expect(agents.surrenders).toBeGreaterThan(0);
+  });
+
+  it('stays shut where it is not: a crowd with room to walk in never does', () => {
+    // The guard that matters most. Pressure is nought in a crowd that has room,
+    // so a trigger read off it should be untouchable here -- and a valve that
+    // weeps in ordinary walking is worse than no valve, because every white dot
+    // it produces is a lie about the crowd it is in.
+    const { nav, goal } = corridor();
+    const agents = new Agents();
+    const hash = new SpatialHash();
+    block(agents, goal.id, goal.color, 4, 4, -400, -60, 40);
+    for (let t = 0; t < 1200; t++) agents.step(nav, hash, 4, R, 60);
+    expect(agents.surrenders).toBe(0);
+    expect(arrivedCount(agents)).toBe(agents.count);
+  });
+
+  it('backs away from the goal, and into room', () => {
+    // What the retreat is supposed to achieve, measured on every one that happens
+    // rather than on a chosen pedestrian. Both halves are needed: away from the
+    // goal without room is walking backwards into the queue behind, and room
+    // without direction is being squeezed out of the side of the crush.
+    const { agents, nav, hash } = jam();
+    const at = new Map<number, { away: number; near: number }>();
+    let left = 0;
+    let roomier = 0;
+    let retreats = 0;
+
+    for (let t = 0; t < 1600; t++) {
+      const before = agents.fleeLeft.slice(0, agents.count);
+      agents.step(nav, hash, 4, R, 60);
+      for (let i = 0; i < agents.count; i++) {
+        if (before[i] <= 0 && agents.fleeLeft[i] > 0) {
+          at.set(i, { away: toGoal(agents, i), near: neighbours(agents, i) });
+        } else if (before[i] > 0 && agents.fleeLeft[i] <= 0 && at.has(i)) {
+          const was = at.get(i)!;
+          at.delete(i);
+          retreats++;
+          if (toGoal(agents, i) > was.away) left++;
+          if (neighbours(agents, i) <= was.near) roomier++;
+        }
+      }
+    }
+
+    expect(retreats).toBeGreaterThan(4);
+    // Not every one, and the two halves do not hold equally. Room is what the
+    // refuge is chosen on and what the bar is set against, so it is close to
+    // universal; ground gained on the goal is traded against it, because the
+    // flank is often the only place with room in it and the flank gains none.
+    // Both are measured well above these -- see REFUGE_ARC for the trade -- and
+    // the claim is about what the behaviour does, not a guarantee it cannot make.
+    expect(left / retreats).toBeGreaterThan(0.6);
+    expect(roomier / retreats).toBeGreaterThan(0.8);
+  });
+
+  it('goes back to walking, and everybody still arrives', () => {
+    // Giving up has to be a detour and not an exit. A pedestrian that retreats
+    // and stays retreated would leave `allArrived` false for ever, which is what
+    // a recording waits on before it stops itself.
+    const { agents, nav, hash } = jam();
+    let everFled = 0;
+    for (let t = 0; t < 4000; t++) {
+      agents.step(nav, hash, 4, R, 60);
+      for (let i = 0; i < agents.count; i++) if (agents.fleeLeft[i] > 0) { everFled++; break; }
+    }
+    expect(agents.surrenders).toBeGreaterThan(0);
+    expect(everFled).toBeGreaterThan(0);
+    for (let i = 0; i < agents.count; i++) expect(agents.fleeLeft[i]).toBe(0);
+    expect(agents.allArrived).toBe(true);
+  });
+
+  it('keeps the colour it will need again', () => {
+    // White is worn, not painted. The colour of the goal it is still going to has
+    // to survive the whole retreat, because that is what it goes back to -- and
+    // the render reads the retreat rather than the colour for exactly this reason.
+    const { agents, nav, hash, goal } = jam();
+    const wall = packRgb(goal.color);
+    let checked = 0;
+    for (let t = 0; t < 1200; t++) {
+      agents.step(nav, hash, 4, R, 60);
+      for (let i = 0; i < agents.count; i++) {
+        if (agents.fleeLeft[i] <= 0) continue;
+        expect(agents.color[i]).toBe(wall);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 });

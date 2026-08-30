@@ -512,6 +512,145 @@ const CARRY_FROM = 2.5;
 const CARRY_WANDER = 0.5;
 
 /**
+ * Giving up: the one thing a pedestrian here can do that is not walking.
+ *
+ * Everything else in this file is about getting through. A pedestrian under load
+ * slows, gives up room, sidesteps, queues, and past CARRY_FROM stops deciding
+ * anything at all and is moved by the crowd -- but it never stops being aimed at
+ * its goal, so the only way out of a bad jam is through it. A crowd pinned against
+ * an opening therefore stays pinned: the front rank cannot advance and the back
+ * rank has no reason to stop pushing, and the jam has no drain.
+ *
+ * Real people leave. Someone squeezed long enough abandons the attempt, backs out
+ * to somewhere with room in it, waits, and comes back when the press has thinned.
+ * That is a release valve the model did not have, and it is what turns a permanent
+ * arch at a bottleneck into one that builds, sheds a few people off the back, and
+ * clears.
+ *
+ * SURRENDER_FROM is the same figure as CARRY_FROM, and for the same reason it was
+ * calibrated to: the load at which the crowd is moving you rather than you moving
+ * is the honest definition of being squeezed. Measured pressure is nought in a
+ * crowd with room, ~1.6 at the worst of a busy corridor and ~3.1 at the front of a
+ * deep crush, so a corridor never makes anybody give up and a crush eventually
+ * makes somebody.
+ *
+ * SURRENDER_STEPS was tuned against the deep crowd at a gap, which is the case
+ * this is for, and against desperation already being in the model. That matters:
+ * the ramp unsticks people before a crush can deepen, so pressure there now peaks
+ * near 2.8 where it once reached 4.2, and a figure tuned without it fires never.
+ * At 60 a 168-strong crush gives up three times, which is not visible; at 25 it
+ * gives up ten, every one of which reaches its refuge.
+ *
+ * The two behaviours are not rivals, and measurement is what says so: the crushed
+ * and the stalled turn out to be different people. Pressure peaks at the front of
+ * a queue, which is the part that is moving; the stall builds further back, where
+ * it is calmer. Gating one on the other was tried and fires nothing at all.
+ *
+ * RELIEF is 1, so the counter is the plain integral of time spent over the
+ * threshold less time spent under it: a squeeze has to be sustained rather than
+ * merely survived, but a crush that lets up for a moment is not forgiven twice
+ * over. Draining at 2 was tried first and needed a threshold so short -- twelve
+ * ticks -- that "for too long" stopped being a fair description of it.
+ */
+export const SURRENDER_FROM = CARRY_FROM;
+const SURRENDER_STEPS = 25;
+export const RELIEF = 1;
+/**
+ * How long the retreat lasts, in ticks: the walk out and the wait at the far end
+ * together, because they need no telling apart. A pedestrian standing on its
+ * refuge has nothing to gain from any of the nine things it could do, so it stands
+ * -- the rest falls out of the step rule and costs no code.
+ */
+export const FLEE_STEPS = 240;
+/**
+ * How much longer the assertive hold out, following the other NERVE_ figures: one
+ * is somebody who finds a crush an argument to win, nought is somebody who was
+ * looking for a way out of it anyway.
+ */
+const NERVE_RESOLVE = 1.0;
+
+/** Ticks of being squeezed this pedestrian will take before it gives up. */
+export function surrenderSteps(assertiveness: number): number {
+  return SURRENDER_STEPS * (1 - NERVE_RESOLVE / 2 + NERVE_RESOLVE * assertiveness);
+}
+
+/**
+ * How far a refuge is judged and how far one may be, both as multiples of the
+ * body radius.
+ *
+ * REFUGE_ROOM is the window "no people" is measured in, and matches PACE_WINDOW:
+ * how full a place is, is a question about a wider circle than how pressed one
+ * pedestrian feels.
+ *
+ * REFUGE_REACH is a bound on the whole idea, and a tight one. Backing out of a
+ * crush means stepping aside, not crossing the map -- and the far refuge is not
+ * merely excessive, it is unreachable. Everyone behind is still walking at the
+ * goal, so a long retreat is swum against the entire crowd: at 20 radii, retreats
+ * covered about 13px of the 260 they set out to make before their time ran out,
+ * and a pedestrian that gives up and then does not go anywhere is worse than one
+ * that never gave up.
+ */
+export const REFUGE_ROOM = 5;
+const REFUGE_REACH = 10;
+/**
+ * How the ground behind is sampled: this many directions fanned across an arc
+ * centred on straight back, at this many distances along each.
+ *
+ * Sampled rather than taken from the visibility graph, which was the first thing
+ * tried and does not work. Graph nodes sit on the corners of obstacles, so on the
+ * map that most needs this -- a crowd driving at a gap -- every candidate is a
+ * corner of the gap itself: the jam, not a way out of it. Worse, they are all
+ * nearer the goal along the route than the queue behind them, so the one filter
+ * that matters rejected the lot and the behaviour never fired where it was for.
+ *
+ * A half turn is the most it could be -- the other half is the direction of the
+ * goal, and a refuge towards the goal is not a refuge but the thing this
+ * pedestrian has just stopped being able to do under a different name. REFUGE_ARC
+ * narrows it further, and the narrowing is a trade with a measured middle. At the
+ * full half turn the fan reaches straight sideways, and a sideways escape is a
+ * real escape that gains nothing on the goal: only twelve retreats in seventeen
+ * ended further from it. Wound in to a third of a turn either side, all of them
+ * do -- but the fan no longer reaches the flank, which is often the only place
+ * with room in it, and three in ten then arrive somewhere no emptier. At 0.7 both
+ * hold: every retreat reaches its refuge and finds room there, and four in five
+ * gain ground on the goal as well.
+ */
+const REFUGE_ARCS = 9;
+const REFUGE_RANGES = 3;
+/** How much of a half turn the fan covers; 1 is the full one. */
+const REFUGE_ARC = 0.7;
+/**
+ * What makes one refuge better than another. Room comes first and is a bar rather
+ * than a weight (see REFUGE_EMPTY); between the places that clear it, what decides
+ * is how much ground the move gains on the goal.
+ *
+ * Ground gained on the goal, and not distance walked, which was the first form and
+ * is a different thing. The fan reaches sideways as well as back, and a long walk
+ * across the queue's flank covers plenty of ground while ending exactly as far
+ * from the goal as standing still would -- so scored on distance walked, half the
+ * refuges chosen were not away from anything. Scored on what was actually asked
+ * for, that goes to four in five.
+ */
+const W_REFUGE_CROWD = 1.0;
+const W_REFUGE_WALK = 0.5;
+/**
+ * How many others may already be standing in a refuge -- and the answer is very
+ * nearly none, which is the difference between this behaviour helping and hurting.
+ *
+ * Without the bar, the best candidate wins whether or not it is any good, so a
+ * pedestrian with nowhere to go gives up anyway and walks into whatever is behind
+ * it. Two crowds meeting head-on in a corridor are the case that shows it: there
+ * is no room anywhere, every refuge is just more crowd, and pedestrians spent
+ * their retreats walking into the people they had come through -- three of sixty
+ * never arrived at all.
+ *
+ * With the bar, having nowhere to go is answered by not giving up. That is the
+ * right answer and it costs nothing: somebody with no way out and no way back is
+ * exactly who the desperation ramp is for, and it is still there.
+ */
+const REFUGE_EMPTY = 1;
+
+/**
  * How much of its own weight a pedestrian can still put behind a lean.
  *
  * Guarded at nought pressure because an unloaded pedestrian has no push vector at
@@ -1152,6 +1291,82 @@ export class Behaviour {
       }
     }
     return best;
+  }
+
+  /**
+   * Where to go when you have given up: the nearest place behind it with room in
+   * it, and in sight so it can get there without a plan.
+   *
+   * In sight rather than routed to, because a retreat is not a journey. Someone
+   * leaving a crush wants out of it now, and what it can see is exactly what it
+   * can reach without one -- which is also why navigation can go on only ever
+   * routing towards goals.
+   *
+   * Null when there is nowhere worth going, and the caller then does not let it
+   * give up. Giving up with nowhere to go is worse than not giving up: it would
+   * stand a pedestrian still, in the crush, for the length of a retreat.
+   */
+  chooseRefuge(i: number, radius: number): Point | null {
+    const a = this.agents;
+    const here: Point = [a.x[i], a.y[i]];
+    const room = REFUGE_ROOM * radius;
+    const reach = REFUGE_REACH * radius;
+
+    // Which way the goal is: up its own route if it holds one, else the way it
+    // has been walking, and failing both the way the crowd is leaning -- which
+    // is where it was trying to get to, since being leaned on is what happens to
+    // somebody who cannot.
+    let gx = a.hasWaypoint[i] ? a.waypointX[i] - a.x[i] : a.headingX[i];
+    let gy = a.hasWaypoint[i] ? a.waypointY[i] - a.y[i] : a.headingY[i];
+    let len = Math.hypot(gx, gy);
+    if (len < 1e-6) { gx = -a.pushX[i]; gy = -a.pushY[i]; len = Math.hypot(gx, gy); }
+    if (len < 1e-6) return null;
+    gx /= len;
+    gy /= len;
+
+    // Where the goal actually is, for measuring ground gained on it. The route
+    // direction says which way to walk; it does not say how far away the goal is.
+    const [goalX, goalY] = this.nav.goalAnchor(a.goal[i], here) ?? [here[0] + gx * reach, here[1] + gy * reach];
+    const goalHere = Math.hypot(here[0] - goalX, here[1] - goalY);
+
+    let best: Point | null = null;
+    let bestScore = Infinity;
+    const spread = (Math.PI * REFUGE_ARC) / (REFUGE_ARCS - 1);
+    for (let k = 0; k < REFUGE_ARCS; k++) {
+      const turn = (k - (REFUGE_ARCS - 1) / 2) * spread;
+      const cos = Math.cos(turn);
+      const sin = Math.sin(turn);
+      const dx = -(gx * cos - gy * sin);
+      const dy = -(gx * sin + gy * cos);
+      for (let r = 1; r <= REFUGE_RANGES; r++) {
+        const walk = reach * r / REFUGE_RANGES;
+        const p: Point = [
+          Math.round(here[0] + dx * walk),
+          Math.round(here[1] + dy * walk),
+        ];
+        if (this.insideAnyWall(p)) continue;
+        if (!this.nav.canSee(here, p)) continue;
+        const crowd = this.crowdAt(p, room, i);
+        // Not a refuge if the crowd is already there.
+        if (crowd > REFUGE_EMPTY) continue;
+        // Ground gained on the goal, which is the thing asked for, rather than
+        // ground covered -- a long walk straight across the queue's flank is the
+        // same distance from the goal as standing still was.
+        const gained = (Math.hypot(p[0] - goalX, p[1] - goalY) - goalHere) / reach;
+        const score = W_REFUGE_CROWD * crowd - W_REFUGE_WALK * gained;
+        if (score < bestScore) { bestScore = score; best = p; }
+      }
+    }
+    return best;
+  }
+
+  /** How many pedestrians still walking are within `room` of a point. */
+  private crowdAt(p: Point, room: number, self: number): number {
+    const a = this.agents;
+    const found = this.hash.query(p[0], p[1], room, self, a.x, a.y);
+    let n = 0;
+    for (let k = 0; k < found.length; k++) if (!a.arrived[found[k]]) n++;
+    return n;
   }
 
   /**

@@ -2026,7 +2026,12 @@ export class App {
       const kept = this.agents.effectiveSpace[i];
       out[i] = {
         position: [this.agents.x[i], this.agents.y[i]] as Point,
-        color: unpackRgb(this.agents.color[i]),
+        // Somebody who has given up goes white until it starts walking again.
+        // Read off the retreat rather than painted into the colour the way an
+        // arrival paints black: arriving is the end of a pedestrian's day and
+        // giving up is a detour, and storing it would burn the goal colour that
+        // has to come back when it tries again.
+        color: this.agents.fleeLeft[i] > 0 ? WHITE : unpackRgb(this.agents.color[i]),
         radius: r,
         personalSpace: kept > 0 ? kept : space,
         selected: this.agents.selected[i] === 1,

@@ -267,6 +267,26 @@ export class Navigation {
     return rest.length > 0 ? [from, ...rest] : [from, next.point];
   }
 
+  /**
+   * The nearest point on a goal's hull to `from`, or null when there is no such
+   * goal: where the goal *is*, for anything that needs to measure against it
+   * rather than route to it.
+   */
+  goalAnchor(goalWallId: number, from: Point): Point | null {
+    let best: Point | null = null;
+    let bestDist = Infinity;
+    for (const part of this.graph.obstacles) {
+      if (part.wallId !== goalWallId) continue;
+      const hull = part.hull;
+      for (let i = 0, n = hull.length; i < n; i++) {
+        const p = closestPointOnSegment(hull[i], hull[(i + 1) % n], from);
+        const d = distance(p, from);
+        if (d < bestDist) { bestDist = d; best = p; }
+      }
+    }
+    return best;
+  }
+
   /** True when the agent is close enough to its goal hull to stop. */
   hasArrived(from: Point, goalWallId: number, tolerance: number): boolean {
     for (const part of this.graph.obstacles) {
