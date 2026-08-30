@@ -1,4 +1,4 @@
-import { GENERATOR_CELLS, generatorSquare } from '../state/model';
+import { GENERATOR_CELLS, generatorRoundedSquare } from '../state/model';
 import type { Point } from '../sim/geometry';
 import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type ToolPreview } from './types';
 
@@ -10,9 +10,10 @@ import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type Tool
  * single thing standing somewhere, and dragging would leave behind a row of doors
  * nobody meant to open.
  *
- * The preview is the real square at the real size rather than a cursor badge --
- * the footprint follows the pedestrian radius, so drawing it is the only honest
- * way to say how much room it is about to take. It goes red where the block has
+ * The preview is the real block at the real size and with the real rounded
+ * corners rather than a cursor badge -- the footprint follows the pedestrian
+ * radius, so drawing it is the only honest way to say how much room it is about
+ * to take, and drawing the shape it will become is how it says which thing it is. It goes red where the block has
  * no room in it for anybody to stand, and a click there is refused: a door built
  * inside a wall could never let anybody out, which is the same bargain the
  * border tool strikes with a frame too small to hold a crowd.
@@ -58,7 +59,7 @@ export class GeneratorTool implements Tool {
     if (!this.mouse) return EMPTY_PREVIEW;
     return {
       ...EMPTY_PREVIEW,
-      pendingPolygons: [generatorSquare(this.mouse, this.radius)],
+      pendingPolygons: [generatorRoundedSquare(this.mouse, this.radius)],
       pendingPolygonsInvalid: this.blocked,
     };
   }

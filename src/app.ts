@@ -3,7 +3,7 @@ import { LABEL_MIN_PX, Overlay, type EditingLabel, type RecordFrame, type Screen
 import { Viewport, type Bounds } from './render/viewport';
 import { toCss, BACKGROUND, WHITE, type RGB } from './palette';
 import {
-  DEFAULT_SETTINGS, GENERATOR_CELLS, generatorContains, generatorSquare,
+  DEFAULT_SETTINGS, GENERATOR_CELLS, generatorContains, generatorRoundedSquare, generatorSquare,
   makeGenerator, makeLabel, makeWall, rectanglePolygon, wallContains,
   type Generator, type Label, type LabelStyle, type Settings, type Wall, type WallOptions,
 } from './state/model';
@@ -759,9 +759,11 @@ export class App {
       for (const polygon of wall.polygons) for (const p of polygon) add(p[0], p[1]);
     }
     for (let i = 0; i < this.agents.count; i++) add(this.agents.x[i], this.agents.y[i]);
-    // The block's corners, not its centre: a generator is a shape on the map,
+    // The footprint's corners, not its centre: a generator is a shape on the map,
     // and reset-zoom framing one half off the screen would be a bug about the
-    // one object whose whole job is being aimed at.
+    // one object whose whole job is being aimed at. The square rather than the
+    // rounded outline because the two reach exactly as far -- and the square
+    // says so in four points.
     for (const generator of this.generators) {
       for (const p of generatorSquare(generator.at, this.settings.pedestrianRadius)) {
         add(p[0], p[1]);
@@ -1394,7 +1396,7 @@ export class App {
       return {
         kind: 'generator',
         id: generator.id,
-        outlines: [generatorSquare(generator.at, this.settings.pedestrianRadius)],
+        outlines: [generatorRoundedSquare(generator.at, this.settings.pedestrianRadius)],
       };
     }
 
@@ -1948,7 +1950,7 @@ export class App {
     const r = this.settings.pedestrianRadius;
     return this.generators.map((g) => ({
       id: g.id,
-      polygon: generatorSquare(g.at, r),
+      polygon: generatorRoundedSquare(g.at, r),
       color: g.color,
       selected: g.selected,
     }));

@@ -50,12 +50,12 @@ export interface Ray {
 }
 
 /**
- * A generator as the scene draws it: the square it occupies, and whether it is
- * the one the pointer has hold of.
+ * A generator as the scene draws it: the rounded block it occupies, and whether
+ * it is the one the pointer has hold of.
  *
  * The polygon comes ready-made rather than being derived here from a centre and
  * a radius, so that what is drawn, what a click hits and what the tool previewed
- * are all the same call to generatorSquare.
+ * are all the same call to generatorRoundedSquare.
  */
 export interface GeneratorView {
   id: number;
@@ -193,6 +193,11 @@ export class Scene {
       // is. The outline is the same white ring the pedestrians wear, and turns
       // the same thick yellow when it is selected, because being picked in order
       // to be sent somewhere is exactly what it shares with them.
+      //
+      // Both are drawn on the rounded shape rather than the bare footprint. On a
+      // map whose every obstacle is a hard rectangle, taken corners are the one
+      // difference readable at any zoom without a legend: it looks like an icon
+      // sitting on the floor, which is what it is.
       new SolidPolygonLayer<GeneratorView>({
         id: 'generators',
         data: generators,
@@ -210,7 +215,7 @@ export class Scene {
       new PathLayer<GeneratorView>({
         id: 'generator-outlines',
         data: generators,
-        // Closed by hand: a path is a line, and a square wants its last corner
+        // Closed by hand: a path is a line, and the ring wants its last point
         // joined back to its first.
         getPath: (g) => [...g.polygon, g.polygon[0]],
         getColor: (g) => (g.selected ? YELLOW : WHITE) as unknown as [number, number, number],

@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { Agents } from '../sim/agents';
-import { DEFAULT_SETTINGS, makeGenerator, generatorContains, generatorSquare, GENERATOR_CELLS } from '../state/model';
+import {
+  DEFAULT_SETTINGS, makeGenerator, generatorContains, generatorSquare,
+  generatorRoundedSquare, GENERATOR_CELLS,
+} from '../state/model';
 
 /**
  * What separates the flow from the crowd.
@@ -96,5 +99,32 @@ describe('a generator', () => {
     expect(generatorContains(g, [100 + half + 1, 100], r)).toBe(false);
     // Half the radius, half the block: the door is the size of the people.
     expect(generatorContains(g, [100 + half - 1, 100], r / 2)).toBe(false);
+  });
+
+  it('is drawn as a rounded square, inside the footprint and reaching its edges', () => {
+    const r = DEFAULT_SETTINGS.pedestrianRadius;
+    const half = GENERATOR_CELLS * r;
+    const shape = generatorRoundedSquare([100, 100], r);
+
+    const xs = shape.map((p) => p[0]);
+    const ys = shape.map((p) => p[1]);
+    // It fills the same box the footprint does -- the corners are taken off, the
+    // sides are not pulled in -- so framing and layout are unchanged by rounding.
+    expect(Math.min(...xs)).toBeCloseTo(100 - half);
+    expect(Math.max(...xs)).toBeCloseTo(100 + half);
+    expect(Math.min(...ys)).toBeCloseTo(100 - half);
+    expect(Math.max(...ys)).toBeCloseTo(100 + half);
+    // And no point of it lies outside that box.
+    for (const [x, y] of shape) {
+      expect(Math.abs(x - 100)).toBeLessThanOrEqual(half + 1e-9);
+      expect(Math.abs(y - 100)).toBeLessThanOrEqual(half + 1e-9);
+    }
+    // The corner itself is gone: the footprint has a point there, the block does
+    // not, and neither does the hit test.
+    expect(generatorSquare([100, 100], r)).toContainEqual([100 + half, 100 + half]);
+    expect(shape).not.toContainEqual([100 + half, 100 + half]);
+    const g = makeGenerator([100, 100], 4);
+    expect(generatorContains(g, [100 + half - 1, 100 + half - 1], r)).toBe(false);
+    expect(generatorContains(g, [100, 100 + half - 1], r)).toBe(true);
   });
 });
