@@ -7,7 +7,7 @@ vi.setConfig({ testTimeout: 30_000 });
 import { Agents, packRgb } from '../sim/agents';
 import { SpatialHash } from '../sim/spatialHash';
 import { Navigation } from '../sim/navigation';
-import { SQUASH_MAX, REFUGE_ROOM } from '../sim/behaviour';
+import { SQUASH_MAX, REFUGE_ROOM, Behaviour } from '../sim/behaviour';
 import { makeWall, rectanglePolygon } from '../state/model';
 import { BLACK, type RGB } from '../palette';
 
@@ -993,6 +993,55 @@ describe('giving up', () => {
     expect(everFled).toBeGreaterThan(0);
     for (let i = 0; i < agents.count; i++) expect(agents.fleeLeft[i]).toBe(0);
     expect(agents.allArrived).toBe(true);
+  });
+
+  it('takes a refuge that is merely emptier, not one that is empty', () => {
+    // The bar on a refuge has to be relative, and this is the whole of why.
+    // Judged against a fixed count, "somewhere with room in it" means deserted --
+    // a thing that exists in a test and not on any map worth simulating. On a
+    // busy one it rejected every candidate for every pedestrian and the behaviour
+    // never fired at all, while the crush counter ran past nine hundred.
+    //
+    // Tested on the decision rather than through a run, because what went wrong
+    // was the decision: standing with a few people near you, beside a jam, is
+    // relief, and a rule that will not call it that has rusted shut.
+    const nav = new Navigation();
+    nav.rebuild([], R);
+    const agents = new Agents();
+    const hash = new SpatialHash();
+
+    // One pedestrian walking east, packed in on all sides.
+    const me = agents.add([0, 0]);
+    agents.headingX[me] = 1;
+    for (let i = -2; i <= 2; i++) {
+      for (let j = -2; j <= 2; j++) {
+        if (i === 0 && j === 0) continue;
+        agents.add([i * 28, j * 28]);
+      }
+    }
+    // Behind it, thinner but not deserted: the ground it would retreat over is
+    // occupied at a comfortable spacing rather than not at all.
+    for (let i = 1; i <= 3; i++) {
+      for (let j = -3; j <= 3; j++) agents.add([-i * 62, j * 62]);
+    }
+
+    hash.build(agents.x, agents.y, agents.count, 200);
+    const behaviour = new Behaviour(agents, nav, hash, 3);
+    const refuge = behaviour.chooseRefuge(me, R);
+
+    expect(refuge).not.toBeNull();
+    // It went backwards, and to ground with fewer people on it than here.
+    expect(refuge![0]).toBeLessThan(0);
+    const near = (x: number, y: number) => {
+      let n = 0;
+      for (let k = 0; k < agents.count; k++) {
+        if (Math.hypot(agents.x[k] - x, agents.y[k] - y) < REFUGE_ROOM * R) n++;
+      }
+      return n;
+    };
+    expect(near(refuge![0], refuge![1])).toBeLessThan(near(0, 0));
+    // And it is not deserted -- which is exactly what the old rule demanded.
+    expect(near(refuge![0], refuge![1])).toBeGreaterThan(1);
   });
 
   it('keeps the colour it will need again', () => {
