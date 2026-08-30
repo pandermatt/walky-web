@@ -57,6 +57,15 @@ export interface Settings {
    * packs, and nearly all of it under pressure from behind.
    */
   personalSpace: number;
+  /**
+   * How fast the crowd would like to walk, in metres per second.
+   *
+   * The one setting written in the world's units rather than the map's: the
+   * default is Weidmann's 1.34 m/s free walking speed (rounded up a
+   * hundredth to sit on the slider's grid), and the range runs from a
+   * shuffle to a slow jog. The sim core still works in px/tick; App converts
+   * at the boundary through sim/units.
+   */
   speed: number;
   brushSize: number;
   /**
@@ -102,9 +111,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // is painted shoulder to shoulder and opens out to whatever it is set to -- and
   // a little more room reads better as the thing it opens out *to*.
   personalSpace: 40,
-  // The original walked one lattice step per frame, which is a crawl on a modern
-  // display. Speed is now how many steps a pedestrian may buy per frame.
-  speed: 4,
+  // The original walked one lattice step per frame; the long-standing rewrite
+  // default of 4 px/tick turned out, once the units existed, to be a 4.3 m/s
+  // jog. People walk at 1.34 m/s (Weidmann), so now they do here too.
+  speed: 1.35,
   brushSize: 1,
   // A steady trickle: fast enough to read as a flow within a second or two, slow
   // enough that a door is not instantly its own traffic jam.
@@ -134,7 +144,10 @@ export type NumericSetting =
   | 'labelSize' | 'labelWeight' | 'generatorRate';
 
 export const SETTING_RANGES: Record<NumericSetting, { min: number; max: number; step: number }> = {
-  speed: { min: 1, max: 20, step: 1 },
+  // Metres per second: a shuffle to a slow jog. Old maps carry the px/tick
+  // numbers 1-20; the clamp folds those into range, and 3 m/s -- where speed 4
+  // lands -- is close enough to what their authors saw.
+  speed: { min: 0.4, max: 3, step: 0.05 },
   pedestrianRadius: { min: 3, max: 40, step: 1 },
   personalSpace: { min: 0, max: 120, step: 1 },
   brushSize: { min: 1, max: 14, step: 1 },

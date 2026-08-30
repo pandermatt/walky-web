@@ -1,6 +1,7 @@
 import type { RGB } from '../palette';
 import type { Point } from '../sim/geometry';
 import { ZOOM_LEVEL_MAX, ZOOM_LEVEL_MIN } from '../render/viewport';
+import { mpsFromPxPerTick } from '../sim/units';
 import {
   SCENARIO_VERSION, clampSettings,
   type ScenarioCore, type SerializedAgent, type SerializedGenerator,
@@ -87,8 +88,21 @@ export const FLAG_LABELS = 2;
  */
 export const FLAG_GENERATORS = 4;
 
+/**
+ * The speed setting travels in centi-metres per second.
+ *
+ * The escape hatch a third time, for a change of meaning rather than a new
+ * block: speed moved from the lattice's px-per-frame (a whole number, 1-20)
+ * to metres per second (a fraction), and a varint cannot carry 1.35. With the
+ * flag set the number on the wire is round(m/s * 100); without it the link is
+ * an old one and its whole number is px/tick, converted through sim/units on
+ * the way in -- so every link ever pasted still opens at the pace its author
+ * saw, near enough, and a new link meets an old build by name.
+ */
+export const FLAG_SPEED_MPS = 8;
+
 /** Every bit that means something. Anything else set is a payload from the future. */
-const KNOWN_FLAGS = FLAG_DEFLATED | FLAG_LABELS | FLAG_GENERATORS;
+const KNOWN_FLAGS = FLAG_DEFLATED | FLAG_LABELS | FLAG_GENERATORS | FLAG_SPEED_MPS;
 
 /** Sub-unit precision for the one thing in a map that is not a whole number. */
 const VIEW_QUANTUM = 16;  // at the deepest zoom a 16th of a unit is under 4px
@@ -327,9 +341,14 @@ export function readHeader(bytes: Uint8Array): { flags: number; body: Uint8Array
  * Set only when there is something to announce, which is what keeps a map with
  * no labels on it byte-identical to what an older build wrote and readable by
  * one. shareLink.ts ORs the deflate bit onto whatever this returns.
+ *
+ * FLAG_SPEED_MPS is the exception, always set: every body this build writes
+ * carries speed in the new unit, because there is no whole number of px/tick
+ * that says 1.35 m/s.
  */
 export function bodyFlags(core: ScenarioCore): number {
-  return ((core.labels?.length ?? 0) > 0 ? FLAG_LABELS : 0)
+  return FLAG_SPEED_MPS
+    | ((core.labels?.length ?? 0) > 0 ? FLAG_LABELS : 0)
     | ((core.generators?.length ?? 0) > 0 ? FLAG_GENERATORS : 0);
 }
 
@@ -350,7 +369,10 @@ export function encodeScenarioBody(core: ScenarioCore): Uint8Array {
   let toggles = 0;
   TOGGLE_KEYS.forEach((key, i) => { if (s[key]) toggles |= 1 << i; });
   w.varint(toggles);
-  for (const key of NUMBER_KEYS) w.varint(s[key]);
+  // Speed rides as centi-m/s (see FLAG_SPEED_MPS); the rest are whole pixels.
+  for (const key of NUMBER_KEYS) {
+    w.varint(key === 'speed' ? Math.round(s[key] * 100) : s[key]);
+  }
 
   w.zigzag(Math.round(core.view.targetX * VIEW_QUANTUM));
   w.zigzag(Math.round(core.view.targetY * VIEW_QUANTUM));
@@ -497,7 +519,14 @@ export function decodeScenarioBody(bytes: Uint8Array, flags = 0): ScenarioCore {
   const toggles = r.varint();
   const settings: Partial<Settings> = {};
   TOGGLE_KEYS.forEach((key, i) => { settings[key] = (toggles & (1 << i)) !== 0; });
-  for (const key of NUMBER_KEYS) settings[key] = r.varint();
+  for (const key of NUMBER_KEYS) {
+    const raw = r.varint();
+    // An old link's speed is the lattice's px-per-frame; through the exchange
+    // rate it is the same walking pace it always was, and the clamp downstream
+    // folds the old jog settings onto the top of the new scale.
+    settings[key] = key !== 'speed' ? raw
+      : (flags & FLAG_SPEED_MPS) !== 0 ? raw / 100 : mpsFromPxPerTick(raw);
+  }
 
   const view = {
     targetX: r.step(0) / VIEW_QUANTUM,

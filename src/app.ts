@@ -8,6 +8,9 @@ import {
   type Generator, type Label, type LabelStyle, type Settings, type Wall, type WallOptions,
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
+import { Clock } from './sim/clock';
+import { Metrics } from './sim/metrics';
+import { pxPerTickFromMps } from './sim/units';
 import { groupWalls, type WallGroup } from './state/groups';
 import { SHORTCUTS, Toolbar, type ActionId } from './ui/toolbar';
 import {
@@ -29,7 +32,7 @@ import { EraseTool } from './tools/eraseTool';
 import { TextTool } from './tools/textTool';
 import { GeneratorTool } from './tools/generatorTool';
 import { TextCaret } from './ui/textCaret';
-import { Navigation } from './sim/navigation';
+import { Navigation, RECOST_TICKS } from './sim/navigation';
 import { Agents, unpackRgb, type AgentsSnapshot } from './sim/agents';
 import { Plops } from './audio/plops';
 import { MAX_MS, Recorder, canRecord, recordingFilename, saveBlob, type CropRect } from './render/recorder';
@@ -192,6 +195,14 @@ export class App {
   private crowdFinishedAt = 0;
   /** When the recent frames were painted, for the debug readout's rate. */
   private frameTimes: number[] = [];
+  /** When the recent simulation steps ran, for the debug readout's tick rate. */
+  private stepTimes: number[] = [];
+  /** Owes the simulation its sixty steps a second, whatever the display does. */
+  private clock = new Clock();
+  /** Speed, density and flow in the literature's units, for the debug readout. */
+  private metrics = new Metrics();
+  /** Simulation ticks since the app started; the congestion recost's cadence. */
+  private simTicks = 0;
 
   /** Bumped on map edits only -- the walls. */
   private worldRevision = 0;
@@ -309,6 +320,23 @@ export class App {
     });
     this.applyCursor();
     this.requestRender();
+
+    // For anyone measuring rather than watching: the run's speed-against-density
+    // curve and flow numbers, from the console. Returns the data and offers it
+    // as a JSON download, so a run can be plotted against Weidmann offline.
+    (window as unknown as Record<string, unknown>).walkyMetrics = () => {
+      const data = {
+        readout: this.metrics.readout(),
+        fundamentalDiagram: this.metrics.fundamentalDiagram(),
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'walky-metrics.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      return data;
+    };
   }
 
   // ---- world mutations exposed to tools -----------------------------------
@@ -785,6 +813,7 @@ export class App {
     this.labels = [];
     this.generators = [];
     this.agents.clear();
+    this.metrics.reset();
     this.play(false);
     this.navDirty = true;
     this.tool?.cancel?.();
@@ -824,6 +853,9 @@ export class App {
           generator.wait = 0;
         }
         this.agents.resetPositions(this.wallColors());
+        // A fresh run deserves a fresh diagram: the replayed demand is the
+        // point of resetting, and mixing two runs' curves would say neither's.
+        this.metrics.reset();
         this.touch();
         break;
       case 'settings':
@@ -849,6 +881,9 @@ export class App {
     if (on) this.plops.arm();
     this.toolbar.setRunning(on);
     this.updateContextPanel();
+    // A fresh account either way: the pause was not time owed, and play must
+    // not open on a burst of catch-up steps.
+    this.clock.reset();
     if (on) this.startLoop();
   }
 
@@ -1621,10 +1656,11 @@ export class App {
    * across, so it squeezes out over several frames, which is exactly what a burst
    * coming through a door looks like.
    *
-   * Counted in frames rather than off the clock because everything else in the
-   * model is: `speed` is a per-frame step budget, so on a machine that cannot
-   * hold sixty the crowd and the doors slow down together rather than the doors
-   * running on ahead into a room nobody can walk across.
+   * Counted in ticks rather than off the wall clock because everything else in
+   * the model is, and the fixed-timestep loop now owes those ticks to the wall
+   * clock itself. The one machine where they part ways -- too slow for even the
+   * clamped substeps -- slows the crowd and the doors together rather than the
+   * doors running on ahead into a room nobody can walk across.
    *
    * A generator with no goal is skipped. It has nowhere to send anybody, and
    * since its pedestrians only leave the map by arriving, what it would make is a
@@ -1667,34 +1703,66 @@ export class App {
    * a still picture on a running clock rather than a video that stops dead and
    * resumes minutes later on the same frame.
    */
-  private tick = (): void => {
+  private tick = (frameMs?: number): void => {
     if (!this.running && !this.recorder.active) {
       this.looping = false;
+      this.clock.reset();
       return;
     }
     if (this.running) {
-      this.rebuildNavIfNeeded();
-      this.emit();
-      this.agents.step(
-        this.nav, this.hash,
-        this.settings.speed, this.settings.pedestrianRadius, this.settings.personalSpace,
-      );
-      this.playArrivals();
-      // After the sound and before the frame: the plop is placed by where a
-      // pedestrian landed, so the arrivals have to still be there to be heard,
-      // and nothing should be drawn standing on a goal it has already left.
-      this.agents.removeArrivedSpawned();
-      this.agentRevision++;
+      // The clock decides how many steps this frame owes -- one on a 60Hz
+      // display, every other frame on 120Hz, two or three when a slow frame
+      // has to catch up -- so the crowd crosses the room in the same number
+      // of seconds whatever the monitor does.
+      const now = frameMs ?? performance.now();
+      const steps = this.clock.advance(now);
+      for (let s = 0; s < steps; s++) this.stepOnce();
+      if (steps > 0) {
+        this.agentRevision++;
+        this.markSteps(steps, now);
+      }
       if (this.recorder.active) this.stopWhenCrowdArrives();
+    } else {
+      // Paused under a running recording: time spent posing is not owed.
+      this.clock.reset();
     }
     this.render();
     requestAnimationFrame(this.tick);
   };
 
+  /** One tick of simulated time: a sixtieth of a second, however long the frame. */
+  private stepOnce(): void {
+    this.rebuildNavIfNeeded();
+    this.emit();
+    this.agents.step(
+      this.nav, this.hash,
+      // The one unit conversion in the app: the slider speaks m/s, the sim
+      // core walks in px/tick, and they meet here.
+      pxPerTickFromMps(this.settings.speed),
+      this.settings.pedestrianRadius, this.settings.personalSpace,
+    );
+    // While justArrived still holds the tick's arrivals, and before the removal
+    // below shuffles anybody between slots.
+    this.metrics.sample(this.agents, this.settings.pedestrianRadius);
+    // Every couple of seconds the routing field takes the crowd into account,
+    // so the approaching walk around a jam instead of joining it. The hash is
+    // the one agents.step just built, one tick fresh.
+    this.simTicks++;
+    if (this.simTicks % RECOST_TICKS === 0) {
+      this.nav.recost(this.hash, this.agents.x, this.agents.y, this.agents.count);
+    }
+    this.playArrivals();
+    // After the sound and before the frame: the plop is placed by where a
+    // pedestrian landed, so the arrivals have to still be there to be heard,
+    // and nothing should be drawn standing on a goal it has already left.
+    this.agents.removeArrivedSpawned();
+  }
+
   /** Starts the loop if it is not already turning. The guard is the whole point. */
   private startLoop(): void {
     if (this.looping) return;
     this.looping = true;
+    this.clock.reset();
     this.tick();
   }
 
@@ -1773,6 +1841,28 @@ export class App {
     return span > 0 ? Math.round(((n - 1) / span) * 1000) : 0;
   }
 
+  /** Notes the simulation steps a frame ran, and forgets the too-old ones. */
+  private markSteps(steps: number, now: number): void {
+    for (let s = 0; s < steps; s++) this.stepTimes.push(now);
+    while (this.stepTimes.length > 0 && now - this.stepTimes[0] > FPS_WINDOW_MS) {
+      this.stepTimes.shift();
+    }
+  }
+
+  /**
+   * Simulation steps a second over the last second. The number the fixed
+   * timestep exists to hold at sixty: on any display faster than the sim rate
+   * it reads 60 while FPS reads whatever the monitor does, and reading under
+   * 60 means the machine is genuinely too slow and simulated time is running
+   * behind the wall clock.
+   */
+  private get tps(): number {
+    const n = this.stepTimes.length;
+    if (n < 2) return 0;
+    const span = this.stepTimes[n - 1] - this.stepTimes[0];
+    return span > 0 ? Math.round(((n - 1) / span) * 1000) : 0;
+  }
+
   private renderScene(): void {
     // Under the same rule the overlay's pointer chrome follows: a recording is a
     // picture of the crowd, and a shape dimming as the mouse crosses it is a
@@ -1834,9 +1924,9 @@ export class App {
       editingLabelStyle: this.labelStyle(),
       debugLines: this.debugLines(),
       // The speed is the one thing about a recorded run that the recording
-      // cannot otherwise show: the same crowd at 2 and at 12 is the same crowd.
-      // Read live, so dragging the slider mid-take is visible in the take.
-      speedReadout: recording ? `Speed ×${this.settings.speed}` : null,
+      // cannot otherwise show: the same crowd at 1 m/s and at 3 is the same
+      // crowd. Read live, so dragging the slider mid-take is visible in the take.
+      speedReadout: recording ? `${this.settings.speed.toFixed(2)} m/s` : null,
       recordFrame: this.recordFrame(),
       // While a frame is set the readout belongs in the frame's corner, or it
       // would be written on a part of the screen the file does not have.
@@ -2132,6 +2222,7 @@ export class App {
 
   private debugLines(): string[] {
     const m = this.mouseWorld;
+    const walking = this.metrics.readout();
     return [
       `Pedestrians Alive: ${this.agents.count}`,
       `Selected: ${this.agents.selectionCount}`,
@@ -2144,6 +2235,13 @@ export class App {
       // no frame rate to report, because Swing repainted on a timer and the
       // number would have been the timer's.
       `FPS: ${this.fps}`,
+      `TPS: ${this.running ? this.tps : 0}`,
+      // The literature's three numbers, so "is this realistic" has something to
+      // be checked against: free walking should read about 1.3 m/s, and a
+      // corridor past 2 persons/m2 visibly slower.
+      `Speed: ${walking.meanSpeedMps.toFixed(2)} m/s`,
+      `Density: ${walking.meanDensity.toFixed(1)} avg / ${walking.maxDensity.toFixed(1)} max /m2`,
+      `Throughput: ${walking.throughputPerSecond.toFixed(1)} /s`,
     ];
   }
 

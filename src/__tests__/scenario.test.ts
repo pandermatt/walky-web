@@ -88,7 +88,7 @@ describe('settings out of an untrusted map', () => {
     const clamped = clampSettings({
       speed: 9999, pedestrianRadius: -4, personalSpace: 1000, brushSize: 0, borderThickness: 1,
     });
-    expect(clamped.speed).toBe(20);
+    expect(clamped.speed).toBe(3);
     expect(clamped.pedestrianRadius).toBe(3);
     expect(clamped.personalSpace).toBe(120);
     expect(clamped.brushSize).toBe(1);

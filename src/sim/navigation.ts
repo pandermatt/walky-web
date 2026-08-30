@@ -4,10 +4,33 @@ import {
 } from './visibilityGraph';
 import { dijkstra, type DijkstraResult } from './dijkstra';
 import { closestPointOnSegment, distance, type Point } from './geometry';
+import { crowdSlowdown, PACE_WINDOW } from './behaviour';
+import type { SpatialHash } from './spatialHash';
 import type { Wall } from '../state/model';
 
 /** Sub-pixel: how close counts as "already standing on this node". */
 const ON_NODE_EPSILON = 0.5;
+
+/**
+ * How often the routing fields notice the crowd: every two seconds, one goal
+ * per recost, round-robin. Congestion moves at crowd speed, which is slow --
+ * a jam takes many seconds to form and as many to drain -- so a field that is
+ * a couple of seconds stale routes essentially as well as a fresh one, at a
+ * bounded cost however many goals the map has.
+ */
+export const RECOST_TICKS = 120;
+
+/** How far apart an edge is sampled for the people standing along it. */
+const SAMPLE_SPACING = 100;
+const SAMPLES_MAX = 8;
+
+/**
+ * How much of a recost's measurement lands on the stored slowdown at once.
+ * Half, so a route flips after a jam has held for two looks rather than on
+ * one bad sample -- and unflips as gradually, which is what keeps a crowd
+ * from sloshing between two routes on alternate recosts.
+ */
+const SLOW_EMA = 0.5;
 
 export interface Waypoint {
   point: Point;
@@ -45,16 +68,87 @@ export class Navigation {
    */
   private fields = new Map<number, DijkstraResult>();
   private radius = 13;
+  /**
+   * The graph's clear-ground edge weights, kept when a recost writes crowd
+   * slowdowns into the working copy -- an empty map must cost exactly what it
+   * cost before anybody walked on it.
+   */
+  private baseWeights = new Float32Array(0);
+  /** Per-edge slowdown, EMA'd across recosts; 1 everywhere on a clear map. */
+  private edgeSlow = new Float32Array(0);
+  /** Which goal the next recost refreshes; they take turns. */
+  private recostTurn = 0;
 
   rebuild(walls: Wall[], radius: number): void {
     this.radius = radius;
     this.graph = buildVisibilityGraph(walls, radius);
+    this.baseWeights = this.graph.csr.weights.slice();
+    this.edgeSlow = new Float32Array(this.graph.csr.targets.length).fill(1);
+    this.recostTurn = 0;
     this.fields.clear();
     for (const wall of walls) {
       if (!wall.isGoal) continue;
       const sources = nodesOfWall(this.graph, wall.id);
       this.fields.set(wall.id, dijkstra(this.graph.csr, sources));
     }
+  }
+
+  /**
+   * Reads the crowd and re-prices the routes, so a jam is a thing the field
+   * knows about rather than a surprise every pedestrian meets in person.
+   *
+   * The measurement is physical: each edge is sampled every hundred pixels or
+   * so, each sample counts heads in the same window the walkers judge their
+   * own pace in, and the per-sample slowdown (`crowdSlowdown`, the walkers'
+   * own Weidmann curve read as time) is averaged along the edge -- the mean of
+   * 1/pace, which is what an integral of traversal time actually is, so a long
+   * clear edge with one busy patch is priced as mostly clear. The result lands
+   * on the stored slowdown through an EMA, and one goal's field is re-run per
+   * call, round-robin, which bounds the cost however many goals there are.
+   *
+   * Everybody picks the new field up for free: a moving pedestrian re-queries
+   * `nextWaypoint` every tick, while the queued keep their waypoint -- so the
+   * approaching re-route around a jam and the jammed drain where they stand.
+   * The direct-line shortcut in `nextWaypoint` is deliberately left congestion
+   * blind: an open room with the goal in sight has no route structure to
+   * choose between, and the local avoidance is already doing that job.
+   *
+   * Deterministic by construction -- counts come from positions and the
+   * cadence is tick-counted -- so a replayed run re-routes identically.
+   */
+  recost(hash: SpatialHash, x: Float32Array, y: Float32Array, crowdCount: number): void {
+    if (this.fields.size === 0) return;
+    const csr = this.graph.csr;
+    const window = PACE_WINDOW * this.radius;
+
+    if (crowdCount === 0) {
+      this.edgeSlow.fill(1);
+      csr.weights.set(this.baseWeights);
+    } else {
+      for (let u = 0; u < csr.nodeCount; u++) {
+        const from = this.graph.nodes[u];
+        for (let e = csr.offsets[u]; e < csr.offsets[u + 1]; e++) {
+          const to = this.graph.nodes[csr.targets[e]];
+          const len = this.baseWeights[e];
+          const samples = Math.min(SAMPLES_MAX, Math.max(1, Math.ceil(len / SAMPLE_SPACING)));
+          let slow = 0;
+          for (let s = 0; s < samples; s++) {
+            const t = (s + 0.5) / samples;
+            const px = from[0] + (to[0] - from[0]) * t;
+            const py = from[1] + (to[1] - from[1]) * t;
+            slow += crowdSlowdown(hash.query(px, py, window, -1, x, y).length);
+          }
+          const eased = this.edgeSlow[e] + (slow / samples - this.edgeSlow[e]) * SLOW_EMA;
+          this.edgeSlow[e] = eased;
+          csr.weights[e] = this.baseWeights[e] * eased;
+        }
+      }
+    }
+
+    const goals = [...this.fields.keys()];
+    const goal = goals[this.recostTurn % goals.length];
+    this.recostTurn++;
+    this.fields.set(goal, dijkstra(csr, nodesOfWall(this.graph, goal)));
   }
 
   get obstacles(): Obstacle[] { return this.graph.obstacles; }

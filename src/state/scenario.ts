@@ -242,7 +242,15 @@ export function clampSettings(input: Partial<Settings> | null | undefined): Sett
     if (typeof value !== 'number' || !Number.isFinite(value)) continue;
     const range = SETTING_RANGES[key as NumericSetting];
     const clamped = range ? Math.min(range.max, Math.max(range.min, value)) : value;
-    (out[key] as number) = Math.round(clamped);
+    // Snapped to the slider's own grid rather than to whole numbers: speed
+    // moved to metres per second with a step of 0.05, and rounding it to an
+    // integer would quietly rewrite every loaded map's pace. The rounding
+    // guards the same thing it always did -- a link is untrusted input, and
+    // 1.30000000000004 is not a value a slider can hold.
+    const step = range?.step ?? 1;
+    // toFixed sands off the float grit of fractional steps: 12 * 0.05 is
+    // 0.6000000000000001, and that is not a number to show beside a slider.
+    (out[key] as number) = Number((Math.round(clamped / step) * step).toFixed(4));
   }
   return out;
 }

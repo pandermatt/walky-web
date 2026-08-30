@@ -1,5 +1,6 @@
 import { traitOf } from './agents';
 import type { Point } from './geometry';
+import { TICKS_PER_SECOND } from './units';
 
 /**
  * When a generator lets people out, and how many at a time.
@@ -19,15 +20,21 @@ import type { Point } from './geometry';
  * Everything here is a hash rather than `Math.random`, following the rule stated
  * where the fidget is defined in behaviour.ts: what shapes the look of an
  * ordinary run is derived, so a run replays tick for tick and a test can depend
- * on it, and `Math.random` is kept for tie-breaks in situations that should not
- * arise. It pays for itself here twice over. Reset replays the same demand
+ * on it -- and since the last tie-breaks in behaviour.ts went the same way,
+ * nothing anywhere in the model draws from `Math.random` at all, so a whole run
+ * is the same run every time. It pays for itself here twice over. Reset replays the same demand
  * through the same door, so two layouts can be compared under one flow instead
  * of under two; and a map that arrives down a link behaves the way it behaved
  * for whoever sent it.
  */
 
-/** Frames a second, which is what a browser hands out when it can keep up. */
-export const TICKS_PER_SECOND = 60;
+/**
+ * Sixty by definition rather than by hope, now that the loop owes the
+ * simulation its steps off the wall clock instead of taking the display's
+ * frame rate on faith. Re-exported so a door's rate stays written against
+ * the same clock everything else keeps.
+ */
+export { TICKS_PER_SECOND } from './units';
 
 /**
  * How big a clump is on average, and the least it may shrink to.

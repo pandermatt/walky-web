@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { Agents } from '../sim/agents';
 import { SpatialHash } from '../sim/spatialHash';
 import { Navigation } from '../sim/navigation';
-import { SQRT2 } from '../sim/behaviour';
 import { makeWall, rectanglePolygon } from '../state/model';
 
 const R = 13, PREF = 30;
@@ -53,14 +52,13 @@ describe('behaviour', () => {
     expect(announced).toBe(1);
   });
 
-  it('does not deadlock when a diagonal step comes due', () => {
-    // Regression: the counter is clamped to exactly sqrt(2) and a diagonal costs
-    // exactly sqrt(2). Stored as float32 the clamp lands just below the cost, so
-    // the agent could never afford the turn and froze with its counter full.
+  it('does not deadlock on a shallow approach angle', () => {
+    // Once a float32 budget-counter regression (a diagonal became unaffordable
+    // for ever); the counter is gone, but the promise stays: a pedestrian
+    // approaching at a slant keeps making distance instead of freezing.
     const { nav, goal } = scenario();
     const agents = new Agents();
     const hash = new SpatialHash();
-    // A shallow angle guarantees a long run of straight steps before a diagonal.
     const i = agents.add([-380, -140]);
     agents.setGoal(i, goal.id, goal.color);
 
@@ -68,7 +66,6 @@ describe('behaviour', () => {
     for (let t = 0; t < 200; t++) agents.step(nav, hash, 1, R, PREF);
 
     expect(agents.x[i] - startX).toBeGreaterThan(100);
-    expect(agents.speedCounter[i]).toBeLessThan(SQRT2);
   });
 
   it('drains a packed block rather than churning in place', () => {

@@ -11,10 +11,14 @@ import { Navigation } from '../src/sim/navigation.ts';
 import { Agents } from '../src/sim/agents.ts';
 import { SpatialHash } from '../src/sim/spatialHash.ts';
 import { makeWall, rectanglePolygon } from '../src/state/model.ts';
+import { pxPerTickFromMps } from '../src/sim/units.ts';
 
 const RADIUS = 13;
 const PERSONAL_SPACE = 40; // the shipped default
-const SPEED = 4;
+// The shipped default walking speed, through the same conversion App does.
+// Slower than the old benchmark's 4 px/tick jog, and cheaper with it -- fewer
+// substeps a tick -- so numbers are not comparable across that change.
+const SPEED = pxPerTickFromMps(1.35);
 
 function percentile(values: number[], p: number): number {
   const sorted = [...values].sort((a, b) => a - b);
