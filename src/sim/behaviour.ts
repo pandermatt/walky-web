@@ -437,6 +437,27 @@ function wobble(x: number, y: number, salt: number): number {
   h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
 }
+
+/**
+ * Salts for every other draw in the file, one per independent decision, the way
+ * sim/arrivals keeps a seed per question. Each is mixed with `stalled`, the count
+ * of ticks spent getting nowhere: it is the one clock that keeps ticking for a
+ * pedestrian pinned in place, so a shove refused this tick is a different draw
+ * next tick instead of the same refusal for ever. Positions are rounded before
+ * hashing so the draw stays put within a pixel.
+ */
+const CARRY_SALT = 101;
+const ESCAPE_DX_SALT = 211;
+const ESCAPE_DY_SALT = 223;
+const ESCAPE_X_SALT = 227;
+const ESCAPE_Y_SALT = 229;
+const RANDOM_DX_SALT = 307;
+const RANDOM_DY_SALT = 311;
+
+/** The wobble of a pedestrian stuck for `stalled` ticks, keyed to where it stands. */
+function stuckWobble(x: number, y: number, stalled: number, salt: number): number {
+  return wobble(Math.round(x), Math.round(y), salt + stalled * 331);
+}
 /**
  * Calibrated, not guessed. The load a crowd actually reaches is much smaller than
  * it looks: nought in a crowd with room to walk in, 1.6 at the worst of a busy
@@ -935,7 +956,8 @@ export class Behaviour {
     if (load < CARRY_FROM) return false;
 
     // A shove in a crush does not travel in a straight line.
-    const wander = CARRY_WANDER * Math.min(1, load / PRESSURE_MAX) * (Math.random() * 2 - 1);
+    const swing = stuckWobble(a.x[i], a.y[i], a.stalled[i], CARRY_SALT) * 2 - 1;
+    const wander = CARRY_WANDER * Math.min(1, load / PRESSURE_MAX) * swing;
     const cos = Math.cos(wander);
     const sin = Math.sin(wander);
     const wx = px * cos - py * sin;
@@ -1049,8 +1071,9 @@ export class Behaviour {
 
     if (depth === 0) return this.randomStep(i, radius, personalSpace);
 
-    // Head for the nearest way out, with a random tie-break so a pedestrian
+    // Head for the nearest way out, with a hashed tie-break so a pedestrian
     // pinned exactly on an axis still works itself loose.
+    const stuck = a.stalled[i];
     const target = this.outwardFrom(here);
     let dx = 0;
     let dy = 0;
@@ -1059,16 +1082,16 @@ export class Behaviour {
       dy = Math.sign(Math.round(target[1] - here[1]));
     }
     if (dx === 0 && dy === 0) {
-      dx = Math.floor(Math.random() * 3) - 1;
-      dy = Math.floor(Math.random() * 3) - 1;
+      dx = Math.floor(stuckWobble(here[0], here[1], stuck, ESCAPE_DX_SALT) * 3) - 1;
+      dy = Math.floor(stuckWobble(here[0], here[1], stuck, ESCAPE_DY_SALT) * 3) - 1;
     }
 
     const candidates: Point[] = [
       [here[0] + dx, here[1] + dy],
       [here[0] + dx, here[1]],
       [here[0], here[1] + dy],
-      [here[0] + (Math.random() < 0.5 ? 1 : -1), here[1]],
-      [here[0], here[1] + (Math.random() < 0.5 ? 1 : -1)],
+      [here[0] + (stuckWobble(here[0], here[1], stuck, ESCAPE_X_SALT) < 0.5 ? 1 : -1), here[1]],
+      [here[0], here[1] + (stuckWobble(here[0], here[1], stuck, ESCAPE_Y_SALT) < 0.5 ? 1 : -1)],
     ];
 
     for (const c of candidates) {
@@ -1084,8 +1107,8 @@ export class Behaviour {
   /** Last resort when there is nowhere sensible to go. */
   randomStep(i: number, radius: number, personalSpace: number): StepResult {
     const a = this.agents;
-    const dx = Math.floor(Math.random() * 3) - 1;
-    const dy = Math.floor(Math.random() * 3) - 1;
+    const dx = Math.floor(stuckWobble(a.x[i], a.y[i], a.stalled[i], RANDOM_DX_SALT) * 3) - 1;
+    const dy = Math.floor(stuckWobble(a.x[i], a.y[i], a.stalled[i], RANDOM_DY_SALT) * 3) - 1;
     if (dx === 0 && dy === 0) return NO_STEP;
     const nx = a.x[i] + dx;
     const ny = a.y[i] + dy;

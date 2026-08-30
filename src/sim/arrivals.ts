@@ -19,8 +19,9 @@ import type { Point } from './geometry';
  * Everything here is a hash rather than `Math.random`, following the rule stated
  * where the fidget is defined in behaviour.ts: what shapes the look of an
  * ordinary run is derived, so a run replays tick for tick and a test can depend
- * on it, and `Math.random` is kept for tie-breaks in situations that should not
- * arise. It pays for itself here twice over. Reset replays the same demand
+ * on it -- and since the last tie-breaks in behaviour.ts went the same way,
+ * nothing anywhere in the model draws from `Math.random` at all, so a whole run
+ * is the same run every time. It pays for itself here twice over. Reset replays the same demand
  * through the same door, so two layouts can be compared under one flow instead
  * of under two; and a map that arrives down a link behaves the way it behaved
  * for whoever sent it.
