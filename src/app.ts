@@ -36,6 +36,7 @@ import { MAX_MS, Recorder, canRecord, recordingFilename, saveBlob, type CropRect
 import { RecordingChip } from './ui/recordingChip';
 import { dismissToast, showToast } from './pwa';
 import { SpatialHash } from './sim/spatialHash';
+import { QUEUE_MAX, burstAt } from './sim/arrivals';
 import {
   EMPTY_PREVIEW,
   type EraseTarget, type PointerInfo, type Tool, type ToolContext, type ToolId,
@@ -89,19 +90,6 @@ interface MapSnapshot {
   generators: Generator[];
   agents: AgentsSnapshot;
 }
-
-/**
- * Frames a generator counts a second as.
- *
- * A rate has to be per something, and the something everything else in this
- * model is per is the frame: a pedestrian's step budget is topped up once a tick
- * whatever the clock says. Sixty is what a browser hands out when it can, so a
- * generator set to four lets four people out a second on a machine keeping up,
- * and slows down along with the crowd on one that is not -- which is the honest
- * behaviour, since a door running to the wall clock while the crowd runs to the
- * frame rate would pour people into a room they cannot cross.
- */
-const TICKS_PER_SECOND = 60;
 
 /**
  * How many edits back you can go.
@@ -825,7 +813,14 @@ export class App {
         // out has no starting line to be returned to, so returning it means
         // taking it away. The doors themselves stay, and start again from nought.
         this.agents.removeSpawned();
-        for (const generator of this.generators) generator.owed = 0;
+        // Back to the top of each door's schedule, not just to an empty queue:
+        // the same clumps then come through at the same moments, so a layout can
+        // be changed and tried again under the demand it was tried under before.
+        for (const generator of this.generators) {
+          generator.owed = 0;
+          generator.beat = 0;
+          generator.wait = 0;
+        }
         this.agents.resetPositions(this.wallColors());
         this.touch();
         break;
@@ -1614,18 +1609,20 @@ export class App {
   }
 
   /**
-   * Lets one pedestrian out of every generator that has earned one this tick.
+   * Lets a clump through every door that has one waiting.
    *
-   * The rate is people per second and a tick is a frame, so a generator banks a
-   * sixtieth of its rate each time round and spends it when it has a whole one.
+   * Two separate things, and keeping them separate is the whole design. People
+   * *arrive* behind the door in clumps at random intervals -- that is
+   * sim/arrivals, which is the same schedule every time for a given door so a
+   * reset replays the same demand. People *get through* it as fast as its mouth
+   * will pass them, which is here: a clump of ten cannot stand in a doorway three
+   * across, so it squeezes out over several frames, which is exactly what a burst
+   * coming through a door looks like.
+   *
    * Counted in frames rather than off the clock because everything else in the
    * model is: `speed` is a per-frame step budget, so on a machine that cannot
    * hold sixty the crowd and the doors slow down together rather than the doors
    * running on ahead into a room nobody can walk across.
-   *
-   * The balance is capped at one, exactly as a pedestrian's step budget is
-   * capped: a door that has been blocked for ten seconds must not answer the
-   * moment it clears by emptying ten seconds of people into the gap.
    *
    * A generator with no goal is skipped. It has nowhere to send anybody, and
    * since its pedestrians only leave the map by arriving, what it would make is a
@@ -1634,15 +1631,29 @@ export class App {
   private emit(): void {
     for (const generator of this.generators) {
       if (generator.goal < 0) continue;
-      generator.owed = Math.min(generator.owed + generator.rate / TICKS_PER_SECOND, 1);
+
+      if (generator.wait <= 0) {
+        const burst = burstAt(generator.at, generator.beat, generator.rate);
+        generator.owed = Math.min(generator.owed + burst.size, QUEUE_MAX);
+        generator.wait = burst.gap;
+        generator.beat++;
+      }
+      generator.wait--;
+
+      // Nothing waiting, and nothing to ask: pedestrianBlock rebuilds the spatial
+      // hash, which is not a thing to do once a frame per idle door.
       if (generator.owed < 1) continue;
+
       // The brush's own legality test over the generator's footprint: not inside
-      // a wall, and not on top of somebody already standing there. Empty means
-      // the doorway is full, and the beat is dropped rather than queued.
-      const spot = this.pedestrianBlock(generator.at, GENERATOR_CELLS)[0];
-      if (!spot) continue;
-      this.agents.addSpawned(spot, generator.goal, generator.color);
-      generator.owed -= 1;
+      // a wall, and not on top of somebody already standing there -- and it
+      // already refuses two spots within a diameter of each other, so filling
+      // every one of them at once is legal by construction. Empty means the
+      // doorway is full, and the queue simply waits another frame.
+      for (const spot of this.pedestrianBlock(generator.at, GENERATOR_CELLS)) {
+        if (generator.owed < 1) break;
+        this.agents.addSpawned(spot, generator.goal, generator.color);
+        generator.owed--;
+      }
     }
   }
 

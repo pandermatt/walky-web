@@ -295,10 +295,17 @@ export interface Generator {
   /** Unlike Wall.selected, this one is read: it is what the goal tool aims at. */
   selected: boolean;
   /**
-   * Fractional emission carried between ticks. Run state rather than map state:
-   * it is not serialized, and Reset puts it back to nought.
+   * The queue behind the door: people who have arrived and not yet got through.
+   *
+   * A clump lands in here whole and leaves at whatever rate the doorway can pass
+   * -- which is what makes a burst look like a burst rather than like ten people
+   * appearing at once in a space that holds three.
    */
   owed: number;
+  /** Which clump is next, indexing the door's own schedule; see sim/arrivals. */
+  beat: number;
+  /** Ticks left before that clump arrives. */
+  wait: number;
 }
 
 /**
@@ -337,7 +344,13 @@ export function makeGenerator(at: Point, rate: number): Generator {
     // and looking like every other unpinned thing on the map is how it says so.
     color: WHITE,
     selected: false,
+    // All three are the run's rather than the map's: nothing here is serialized,
+    // and Reset puts them back to nought, which is what makes it replay the same
+    // demand through the same door. Nought rather than a first interval, so a
+    // door opens the run with a clump instead of with a wait.
     owed: 0,
+    beat: 0,
+    wait: 0,
   };
 }
 
