@@ -542,7 +542,7 @@ export function interactionReach(radius: number, personalSpace: number, speed: n
 }
 
 export interface StepResult {
-  /** Distance covered: 0, 1, or sqrt(2). */
+  /** Distance covered this tick; 0 for a pedestrian that stood still. */
   length: number;
   /** Whether the agent should re-plan its waypoint. */
   replan: boolean;
@@ -588,10 +588,11 @@ export class Behaviour {
    * pedestrian steps, in one pass.
    *
    * The discomfort field is summarised by its value's *gradient* rather than
-   * sampled per candidate. Every candidate is within sqrt(2) px of here, so the
-   * first-order term is the whole story to well under a tenth of a pixel, and the
-   * constant part is shared by all nine and cancels out of the comparison. That
-   * turns nine passes over the neighbours into one.
+   * sampled per candidate. A candidate is at most one tick's travel from here --
+   * a few pixels against a falloff length of a dozen or more -- so the
+   * first-order term is nearly the whole story, and the constant part is shared
+   * by all nine and cancels out of the comparison. That turns nine passes over
+   * the neighbours into one.
    */
   private survey(self: number, radius: number, personalSpace: number): void {
     const a = this.agents;
@@ -661,9 +662,10 @@ export class Behaviour {
     const hy = a.headingY[self];
     const facing = hx !== 0 || hy !== 0;
     const contact = 2 * radius;
-    // A candidate is at most sqrt(2) away, so nothing further than this can be
-    // overlapped by one.
-    const bodyReach = contact + 2;
+    // A candidate is at most one tick's travel away -- the fastest anyone walks,
+    // capped at a body diameter by the driver -- so nothing further than this
+    // can be overlapped by one.
+    const bodyReach = contact + Math.min(this.speed * (1 + PACE_SPREAD), contact) + 1;
     const goalSelf = a.goal[self];
     const costSelf = a.costToGoal[self];
 
@@ -845,18 +847,29 @@ export class Behaviour {
     return total;
   }
 
-  /** One step towards `target`: score all nine options and take the cheapest. */
-  stepTowards(i: number, target: Point, radius: number, personalSpace: number): StepResult {
+  /**
+   * One substep towards `target`: score all nine options -- eight directions
+   * and standing still -- and take the cheapest.
+   *
+   * The directions are the lattice's eight, kept because they are a cheap, even
+   * fan to search; but the move along the winner is `len` -- at most a pixel,
+   * often a fraction of one -- so positions are continuous even though the
+   * search is discrete, and a direction is a direction rather than a geometry:
+   * a diagonal travels the same distance as an axis step, where the lattice
+   * made it sqrt(2) and priced it accordingly. Every cost below is per unit of
+   * distance, which is what makes the same comparison valid at any length.
+   */
+  stepTowards(i: number, target: Point, radius: number, personalSpace: number, len: number): StepResult {
     const a = this.agents;
-    if (a.speedCounter[i] < 1) return { length: 0, replan: false };
-
     const x = a.x[i];
     const y = a.y[i];
-    const budget = a.speedCounter[i];
 
     this.survey(i, radius, personalSpace);
 
     const distHere = Math.hypot(target[0] - x, target[1] - y);
+    // Land on the waypoint rather than orbit it: the last move before a target
+    // is however long the distance left is.
+    const step = Math.min(Math.max(len, 0), Math.max(distHere, 1e-3));
     const hx = a.headingX[i];
     const hy = a.headingY[i];
     const facing = hx !== 0 || hy !== 0;
@@ -871,41 +884,33 @@ export class Behaviour {
     // And nobody walks a ruler line.
     const wander = W_WANDER * Math.sin(x * WANDER_X + y * WANDER_Y + a.trait[i] * 6.283);
 
-    let bestCost = Infinity;
-    let bestDx = 0;
-    let bestDy = 0;
-    let bestLen = 0;
+    // Standing still is always on the table -- it is the option the original
+    // lacked, which is why a blocked pedestrian there could only jiggle. It
+    // is also the reference point every other candidate is measured against,
+    // so it carries no discomfort term of its own.
+    let bestCost = W_WAIT
+      * (1 - NERVE_IMPATIENCE / 2 + NERVE_IMPATIENCE * nerveOf(a, i))
+      * (1 + a.waited[i] / PATIENCE);
+    let bestX = 0;
+    let bestY = 0;
+    let moved = false;
 
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
-        const len = stepLengthOf(dx, dy);
+        const norm = stepLengthOf(dx, dy);
+        if (norm === 0) continue;
 
-        if (len === 0) {
-          // Standing still is always on the table -- it is the option the original
-          // lacked, which is why a blocked pedestrian there could only jiggle. It
-          // is also the reference point every other candidate is measured against,
-          // so it carries no discomfort term of its own.
-          const cost = W_WAIT
-            * (1 - NERVE_IMPATIENCE / 2 + NERVE_IMPATIENCE * nerveOf(a, i))
-            * (1 + a.waited[i] / PATIENCE);
-          if (cost < bestCost) { bestCost = cost; bestDx = 0; bestDy = 0; bestLen = 0; }
-          continue;
-        }
-
-        // A diagonal costs sqrt(2); wait rather than overspend the counter on one.
-        if (len > budget) continue;
-        const nx = x + dx;
-        const ny = y + dy;
+        const ux = dx / norm;
+        const uy = dy / norm;
+        const nx = x + ux * step;
+        const ny = y + uy * step;
         if (!this.isLegal(nx, ny, radius)) continue;
 
-        const ux = dx / len;
-        const uy = dy / len;
-
-        // Everything is priced per unit of distance travelled, which is what makes
-        // a shallow approach angle come out as a staircase: a diagonal must earn
-        // its sqrt(2) to beat an axis step.
+        // Everything is priced per unit of distance travelled, which is what
+        // makes a shallow approach angle come out as weaving: a slanted move
+        // must earn its length to beat the straight one.
         const gain = distHere - Math.hypot(target[0] - nx, target[1] - ny);
-        let cost = -gain / len
+        let cost = -gain / step
           + this.gradX * ux + this.gradY * uy;
 
         if (facing) {
@@ -917,38 +922,41 @@ export class Behaviour {
           cost -= wander * (ux * rightX + uy * rightY);
         }
         if (restless > 0) {
-          cost += restless * (wobble(x, y, (dx + 1) * 3 + (dy + 1) + a.stalled[i] * 9) - 0.5);
+          cost += restless * (wobble(
+            Math.round(x), Math.round(y), (dx + 1) * 3 + (dy + 1) + a.stalled[i] * 9,
+          ) - 0.5);
         }
 
         if (cost < bestCost) {
           bestCost = cost;
-          bestDx = dx;
-          bestDy = dy;
-          bestLen = len;
+          bestX = nx;
+          bestY = ny;
+          moved = true;
         }
       }
     }
 
-    if (bestLen === 0) {
+    if (!moved) {
       // Standing still is only available to somebody the crowd will let stand.
-      this.carryStep(i, radius);
+      this.carryStep(i, radius, step);
       // Waiting, rather than being unable to move: the waypoint is still good, and
       // re-planning one costs a scan of the whole graph.
       a.waited[i] += 1;
       return { length: 0, replan: false };
     }
-    return this.commit(i, [x + bestDx, y + bestDy], bestLen, true);
+    return this.commit(i, [bestX, bestY], step, true);
   }
 
   /**
    * Being moved by the crowd rather than by choice.
    *
    * Past `CARRY_FROM` a pedestrian no longer gets to decide it is staying put: it
-   * goes the way the load is pushing, wandering more the harder it is pressed. The
-   * step spends budget so one tick cannot carry anybody twice, and deliberately
-   * leaves its patience alone -- it is still stuck, only somewhere else now.
+   * goes the way the load is pushing, wandering more the harder it is pressed --
+   * at most a pixel a tick, because a crush moves people slowly however fast
+   * they would rather walk. It deliberately leaves its patience alone: it is
+   * still stuck, only somewhere else now.
    */
-  private carryStep(i: number, radius: number): boolean {
+  private carryStep(i: number, radius: number, len: number): boolean {
     const a = this.agents;
     const px = a.pushX[i];
     const py = a.pushY[i];
@@ -963,19 +971,21 @@ export class Behaviour {
     const wx = px * cos - py * sin;
     const wy = px * sin + py * cos;
 
-    // The lattice direction nearest the way we are being pushed.
-    const dx = Math.abs(wx) < 0.383 ? 0 : Math.sign(wx);
-    const dy = Math.abs(wy) < 0.383 ? 0 : Math.sign(wy);
-    if (dx === 0 && dy === 0) return false;
-    if (!this.isLegal(a.x[i] + dx, a.y[i] + dy, radius)) return false;
+    const wlen = Math.hypot(wx, wy);
+    if (wlen < 1e-6) return false;
+    const carry = Math.min(1, len);
+    if (carry <= 0) return false;
+    const nx = a.x[i] + (wx / wlen) * carry;
+    const ny = a.y[i] + (wy / wlen) * carry;
+    if (!this.isLegal(nx, ny, radius)) return false;
     // Deliberately not through commit. Patience must keep counting -- it is what
     // tells everybody else this one is held up, and zeroing it would take it
     // straight out of the pressure sum that is moving it, collapsing the load,
     // stopping the shove, and setting the whole crowd lurching on alternate ticks.
     // The heading must not follow either: somebody shoved sideways is not facing
     // sideways, they are facing where they were going and being taken elsewhere.
-    a.x[i] += dx;
-    a.y[i] += dy;
+    a.x[i] = nx;
+    a.y[i] = ny;
     a.carries++;
     return true;
   }
@@ -1123,13 +1133,18 @@ export class Behaviour {
     const dy = to[1] - a.y[i];
     a.x[i] = to[0];
     a.y[i] = to[1];
-    a.speedCounter[i] -= length;
     a.waited[i] = 0;
 
     // Follow the steps actually taken, so the heading survives a sidestep without
     // swinging to meet it. It is what "in front of me" means everywhere above.
-    const hx = a.headingX[i] + (dx / length - a.headingX[i]) * HEADING_SMOOTH;
-    const hy = a.headingY[i] + (dy / length - a.headingY[i]) * HEADING_SMOOTH;
+    //
+    // The smoothing was tuned per pixel of travel back when every step was one,
+    // so it is applied per pixel still: a long move turns the heading as far as
+    // the same distance walked in single steps used to, and a fractional drift
+    // turns it proportionally less, instead of every move counting the same.
+    const alpha = 1 - Math.pow(1 - HEADING_SMOOTH, length);
+    const hx = a.headingX[i] + (dx / length - a.headingX[i]) * alpha;
+    const hy = a.headingY[i] + (dy / length - a.headingY[i]) * alpha;
     const mag = Math.hypot(hx, hy);
     if (mag > 1e-6) { a.headingX[i] = hx / mag; a.headingY[i] = hy / mag; }
 

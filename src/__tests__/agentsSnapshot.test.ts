@@ -47,14 +47,12 @@ describe('Agents snapshot/restore', () => {
     const snap = agents.snapshot();
     agents.hasWaypoint[0] = 1;
     agents.waypointNode[0] = 12;
-    agents.speedCounter[0] = 1.5;
     agents.costToGoal[0] = 42;
 
     agents.restore(snap);
 
     expect(agents.hasWaypoint[0]).toBe(0);
     expect(agents.waypointNode[0]).toBe(-1);
-    expect(agents.speedCounter[0]).toBe(0);
     expect(agents.costToGoal[0]).toBe(Infinity);
   });
 

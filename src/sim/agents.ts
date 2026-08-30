@@ -22,12 +22,6 @@ export interface AgentsSnapshot {
 /**
  * Agent state, kept as a structure of arrays so it can move to a worker and into
  * deck.gl's attribute buffers without a per-agent object walk.
- *
- * The step accounting is float64 because the original used Java doubles and the
- * arithmetic is exact-comparison sensitive: the budget is clamped to exactly
- * sqrt(2) and a diagonal costs exactly sqrt(2). Held in a Float32Array the clamp
- * rounds *down* below the cost, so a diagonal becomes unaffordable forever and the
- * agent deadlocks the moment it wants to turn.
  */
 export class Agents {
   x: Float32Array;
@@ -44,8 +38,6 @@ export class Agents {
   hasWaypoint: Uint8Array;
   /** Graph node the waypoint came from, or -1 when heading straight to the goal. */
   waypointNode: Int32Array;
-  /** Budget for this tick; a diagonal costs sqrt(2), an axis step costs 1. */
-  speedCounter: Float64Array;
   /**
    * Smoothed unit direction of travel, and the only memory the lattice keeps of
    * which way a pedestrian was going.
@@ -199,7 +191,6 @@ export class Agents {
     this.waypointY = new Float32Array(capacity);
     this.hasWaypoint = new Uint8Array(capacity);
     this.waypointNode = new Int32Array(capacity).fill(-1);
-    this.speedCounter = new Float64Array(capacity);
     this.headingX = new Float32Array(capacity);
     this.headingY = new Float32Array(capacity);
     this.waited = new Float32Array(capacity);
@@ -227,7 +218,6 @@ export class Agents {
     this.color[i] = packRgb(color);
     this.arrived[i] = 0;
     this.hasWaypoint[i] = 0;
-    this.speedCounter[i] = 0;
     this.headingX[i] = 0;
     this.headingY[i] = 0;
     this.waited[i] = 0;
@@ -336,7 +326,6 @@ export class Agents {
     this.waypointX[i] = this.waypointX[last]; this.waypointY[i] = this.waypointY[last];
     this.hasWaypoint[i] = this.hasWaypoint[last];
     this.waypointNode[i] = this.waypointNode[last];
-    this.speedCounter[i] = this.speedCounter[last];
     this.headingX[i] = this.headingX[last];
     this.headingY[i] = this.headingY[last];
     this.waited[i] = this.waited[last];
@@ -431,7 +420,6 @@ export class Agents {
     // that may no longer exist, and a stale one would be walked to.
     this.hasWaypoint.fill(0, 0, n);
     this.waypointNode.fill(-1, 0, n);
-    this.speedCounter.fill(0, 0, n);
     this.headingX.fill(0, 0, n);
     this.headingY.fill(0, 0, n);
     this.waited.fill(0, 0, n);
@@ -480,7 +468,6 @@ export class Agents {
       this.color[i] = packRgb(goalColors.get(this.goal[i]) ?? randomBrightColor());
       this.arrived[i] = 0;
       this.hasWaypoint[i] = 0;
-      this.speedCounter[i] = 0;
       this.headingX[i] = 0;
       this.headingY[i] = 0;
       this.waited[i] = 0;
@@ -489,6 +476,7 @@ export class Agents {
       this.pushX[i] = 0;
       this.pushY[i] = 0;
       this.density[i] = 0;
+      this.stepDist[i] = 0;
       this.effectiveSpace[i] = 0;
     }
   }
@@ -558,33 +546,31 @@ export class Agents {
         continue;
       }
 
-      // Top up the step budget, capped at one tick's worth.
-      //
-      // The original clamped this to sqrt(2) inside stepTowards on every call,
-      // which quietly made speed above ~1.41 do nothing at all -- a pedestrian
-      // could only ever buy one step per frame however high the setting went. The
-      // cap is kept (a blocked pedestrian must not bank budget across ticks and
-      // then lurch forward once freed) but raised to the speed itself, so the
-      // setting actually controls how far a pedestrian gets per frame. At speed 1
-      // this is exactly the original's sqrt(2).
-      // Not everyone walks at the setting. Slower neighbours give the brisker ones
-      // someone to overtake, which is most of what makes a crowd look like a crowd
-      // rather than a block sliding across the map.
-      // And slower the tighter it is: the room it managed to keep last step is
-      // this model's measure of how packed it is standing.
       // What the tick is about to be judged against. `costToGoal` is rewritten
-      // whenever a waypoint is fetched, which a moving pedestrian does every step
+      // whenever a waypoint is fetched, which a moving pedestrian does every tick
       // and a stationary one never does -- so comparing it across the tick asks
       // "did this one get any closer", which is the question, rather than "did it
       // move", which a pedestrian shuffling on the spot answers yes to.
       const costBefore = this.costToGoal[i];
 
+      // How far this one walks this tick: its own pace, spent as it goes rather
+      // than banked. The tick is walked in substeps of at most a pixel -- the
+      // granularity every cost in the model was tuned at -- with a fractional
+      // tail, so a slow pedestrian drifts a fraction every tick instead of
+      // banking budget and lurching every second or third one, which is what
+      // retired the low-speed stutter. Nothing carries over: a blocked
+      // pedestrian must not save its tick up and spend it as a lurch.
+      //
+      // Not everyone walks at the setting. Slower neighbours give the brisker
+      // ones someone to overtake, which is most of what makes a crowd look like
+      // a crowd rather than a block sliding across the map. And slower the
+      // tighter it is: the room it managed to keep last step is this model's
+      // measure of how packed it is standing.
       const own = speed * paceScale(this.trait[i]) * crowdPace(this.density[i]);
-      const cap = Math.max(own, SQRT2);
-      this.speedCounter[i] = Math.min(this.speedCounter[i] + own, cap);
 
+      let left = own;
       let stepTaken = true;
-      while (this.speedCounter[i] >= 1 && stepTaken) {
+      while (left > 1e-6 && stepTaken) {
         if (!this.hasWaypoint[i]) {
           const next = nav.nextWaypoint([this.x[i], this.y[i]], goalId);
           if (!next) {
@@ -592,8 +578,8 @@ export class Agents {
             // and works its way out, or the goal is genuinely unreachable and it
             // fidgets in place rather than freezing.
             const escape = behaviour.escapeStep(i, radius, personalSpace);
-            if (escape.length === 0) this.speedCounter[i] = 0;
             stepTaken = escape.length > 0;
+            left -= Math.max(escape.length, 1);
             continue;
           }
           this.waypointX[i] = next.point[0];
@@ -622,8 +608,12 @@ export class Agents {
         }
 
         const target: Point = [this.waypointX[i], this.waypointY[i]];
-        const result = behaviour.stepTowards(i, target, radius, personalSpace);
+        // Substeps of up to sqrt(2): the farthest one decision ever moved
+        // anybody on the lattice, kept as the decision cadence so a tick costs
+        // the surveys it always cost.
+        const result = behaviour.stepTowards(i, target, radius, personalSpace, Math.min(SQRT2, left));
         stepTaken = result.length > 0;
+        left -= stepTaken ? result.length : left;
         if (result.replan) this.hasWaypoint[i] = 0;
 
         // Close enough to the waypoint: take the next one.
@@ -668,7 +658,6 @@ export class Agents {
     this.waypointY = copy(this.waypointY, (n) => new Float32Array(n));
     this.hasWaypoint = copy(this.hasWaypoint, (n) => new Uint8Array(n));
     this.waypointNode = copy(this.waypointNode, (n) => new Int32Array(n));
-    this.speedCounter = copy(this.speedCounter, (n) => new Float64Array(n));
     this.headingX = copy(this.headingX, (n) => new Float32Array(n));
     this.headingY = copy(this.headingY, (n) => new Float32Array(n));
     this.waited = copy(this.waited, (n) => new Float32Array(n));
