@@ -112,14 +112,16 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
       // is the button that puts the camera back. It stays a tool, with a tool's
       // pressed cell, because that is what it is: ported from
       // ZoomMouseListener.shiftView, where dragging panned only while it was the
-      // selected tool, so there is no global drag-to-pan for it to be a shorthand
-      // for.
+      // selected tool, so a mouse has no other way to move the map.
       //
-      // So it keeps a digit, and the digit keeps its meaning by widening from
-      // the capsule to the strip: Pan is the tenth tool counting down the
+      // A touchscreen does -- two fingers, see the rule at the foot of the
+      // stylesheet -- and the cell is withheld there for it.
+      //
+      // It keeps a digit either way, and the digit keeps its meaning by widening
+      // from the capsule to the strip: Pan is the tenth tool counting down the
       // document, which puts it on 0 -- ten is where a row of single digits runs
       // out and 0 is the key that follows 9 along it.
-      { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool', shortcut: '0', press: '0' },
+      { key: 'shift', icon: 'shift.png', title: 'Pan', kind: 'tool', shortcut: '0', press: '0', desktopOnly: true },
       { key: 'reset_zoom', icon: 'reset_zoom.png', title: 'Reset zoom and position', kind: 'action' },
       { key: 'settings', icon: 'settings.png', title: 'Settings', kind: 'toggle' },
     ],
@@ -256,10 +258,11 @@ export const TOOLBAR_CSS = `
  * query is live, so a tab handed to an installed window or a desktop window
  * dragged narrow agrees without anything listening for it.
  *
- * A second rule at the foot of this stylesheet withholds the eraser, and asks a
- * different question on purpose -- whether there is a mouse to hover with. A
- * laptop window dragged narrow can still aim an eraser; it still has nowhere to
- * put a video.
+ * Two further rules at the foot of this stylesheet withhold the eraser and Pan,
+ * and each asks a different question on purpose -- whether there is a mouse to
+ * hover with, and whether there is a second finger to pan with. A laptop window
+ * dragged narrow can still aim an eraser and still needs its Pan cell; it still
+ * has nowhere to put a video.
  */
 @media ${HANDHELD} {
   #toolbar .wk-btn--cell[data-key="record"],
@@ -277,15 +280,14 @@ export const TOOLBAR_CSS = `
  *
  * The capsules wrap, so the layout follows the screen instead of being told
  * about it: portrait puts the tools on the row nearest the thumb with the run
- * controls above them, and landscape fits all three side by side.
- * \`order\` is what moves the tools capsule last, because the tools are what a
- * hand on a phone is reaching for all afternoon.
+ * and view controls sharing the row above, and landscape fits all three side by
+ * side. \`order\` is what moves the tools capsule last, because the tools are
+ * what a hand on a phone is reaching for all afternoon.
  *
- * The view capsule is ordered between the two rather than left up beside run.
- * Pan lives there now, and there is no drag-to-pan gesture behind it (see
- * tools/shiftTool.ts) -- pressing that cell is the only way to move the map, so
- * it wants to be near the hand too. It cannot have the bottom row, which the
- * tools have the better claim on, so it takes the one above.
+ * Run and view sit on one row because between them they are six cells here --
+ * record is withheld from one and Pan from the other -- and six cells fit a
+ * phone across. Nothing arranges that; they are simply short enough to wrap
+ * together, which is the point of letting the wrapping decide.
  *
  * The buttons stay in document order for anything reading the strip rather than
  * looking at it, which is also the order the digits are numbered in.
@@ -301,8 +303,7 @@ export const TOOLBAR_CSS = `
     max-height: none; overflow: visible;
   }
   html[data-standalone] #toolbar .group { flex-direction: row; }
-  html[data-standalone] #toolbar .group[data-group="view"] { order: 1; }
-  html[data-standalone] #toolbar .group[data-group="tools"] { order: 2; }
+  html[data-standalone] #toolbar .group[data-group="tools"] { order: 1; }
 }
 
 /*
@@ -321,6 +322,24 @@ export const TOOLBAR_CSS = `
  */
 @media not all and ${FINE} {
   #toolbar .wk-btn--cell[data-key="erase"] { display: none; }
+}
+
+/*
+ * Pan is withheld from a touchscreen, which already has a better one.
+ *
+ * Two fingers travelling together pan the view whatever tool is armed (see the
+ * pinch in app.ts), so on a phone the cell is a slower spelling of a gesture the
+ * hand is already making -- and one that costs the tool you had in your hand to
+ * use. A mouse has no equivalent: dragging belongs to whichever tool is armed,
+ * as it did in ZoomMouseListener, so there the cell is the only way to move the
+ * map and it stays.
+ *
+ * \`pointer: coarse\` and not the handheld query, which would also catch a
+ * desktop window dragged under 640px -- that window has a mouse and no pinch,
+ * and hiding Pan there would leave it with no way to move the map at all.
+ */
+@media ${TOUCH} {
+  #toolbar .wk-btn--cell[data-key="shift"] { display: none; }
 }
 `;
 

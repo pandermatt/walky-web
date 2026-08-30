@@ -18,9 +18,10 @@ import { SHORTCUTS } from '../ui/toolbar';
  * follows 9 along it, so an eleventh tool has nowhere to go -- a fact about the
  * keyboard rather than a rule of ours.
  *
- * The generator, the text tool and the eraser keep their numbers on a touch
- * device even though none of the cells is shown there -- the app is what refuses
- * to arm them (see App.setTool), not the list of keys.
+ * Four of these have no cell on a touch device -- the generator, the text tool,
+ * the eraser and Pan, which a pinch does better -- and all four keep their
+ * numbers anyway. The app is what refuses to arm them (see App.setTool), not the
+ * list of keys.
  */
 
 const TOOLS_IN_ORDER = [
