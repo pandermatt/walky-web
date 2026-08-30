@@ -51,7 +51,9 @@ export const SQRT2 = 1.41421356237;
  *  - The cost of standing still, which starts low and grows. This is what lets
  *    someone queue at a bottleneck rather than barge, while guaranteeing that a
  *    jam still drains: patience runs out, and a pedestrian who has waited long
- *    enough will accept a squeeze it first refused.
+ *    enough will accept a squeeze it first refused. Its far end is desperation
+ *    (nerveOf, below): somebody who has been getting nowhere for seconds on end
+ *    stops being polite altogether, and the crowd gives way around them.
  *
  * Cost is why this is not slower than what it replaced. The original scanned every
  * pedestrian on the map; the first port of this file cut that to a spatial hash but
@@ -79,6 +81,13 @@ const OPPOSING = 2.5;
  * walked through them. The asymmetry is load-bearing -- without it every member of
  * a dense crowd yields to every other and the block churns in place -- but it does
  * not have to be absolute. Having right of way makes you less careful, not blind.
+ *
+ * The rank itself is only really meaningful within one goal: costs to different
+ * goals come from different distance fields, so between strangers the comparison
+ * is arbitrary. It is kept anyway, as a deterministic tie-break -- two people
+ * meeting for a moment need *a* winner more than they need the right one. Where
+ * it goes wrong is when the arbitrary loser is held to the verdict for minutes,
+ * which is what desperation (below) exists to undo.
  */
 const YIELD_LOW = 0.25;
 /** Discomfort against progress. Progress is scaled to +-1, so this is the exchange rate. */
@@ -298,6 +307,56 @@ const SHOVE_SQUEEZE = 0.75;
 /** How much shove is in a pedestrian: nought for most, total at the very top. */
 function shoveOf(assertiveness: number): number {
   return Math.max(0, (assertiveness - BULLY_FROM) / (1 - BULLY_FROM));
+}
+
+/**
+ * Desperation: how long somebody can get nowhere before they stop being polite.
+ *
+ * The map that forced this had one stream of twenty a second pouring into its
+ * goal and a trickle of four a second whose path crossed it. Anybody bound
+ * elsewhere who got caught in the crush around the busy goal was pinned there for
+ * good: far from their own goal, they lose the rank comparison above to every
+ * arrival, the arrivals never stop coming, and an ordinary temperament has no
+ * squeeze to spend. Three pedestrians spent seventy of a ninety second run
+ * pressed against that wall; watched from outside, they simply never cross.
+ *
+ * The tempting fix -- have the crowd keep a respectful distance from whoever is
+ * visibly stuck -- was built first and measured, and it fails in exactly the way
+ * this file keeps finding: a bubble of avoidance in a basin everybody is
+ * converging on is a plug, and the busy stream's arrivals fell from 927 to as
+ * few as 135 while the pinned stayed pinned. What actually gets a person out of
+ * a press is the machinery the pushy minority already runs on: walk like you
+ * mean it, lean on who is in front, accept the squeeze -- and the crowd gives
+ * way around them, which is the yielding that was wanted all along.
+ *
+ * So a pedestrian stuck past DESPERATE_AFTER ramps its *effective* nerve up
+ * towards the top of the scale over DESPERATE_RAMP, and everything temperament
+ * already touches follows: presence, lean, impatience, and eventually shove.
+ * Every one of them points outward or at its own patience, which is the lesson
+ * of NERVE_PRESENCE above -- the desperate mind the crowd exactly as much as
+ * they ever did, they just stop asking permission. Impatience is load-bearing rather
+ * than flavour: tried without it, the pinned stood politely in the one legal
+ * cell they had and stayed pinned four times as long. And the whole thing is
+ * self-limiting: desperation is what moves them, moving decays the stall, and
+ * the nerve settles back to temperament.
+ *
+ * Three seconds of getting nowhere before it starts, fully desperate two later.
+ * A walking crowd never touches that -- the deep queue in a bottleneck does, and
+ * is meant to: patience running out is what drains a jam, and the drain and the
+ * pushy-first ordering both held when measured. On the crossing map the three
+ * seventy-second pinnings fell to nobody stuck past eleven seconds, every
+ * crosser through, and the busy stream *faster* -- its median arrival fell from
+ * 241 to 175 ticks, because a desperate straggler clearing the doorway or the
+ * basin was what everybody behind was waiting on.
+ */
+const DESPERATE_AFTER = 180;
+const DESPERATE_RAMP = 240;
+
+/** How bold this one is right now: its temperament, or its desperation if worse. */
+function nerveOf(a: Agents, i: number): number {
+  const desperation = (a.stalled[i] - DESPERATE_AFTER) / DESPERATE_RAMP;
+  if (desperation <= 0) return a.assertiveness[i];
+  return Math.max(a.assertiveness[i], Math.min(1, desperation));
 }
 
 /**
@@ -525,7 +584,7 @@ export class Behaviour {
     // is last step's -- it is measured by the same pass that would need it, and one
     // tick at sixty a second is not something anyone can see.
     const load0 = a.pressure[self];
-    const shove = shoveOf(a.assertiveness[self]);
+    const shove = shoveOf(nerveOf(a, self));
     const pressed = 1 / (1 + load0 / PRESSURE_HALF);
     // What being leaned on costs a body, rather than what it costs a preference.
     // The pushy need far less of a crush before they start squeezing in, but they
@@ -638,7 +697,7 @@ export class Behaviour {
       if (!sameGoal) w *= OPPOSING;
       // The other half of the asymmetry: somebody walking at you like they mean it
       // is somebody you give way to, whatever you would have done for anyone else.
-      w *= 1 - NERVE_PRESENCE / 2 + NERVE_PRESENCE * a.assertiveness[j];
+      w *= 1 - NERVE_PRESENCE / 2 + NERVE_PRESENCE * nerveOf(a, j);
 
       const ux = rx / d;
       const uy = ry / d;
@@ -682,7 +741,7 @@ export class Behaviour {
       const into = -(ux * wantX + uy * wantY) / wantLen;
       if (into <= 0) continue;
       const share = into * (1 - d / reachJ)
-        * (1 - NERVE_LEAN / 2 + NERVE_LEAN * a.assertiveness[j]);
+        * (1 - NERVE_LEAN / 2 + NERVE_LEAN * nerveOf(a, j));
       const put = share * gripOf(a, j);
       loadRaw += share;
       load += put;
@@ -806,7 +865,7 @@ export class Behaviour {
           // is also the reference point every other candidate is measured against,
           // so it carries no discomfort term of its own.
           const cost = W_WAIT
-            * (1 - NERVE_IMPATIENCE / 2 + NERVE_IMPATIENCE * a.assertiveness[i])
+            * (1 - NERVE_IMPATIENCE / 2 + NERVE_IMPATIENCE * nerveOf(a, i))
             * (1 + a.waited[i] / PATIENCE);
           if (cost < bestCost) { bestCost = cost; bestDx = 0; bestDy = 0; bestLen = 0; }
           continue;

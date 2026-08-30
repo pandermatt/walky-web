@@ -509,6 +509,92 @@ describe('assertive and polite pedestrians', () => {
   });
 });
 
+describe('crossing a busy stream', () => {
+  /**
+   * Up to nine let out of a 3x3 door at body pitch, skipping occupied spots --
+   * App.emit's spawn block, on a fixed cadence so the test needs no arrival
+   * process to be deterministic about.
+   */
+  function emitBlock(agents: Agents, at: [number, number],
+                     goalId: number, color: RGB, want: number): number {
+    const pitch = 2 * R;
+    let made = 0;
+    for (let i = -1; i <= 1 && made < want; i++) {
+      for (let j = -1; j <= 1 && made < want; j++) {
+        const p: [number, number] = [Math.round(at[0] + i * pitch), Math.round(at[1] + j * pitch)];
+        let blocked = false;
+        for (let k = 0; k < agents.count; k++) {
+          if (agents.arrived[k]) continue;
+          if (Math.hypot(agents.x[k] - p[0], agents.y[k] - p[1]) < 2 * R) { blocked = true; break; }
+        }
+        if (blocked) continue;
+        agents.addSpawned(p, goalId, color);
+        made++;
+      }
+    }
+    return made;
+  }
+
+  it('frees a crosser pinned in the stream\'s arrival crush', () => {
+    // The shared map this reproduces: a door pouring twenty a second into its
+    // goal, and a trickle bound the other way whose path crosses the flow. The
+    // crush around the busy goal never opens on its own, and before desperation
+    // existed a crosser swept into it was pinned for good -- the worst measured
+    // here sat at a stall of 2235 ticks and counting, and on the original map
+    // three pedestrians spent seventy of a ninety second run pressed against
+    // the goal wall while the whole crowd walked at them.
+    //
+    // Several layouts, like the counterflow test and for the same reason: a
+    // pixel of placement decides which crossers get caught. The ceiling is the
+    // point -- with desperation the worst stall seen on any layout was 824, so
+    // nobody is ever stuck for more than a stretch a viewer would forgive;
+    // without it the pinned pass 2000 and never come back.
+    for (const shift of [0, 2, 4]) {
+      const goalA = makeWall([rectanglePolygon([-186, -16], [-120, 31])]);
+      const goalB = makeWall([rectanglePolygon([72, 84], [116, 137])]);
+      goalA.isGoal = true;
+      goalB.isGoal = true;
+      const nav = new Navigation();
+      nav.rebuild([goalA, goalB], R);
+      const agents = new Agents();
+      const hash = new SpatialHash();
+
+      const isCrosser: boolean[] = [];
+      let streamSpawns = 0;
+      let crosserArrived = 0;
+      let streamArrived = 0;
+      let worstStall = 0;
+      for (let t = 0; t < 2700; t++) {
+        if (t % 27 === 0) {
+          streamSpawns += emitBlock(agents, [104 + shift, -206], goalA.id, goalA.color, 9);
+        }
+        if (t % 90 === 0) {
+          const before = agents.count;
+          emitBlock(agents, [-103 + shift, -255], goalB.id, goalB.color, 1);
+          for (let k = before; k < agents.count; k++) isCrosser[k] = true;
+        }
+        agents.step(nav, hash, 4, R, 40);
+        for (let k = 0; k < agents.count; k++) {
+          if (isCrosser[k] && !agents.arrived[k]) {
+            worstStall = Math.max(worstStall, agents.stalled[k]);
+          }
+        }
+        for (const i of agents.justArrived) {
+          if (isCrosser[i]) crosserArrived++;
+          else streamArrived++;
+        }
+      }
+
+      // Nobody bound across the stream is ever stuck for twenty seconds.
+      expect(worstStall).toBeLessThan(1200);
+      // The crossers do cross, and the stream is not paying for it: it keeps
+      // delivering nearly everyone its door lets out.
+      expect(crosserArrived).toBeGreaterThan(8);
+      expect(streamArrived).toBeGreaterThan(streamSpawns * 0.9);
+    }
+  });
+});
+
 describe('pace in a crowd', () => {
   /** A corridor holds a crowd at a density; open ground lets it spread instead. */
   function walk(n: number, pitch: number, halfHeight: number, ticks: number) {
