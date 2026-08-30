@@ -90,7 +90,7 @@ const GROUPS: { name: string; buttons: ButtonSpec[] }[] = [
       // the generator spent its first life on 0, at the far end of the capsule
       // from the tool it is a variety of.
       { key: 'pedestrian', icon: 'pedestrian.png', title: 'Add pedestrians', kind: 'tool', shortcut: '4', press: '4' },
-      { key: 'generator', icon: 'generator.svg', title: 'Add generator', kind: 'tool', shortcut: '5', press: '5', desktopOnly: true },
+      { key: 'generator', icon: 'generator.svg', title: 'Add generator', kind: 'tool', shortcut: '5', press: '5' },
       { key: 'goal', icon: 'goal.png', title: 'Mark goal', kind: 'tool', shortcut: '6', press: '6' },
       // then the pair that acts on what is already down instead of adding to it.
       // The eraser is next to the selection tool and not next to the walls it
@@ -248,15 +248,17 @@ export const TOOLBAR_CSS = `
  * Record wants a two-minute sit-still and hands back a file a phone has nowhere
  * good to put; the text tool wants a keyboard. Neither is a control that works
  * worse on a phone -- they are controls a phone has no answer for -- so they are
- * taken out of the strip rather than left there to disappoint.
- *
- * The generator is here for the third version of that argument, which is about
- * room rather than input: it is a tool you place and then tune, and its slider,
- * its selection and the goal it has to be pinned to are three panels' worth of
- * traffic over a screen that is mostly map already. \`display: none\`
+ * taken out of the strip rather than left there to disappoint. \`display: none\`
  * removes the cell from the layout and from the accessibility tree both, and the
  * query is live, so a tab handed to an installed window or a desktop window
  * dragged narrow agrees without anything listening for it.
+ *
+ * The generator used to be withheld here too, on an argument about room rather
+ * than input: a tool you place and then tune, over a screen that is mostly map
+ * already. It goes down in one tap like the others and it tunes with one slider,
+ * so the room it wanted was really the strip's, and the strip has it now that
+ * Pan has gone to the pinch. A phone that can build a crowd should be able to
+ * build the door the crowd comes out of.
  *
  * Two further rules at the foot of this stylesheet withhold the eraser and Pan,
  * and each asks a different question on purpose -- whether there is a mouse to
@@ -266,7 +268,6 @@ export const TOOLBAR_CSS = `
  */
 @media ${HANDHELD} {
   #toolbar .wk-btn--cell[data-key="record"],
-  #toolbar .wk-btn--cell[data-key="generator"],
   #toolbar .wk-btn--cell[data-key="text"] { display: none; }
 }
 
@@ -302,7 +303,12 @@ export const TOOLBAR_CSS = `
     justify-content: center; align-items: flex-end;
     max-height: none; overflow: visible;
   }
-  html[data-standalone] #toolbar .group { flex-direction: row; }
+  /* max-width so that a capsule too wide for the screen wraps inside itself
+     rather than hanging off both edges: the group is flex: 0 0 auto, so without
+     a cap it keeps its content width and the end cells go somewhere no thumb can
+     reach. The tools capsule is seven across now and a 320px phone is 296px of
+     usable bar, which is the case this is for. */
+  html[data-standalone] #toolbar .group { flex-direction: row; max-width: 100%; }
   html[data-standalone] #toolbar .group[data-group="tools"] { order: 1; }
 }
 
