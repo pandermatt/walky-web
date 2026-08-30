@@ -360,6 +360,21 @@ function shoveOf(assertiveness: number): number {
  * self-limiting: desperation is what moves them, moving decays the stall, and
  * the nerve settles back to temperament.
  *
+ * The ramp reaches one further thing that temperament deliberately does not:
+ * deference to the crowd bound the other way. All four nerve effects together
+ * could not free somebody blocked by an *opposing* crowd, because none of
+ * them touch the term that pins them -- an oncoming stranger's discomfort
+ * weighs OPPOSING times more against a bubble a crush never closes, so the
+ * cheapest move is a sideways shuffle, for ever, and shuffling resets the
+ * patience that pressure and shove are gated on while `stalled` alone keeps
+ * counting. So in `survey`, desperation eases both halves of that deference
+ * toward what a same-goal neighbour gets: the extra weight toward one, the
+ * open bubble toward the crushed one. Gated on this ramp rather than on
+ * `nerveOf`, and the difference is the whole safety argument -- nerve would
+ * hold the gate open for the pushiest eighth on every ordinary tick, where
+ * the ramp opens it only for the provably stuck and closes it the moment
+ * they move.
+ *
  * Three seconds of getting nowhere before it starts, fully desperate two later.
  * A walking crowd never touches that -- the deep queue in a bottleneck does, and
  * is meant to: patience running out is what drains a jam, and the drain and the
@@ -372,11 +387,20 @@ function shoveOf(assertiveness: number): number {
 const DESPERATE_AFTER = 180;
 const DESPERATE_RAMP = 240;
 
+/**
+ * How far past DESPERATE_AFTER this one is, 0 to 1: the ramp alone, with no
+ * temperament in it. The gates that must not stay open for the naturally pushy
+ * -- the opposing-space relaxation in `survey` -- read this rather than
+ * `nerveOf`, or the pushiest eighth would discount the oncoming crowd's room
+ * on every ordinary tick and counterflow would never sort.
+ */
+function desperationOf(a: Agents, i: number): number {
+  return Math.min(1, Math.max(0, (a.stalled[i] - DESPERATE_AFTER) / DESPERATE_RAMP));
+}
+
 /** How bold this one is right now: its temperament, or its desperation if worse. */
 function nerveOf(a: Agents, i: number): number {
-  const desperation = (a.stalled[i] - DESPERATE_AFTER) / DESPERATE_RAMP;
-  if (desperation <= 0) return a.assertiveness[i];
-  return Math.max(a.assertiveness[i], Math.min(1, desperation));
+  return Math.max(a.assertiveness[i], desperationOf(a, i));
 }
 
 /**
@@ -670,7 +694,18 @@ export class Behaviour {
     // Without this split, pressure quietly dismantles lane formation: two streams
     // that tolerate each other at close range interpenetrate instead of sorting,
     // and counterflow arrivals fell by a third.
-    const openSpace = wanted * compression;
+    //
+    // With one exception, and it is the desperation ramp's: somebody who has
+    // been getting nowhere for seconds stops giving the crowd coming the other
+    // way more room than it gives its own, and the oncoming bubble eases toward
+    // the crushed same-way one in step with the stall. Gated on being stuck
+    // rather than on pressure, which is what makes it safe where the global
+    // version was not: a flowing stream has nobody desperate in it, so lanes
+    // sort exactly as before, and the moment the desperate one moves again the
+    // stall decays and the deference comes back.
+    const desperation = desperationOf(a, self);
+    const open = wanted * compression;
+    const openSpace = open + (space - open) * desperation;
     a.effectiveSpace[self] = space;
     a.density[self] = about;
     const bubble = 2 * radius + space;
@@ -688,6 +723,11 @@ export class Behaviour {
     const bodyReach = contact + Math.min(this.speed * (1 + PACE_SPREAD), contact) + 1;
     const goalSelf = a.goal[self];
     const costSelf = a.costToGoal[self];
+    // The other half of the desperate exception above: the extra weight an
+    // oncoming stranger commands eases toward what any stranger gets. Toward
+    // one and never below it -- a desperate pedestrian treats the opposing
+    // crowd like its own, not like something to walk into.
+    const opposing = OPPOSING + (1 - OPPOSING) * desperation;
 
     let bodies = 0;
     let load = 0;
@@ -737,7 +777,7 @@ export class Behaviour {
       if (d < 1e-6 || d >= reachJ) continue;
 
       let w = costSelf < a.costToGoal[j] ? YIELD_LOW : 1;
-      if (!sameGoal) w *= OPPOSING;
+      if (!sameGoal) w *= opposing;
       // The other half of the asymmetry: somebody walking at you like they mean it
       // is somebody you give way to, whatever you would have done for anyone else.
       w *= 1 - NERVE_PRESENCE / 2 + NERVE_PRESENCE * nerveOf(a, j);
