@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GeneratorTool } from '../tools/generatorTool';
-import { DEFAULT_SETTINGS, GENERATOR_CELLS } from '../state/model';
+import { DEFAULT_SETTINGS, GENERATOR_CELLS, generatorRoundedSquare } from '../state/model';
 import type { Point } from '../sim/geometry';
 import type { PointerInfo, ToolContext, ToolId } from '../tools/types';
 
@@ -93,9 +93,12 @@ describe('GeneratorTool', () => {
     expect(tool.preview().pendingPolygons).toEqual([]);
 
     tool.onPointerMove(at([0, 0]), ctx);
-    const [square] = tool.preview().pendingPolygons;
+    const [block] = tool.preview().pendingPolygons;
     const half = GENERATOR_CELLS * DEFAULT_SETTINGS.pedestrianRadius;
-    expect(square).toEqual([[-half, -half], [half, -half], [half, half], [-half, half]]);
+    // The shape it will be placed as, corners and all -- what is previewed is
+    // what lands, down to the same call.
+    expect(block).toEqual(generatorRoundedSquare([0, 0], DEFAULT_SETTINGS.pedestrianRadius));
+    expect(Math.max(...block.map((p) => p[0]))).toBeCloseTo(half);
     // A proposal, not a warning: the red outline means "about to be taken away".
     expect(tool.preview().pendingPolygonsInvalid).toBe(false);
   });

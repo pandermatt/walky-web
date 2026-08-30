@@ -330,8 +330,62 @@ export function generatorSquare(at: Point, radius: number): Point[] {
   return rectanglePolygon([at[0] - half, at[1] - half], [at[0] + half, at[1] + half]);
 }
 
+/**
+ * How much of the block's half-width each corner is rounded off by.
+ *
+ * The proportion an app icon uses, near enough: about a fifth of the side. Enough
+ * that the corner is unmistakably not a wall's corner from across the map, and
+ * little enough that the shape still reads as a block standing on a footprint
+ * rather than as a blob.
+ */
+const GENERATOR_CORNER = 0.45;
+
+/**
+ * Segments per corner. Six is smooth at the zooms the block is looked at and
+ * cheap enough that the polygon is still a two-dozen-point thing the tesselator
+ * rebuilds without noticing.
+ */
+const GENERATOR_CORNER_SEGMENTS = 6;
+
+/**
+ * The generator as it is drawn: the same square with its corners taken off.
+ *
+ * A map made of walls is a map made of hard rectangles, and a generator drawn as
+ * one more of them is a block you have to work out rather than recognise. Rounded
+ * it reads as a thing placed on the floor -- an icon -- at a glance and at any
+ * zoom, which is what a door people come out of should look like among obstacles.
+ *
+ * The footprint underneath is unchanged: generatorSquare is still what the block
+ * occupies and what has to have room in it. This is the same square, drawn.
+ */
+export function generatorRoundedSquare(at: Point, radius: number): Point[] {
+  const half = GENERATOR_CELLS * radius;
+  const r = half * GENERATOR_CORNER;
+  const [cx, cy] = at;
+  // One quarter-turn per corner, in the winding rectanglePolygon uses, each
+  // given the centre it turns about and the angle it starts from.
+  const corners: [number, number, number][] = [
+    [cx - half + r, cy - half + r, Math.PI],
+    [cx + half - r, cy - half + r, -Math.PI / 2],
+    [cx + half - r, cy + half - r, 0],
+    [cx - half + r, cy + half - r, Math.PI / 2],
+  ];
+  const points: Point[] = [];
+  for (const [ox, oy, from] of corners) {
+    for (let i = 0; i <= GENERATOR_CORNER_SEGMENTS; i++) {
+      const a = from + (Math.PI / 2) * (i / GENERATOR_CORNER_SEGMENTS);
+      points.push([ox + r * Math.cos(a), oy + r * Math.sin(a)]);
+    }
+  }
+  return points;
+}
+
+/**
+ * Hit-tested against the rounded shape, not the square, so that the corners a
+ * generator does not appear to have are corners a click does not find either.
+ */
 export function generatorContains(g: Generator, p: Point, radius: number): boolean {
-  return pointInPolygon(generatorSquare(g.at, radius), p);
+  return pointInPolygon(generatorRoundedSquare(g.at, radius), p);
 }
 
 export function makeGenerator(at: Point, rate: number): Generator {
