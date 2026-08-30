@@ -233,6 +233,12 @@ export const SHEET_CSS = `
  * more reason than most: it is a rewrite, and the people whose project this was
  * belong on the last line of it. The version is injected from package.json at
  * build time so that it cannot drift away from what is actually running.
+ *
+ * The two names are links, which is what "the people whose project this was" is
+ * worth once the page is somewhere anyone can find: a credit nobody can follow
+ * credits nobody. The policy line under them is the other half of being
+ * publicly hosted -- the app stores nothing and asks for nothing, but it is
+ * still served from somewhere, and saying where is not optional.
  */
 .wk-sheet .about {
   padding: 24px 18px 0; text-align: center; color: var(--wk-ink-dim);
@@ -243,6 +249,25 @@ export const SHEET_CSS = `
 }
 .wk-sheet .about .version { margin: 2px 0 0; font-size: 13px; }
 .wk-sheet .about .credit { margin: 10px 0 0; font-size: 13px; line-height: 1.45; }
+/* A line clear of the credit, so it reads as its own statement rather than as a
+   third clause of the sentence above it. */
+.wk-sheet .about .legal { margin: 14px 0 0; font-size: 13px; }
+
+/* The tint every other piece of interactive text in the app wears. A name in
+   running prose keeps its underline -- without one it is just a word in a
+   sentence that happens to be coloured -- while the policy line stands alone
+   and needs no such help. */
+.wk-sheet .about a { color: var(--wk-accent-text); text-decoration: none; }
+/* A name is one word for wrapping purposes: "Jan" ending a line and "Huber"
+   starting the next is a person torn in half. The sentence has other places it
+   can break. */
+.wk-sheet .about .credit a { text-decoration: underline; white-space: nowrap; }
+/* An anchor is not a .wk-btn and inherits none of its ring, so it says the same
+   thing here in its own words. */
+.wk-sheet .about a:focus-visible {
+  outline: 2px solid var(--wk-accent-text); outline-offset: 2px;
+  border-radius: 3px;
+}
 
 /*
  * Installed on a phone, the sheet is the screen: there is no browser chrome
@@ -275,6 +300,25 @@ export const SHEET_CSS = `
 
 /** Distinguishes our history entry from anyone else's; see open() and close(). */
 let sequence = 0;
+
+/**
+ * An outbound link for the footer.
+ *
+ * A new tab rather than this one, because leaving is not what someone reading
+ * the credits asked for: the simulation they were running is in this tab, and a
+ * scenario lives in the URL, so navigating away is how you lose it. The `rel` is
+ * belt and braces -- `target="_blank"` implies `noopener` in every engine that
+ * ships today, and `_headers` already sends `Referrer-Policy: no-referrer` -- but
+ * it costs nothing and does not depend on either staying true.
+ */
+function link(text: string, href: string): HTMLAnchorElement {
+  const a = document.createElement('a');
+  a.href = href;
+  a.textContent = text;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
+}
 
 /**
  * The settings, as a modal sheet.
@@ -513,9 +557,19 @@ export class SettingsSheet {
 
     const credit = document.createElement('p');
     credit.className = 'credit';
-    credit.textContent = 'A revival of the 2016 original by Pascal Andermatt and Jan Huber.';
+    credit.append(
+      'A revival of the 2016 original by ',
+      link('Pascal Andermatt', 'https://pandermatt.ch/'),
+      ' and ',
+      link('Jan Huber', 'https://www.jan-huber.ch'),
+      '.',
+    );
 
-    about.append(name, version, credit);
+    const legal = document.createElement('p');
+    legal.className = 'legal';
+    legal.append(link('Privacy Policy', 'https://pandermatt.ch/privacy-policy/'));
+
+    about.append(name, version, credit, legal);
     return about;
   }
 
