@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CODEC_VERSION, FLAG_DEFLATED, FLAG_GENERATORS, FLAG_LABELS, LIMITS, ScenarioLinkError,
+  CODEC_VERSION, FLAG_DEFLATED, FLAG_GENERATORS, FLAG_LABELS, FLAG_SPEED_MPS, LIMITS, ScenarioLinkError,
   base64UrlToBytes, bytesToBase64Url,
   decodeScenario, decodeScenarioBody, encodeScenario, encodeScenarioBody,
   scenarioHeader,
@@ -46,7 +46,7 @@ function richScenario(): ScenarioCore {
     showConvexHull: false,
     showDebug: true,
     sound: false,
-    speed: 9,
+    speed: 2.15,
     pedestrianRadius: 21,
     personalSpace: 5,
     brushSize: 4,
@@ -176,7 +176,7 @@ describe('the scenario codec', () => {
       view: { targetX: 0, targetY: 0, zoomLevel: -400 },
     });
     const after = decodeScenario(encodeScenario(before));
-    expect(after.settings.speed).toBe(20);
+    expect(after.settings.speed).toBe(3);
     expect(after.settings.pedestrianRadius).toBe(3);
     expect(after.settings.borderThickness).toBe(60);
     expect(after.view.zoomLevel).toBe(-50);
@@ -200,10 +200,10 @@ describe('labels, which ride in the flags rather than in the version', () => {
 
   it('announces itself in the header, and only when there is something to announce', () => {
     // The promise to every link already pasted somewhere: a map with nothing
-    // written on it encodes exactly as it did before labels existed, so an
-    // older build goes on opening it.
-    expect(encodeScenario(core())[2]).toBe(0);
-    expect(encodeScenario(written())[2]).toBe(FLAG_LABELS);
+    // written on it announces nothing about labels. (Every body now rides with
+    // FLAG_SPEED_MPS -- the speed unit changed for all maps alike, see codec.ts.)
+    expect(encodeScenario(core())[2]).toBe(FLAG_SPEED_MPS);
+    expect(encodeScenario(written())[2]).toBe(FLAG_SPEED_MPS | FLAG_LABELS);
   });
 
   it('is not read at all when the header did not promise it', () => {
@@ -252,10 +252,10 @@ describe('generators, which ride in the flags as the labels do', () => {
   });
 
   it('announces itself in the header, and only when there is something to announce', () => {
-    // The same promise the labels make: a map with no door on it encodes to
-    // exactly the bytes it always did, and goes on opening in an older build.
-    expect(encodeScenario(core())[2]).toBe(0);
-    expect(encodeScenario(doors())[2]).toBe(FLAG_GENERATORS);
+    // The same promise the labels make: a map with no door on it announces
+    // no generators block.
+    expect(encodeScenario(core())[2]).toBe(FLAG_SPEED_MPS);
+    expect(encodeScenario(doors())[2]).toBe(FLAG_SPEED_MPS | FLAG_GENERATORS);
   });
 
   it('sits after the labels, so a map can carry both', () => {
@@ -263,7 +263,7 @@ describe('generators, which ride in the flags as the labels do', () => {
       labels: [{ at: [0, 0], text: 'Gate', size: 28, weight: 1000 }],
       generators: [{ at: [10, 10], rate: 4, goal: -1, color: [255, 255, 255] }],
     });
-    expect(encodeScenario(both)[2]).toBe(FLAG_LABELS | FLAG_GENERATORS);
+    expect(encodeScenario(both)[2]).toBe(FLAG_SPEED_MPS | FLAG_LABELS | FLAG_GENERATORS);
     const after = decodeScenario(encodeScenario(both));
     expect(after.labels).toEqual(both.labels);
     expect(after.generators).toEqual(both.generators);
@@ -291,7 +291,7 @@ describe('generators, which ride in the flags as the labels do', () => {
     expect(decodeScenario(encodeScenario(before)).agents.map((a) => a.spawned))
       .toEqual([false, true]);
     // No flag of its own and no version bump: a spare bit of the agent byte.
-    expect(encodeScenario(before)[2]).toBe(0);
+    expect(encodeScenario(before)[2]).toBe(FLAG_SPEED_MPS);
     expect(encodeScenario(before)[1]).toBe(CODEC_VERSION);
   });
 });

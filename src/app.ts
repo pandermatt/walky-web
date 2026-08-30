@@ -10,6 +10,7 @@ import {
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { Clock } from './sim/clock';
 import { Metrics } from './sim/metrics';
+import { pxPerTickFromMps } from './sim/units';
 import { groupWalls, type WallGroup } from './state/groups';
 import { SHORTCUTS, Toolbar, type ActionId } from './ui/toolbar';
 import {
@@ -1730,7 +1731,10 @@ export class App {
     this.emit();
     this.agents.step(
       this.nav, this.hash,
-      this.settings.speed, this.settings.pedestrianRadius, this.settings.personalSpace,
+      // The one unit conversion in the app: the slider speaks m/s, the sim
+      // core walks in px/tick, and they meet here.
+      pxPerTickFromMps(this.settings.speed),
+      this.settings.pedestrianRadius, this.settings.personalSpace,
     );
     // While justArrived still holds the tick's arrivals, and before the removal
     // below shuffles anybody between slots.
@@ -1908,9 +1912,9 @@ export class App {
       editingLabelStyle: this.labelStyle(),
       debugLines: this.debugLines(),
       // The speed is the one thing about a recorded run that the recording
-      // cannot otherwise show: the same crowd at 2 and at 12 is the same crowd.
-      // Read live, so dragging the slider mid-take is visible in the take.
-      speedReadout: recording ? `Speed ×${this.settings.speed}` : null,
+      // cannot otherwise show: the same crowd at 1 m/s and at 3 is the same
+      // crowd. Read live, so dragging the slider mid-take is visible in the take.
+      speedReadout: recording ? `${this.settings.speed.toFixed(2)} m/s` : null,
       recordFrame: this.recordFrame(),
       // While a frame is set the readout belongs in the frame's corner, or it
       // would be written on a part of the screen the file does not have.

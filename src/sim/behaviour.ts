@@ -884,6 +884,28 @@ export class Behaviour {
     // And nobody walks a ruler line.
     const wander = W_WANDER * Math.sin(x * WANDER_X + y * WANDER_Y + a.trait[i] * 6.283);
 
+    // Everything is priced per unit of distance travelled, which is what
+    // makes a shallow approach angle come out as weaving: a slanted move
+    // must earn its length to beat the straight one. Analytic in the
+    // direction, so the same pricing can be asked about any angle -- the
+    // eight-way scan below and the refinement after it both call it.
+    const priceDir = (ux: number, uy: number): number => {
+      const nx = x + ux * step;
+      const ny = y + uy * step;
+      const gain = distHere - Math.hypot(target[0] - nx, target[1] - ny);
+      let cost = -gain / step
+        + this.gradX * ux + this.gradY * uy;
+      if (facing) {
+        cost += W_TURN * (1 - (ux * hx + uy * hy)) / 2;
+        // Given a choice, pass the same side everyone else does.
+        if (this.oncoming > 0) {
+          cost -= W_SIDE * this.oncoming * (ux * rightX + uy * rightY);
+        }
+        cost -= wander * (ux * rightX + uy * rightY);
+      }
+      return cost;
+    };
+
     // Standing still is always on the table -- it is the option the original
     // lacked, which is why a blocked pedestrian there could only jiggle. It
     // is also the reference point every other candidate is measured against,
@@ -893,6 +915,8 @@ export class Behaviour {
       * (1 + a.waited[i] / PATIENCE);
     let bestX = 0;
     let bestY = 0;
+    let bestUx = 0;
+    let bestUy = 0;
     let moved = false;
 
     for (let dy = -1; dy <= 1; dy++) {
@@ -906,21 +930,7 @@ export class Behaviour {
         const ny = y + uy * step;
         if (!this.isLegal(nx, ny, radius)) continue;
 
-        // Everything is priced per unit of distance travelled, which is what
-        // makes a shallow approach angle come out as weaving: a slanted move
-        // must earn its length to beat the straight one.
-        const gain = distHere - Math.hypot(target[0] - nx, target[1] - ny);
-        let cost = -gain / step
-          + this.gradX * ux + this.gradY * uy;
-
-        if (facing) {
-          cost += W_TURN * (1 - (ux * hx + uy * hy)) / 2;
-          // Given a choice, pass the same side everyone else does.
-          if (this.oncoming > 0) {
-            cost -= W_SIDE * this.oncoming * (ux * rightX + uy * rightY);
-          }
-          cost -= wander * (ux * rightX + uy * rightY);
-        }
+        let cost = priceDir(ux, uy);
         if (restless > 0) {
           cost += restless * (wobble(
             Math.round(x), Math.round(y), (dx + 1) * 3 + (dy + 1) + a.stalled[i] * 9,
@@ -931,7 +941,34 @@ export class Behaviour {
           bestCost = cost;
           bestX = nx;
           bestY = ny;
+          bestUx = ux;
+          bestUy = uy;
           moved = true;
+        }
+      }
+    }
+
+    // The eight-way scan finds the right spoke; the true best direction is
+    // usually between two of them, and walking spoke-to-spoke is the last of
+    // the lattice's 45-degree robotics. Price the winner's two angular
+    // neighbours halfway to the next spokes and slide to the minimum of the
+    // parabola through the three -- pure arithmetic, no neighbour loop -- then
+    // take the refined landing if it is legal, the winner's if not. Skipped
+    // while the fidget is on: its per-spoke wobble is doing the opposite job.
+    if (moved && restless <= 0) {
+      const spoke = Math.PI / 8;
+      const angle = Math.atan2(bestUy, bestUx);
+      const low = priceDir(Math.cos(angle - spoke), Math.sin(angle - spoke));
+      const high = priceDir(Math.cos(angle + spoke), Math.sin(angle + spoke));
+      const curve = low - 2 * bestCost + high;
+      if (curve > 1e-9) {
+        const off = Math.max(-spoke, Math.min(spoke, (spoke * (low - high)) / (2 * curve)));
+        if (off !== 0) {
+          const ux = Math.cos(angle + off);
+          const uy = Math.sin(angle + off);
+          const nx = x + ux * step;
+          const ny = y + uy * step;
+          if (this.isLegal(nx, ny, radius)) { bestX = nx; bestY = ny; }
         }
       }
     }

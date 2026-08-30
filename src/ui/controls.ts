@@ -30,7 +30,7 @@ export type ChangeHandler = <K extends keyof Settings>(key: K, value: Settings[K
 
 /** Labels here; the ranges come from the model, which is also what a loaded map is clamped to. */
 export const SLIDERS: Record<string, SliderSpec> = {
-  speed: { key: 'speed', label: 'Simulation speed', ...SETTING_RANGES.speed },
+  speed: { key: 'speed', label: 'Walking speed (m/s)', ...SETTING_RANGES.speed },
   pedestrianRadius: { key: 'pedestrianRadius', label: 'Pedestrian radius', ...SETTING_RANGES.pedestrianRadius },
   personalSpace: { key: 'personalSpace', label: 'Personal space', ...SETTING_RANGES.personalSpace },
   brushSize: { key: 'brushSize', label: 'Brush size', ...SETTING_RANGES.brushSize },
