@@ -102,6 +102,14 @@ export class Agents {
    */
   density: Float32Array;
   /**
+   * How far this pedestrian actually got last tick, in pixels.
+   *
+   * Derived per tick like `density`, and for the same reason: it exists to be
+   * measured. Walking pace against the crush around it is the model's testable
+   * claim to realism -- the fundamental diagram -- and this is the numerator.
+   */
+  stepDist: Float32Array;
+  /**
    * A stable number in [0,1) that makes this pedestrian slightly its own person:
    * how much room it keeps and how briskly it walks are both scaled by it.
    *
@@ -200,6 +208,7 @@ export class Agents {
     this.pushX = new Float32Array(capacity);
     this.pushY = new Float32Array(capacity);
     this.density = new Float32Array(capacity);
+    this.stepDist = new Float32Array(capacity);
     this.trait = new Float32Array(capacity);
     this.assertiveness = new Float32Array(capacity);
     this.party = new Int32Array(capacity);
@@ -227,6 +236,7 @@ export class Agents {
     this.pushX[i] = 0;
     this.pushY[i] = 0;
     this.density[i] = 0;
+    this.stepDist[i] = 0;
     this.trait[i] = traitOf(at[0], at[1], SPACE_SEED);
     this.assertiveness[i] = traitOf(at[0], at[1], NERVE_SEED);
     this.party[i] = partyOf(at[0], at[1]);
@@ -335,6 +345,7 @@ export class Agents {
     this.pushX[i] = this.pushX[last];
     this.pushY[i] = this.pushY[last];
     this.density[i] = this.density[last];
+    this.stepDist[i] = this.stepDist[last];
     this.trait[i] = this.trait[last];
     this.assertiveness[i] = this.assertiveness[last];
     this.party[i] = this.party[last];
@@ -429,6 +440,7 @@ export class Agents {
     this.pushX.fill(0, 0, n);
     this.pushY.fill(0, 0, n);
     this.density.fill(0, 0, n);
+    this.stepDist.fill(0, 0, n);
     this.effectiveSpace.fill(0, 0, n);
     // Not derived from the tick but from the pedestrian: recomputed rather than
     // restored, so it comes back identical without being stored.
@@ -529,6 +541,7 @@ export class Agents {
    */
   step(nav: Navigation, hash: SpatialHash, speed: number, radius: number, personalSpace: number): void {
     this.justArrived.length = 0;
+    this.stepDist.fill(0, 0, this.count);
     // Cells the size of the interaction range keep a neighbour query to the 3x3
     // block around an agent.
     hash.build(this.x, this.y, this.count, Math.max(1, interactionReach(radius, personalSpace, speed)));
@@ -622,6 +635,10 @@ export class Agents {
         }
       }
 
+      // Straight-line distance rather than path length: what the fundamental
+      // diagram wants is progress made, and a shuffle on the spot is none.
+      this.stepDist[i] = Math.hypot(this.x[i] - here[0], this.y[i] - here[1]);
+
       const gained = costBefore - this.costToGoal[i];
       if (gained > STALL_PROGRESS) this.stalled[i] = Math.max(0, this.stalled[i] - 2);
       else this.stalled[i] += 1;
@@ -660,6 +677,7 @@ export class Agents {
     this.pushX = copy(this.pushX, (n) => new Float32Array(n));
     this.pushY = copy(this.pushY, (n) => new Float32Array(n));
     this.density = copy(this.density, (n) => new Float32Array(n));
+    this.stepDist = copy(this.stepDist, (n) => new Float32Array(n));
     this.trait = copy(this.trait, (n) => new Float32Array(n));
     this.assertiveness = copy(this.assertiveness, (n) => new Float32Array(n));
     this.party = copy(this.party, (n) => new Int32Array(n));

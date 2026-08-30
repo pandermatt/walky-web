@@ -9,6 +9,7 @@ import {
 } from './state/model';
 import { expandPolygon, pointInPolygon, type Point } from './sim/geometry';
 import { Clock } from './sim/clock';
+import { Metrics } from './sim/metrics';
 import { groupWalls, type WallGroup } from './state/groups';
 import { SHORTCUTS, Toolbar, type ActionId } from './ui/toolbar';
 import {
@@ -197,6 +198,8 @@ export class App {
   private stepTimes: number[] = [];
   /** Owes the simulation its sixty steps a second, whatever the display does. */
   private clock = new Clock();
+  /** Speed, density and flow in the literature's units, for the debug readout. */
+  private metrics = new Metrics();
 
   /** Bumped on map edits only -- the walls. */
   private worldRevision = 0;
@@ -314,6 +317,23 @@ export class App {
     });
     this.applyCursor();
     this.requestRender();
+
+    // For anyone measuring rather than watching: the run's speed-against-density
+    // curve and flow numbers, from the console. Returns the data and offers it
+    // as a JSON download, so a run can be plotted against Weidmann offline.
+    (window as unknown as Record<string, unknown>).walkyMetrics = () => {
+      const data = {
+        readout: this.metrics.readout(),
+        fundamentalDiagram: this.metrics.fundamentalDiagram(),
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'walky-metrics.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      return data;
+    };
   }
 
   // ---- world mutations exposed to tools -----------------------------------
@@ -788,6 +808,7 @@ export class App {
     this.labels = [];
     this.generators = [];
     this.agents.clear();
+    this.metrics.reset();
     this.play(false);
     this.navDirty = true;
     this.tool?.cancel?.();
@@ -827,6 +848,9 @@ export class App {
           generator.wait = 0;
         }
         this.agents.resetPositions(this.wallColors());
+        // A fresh run deserves a fresh diagram: the replayed demand is the
+        // point of resetting, and mixing two runs' curves would say neither's.
+        this.metrics.reset();
         this.touch();
         break;
       case 'settings':
@@ -1708,6 +1732,9 @@ export class App {
       this.nav, this.hash,
       this.settings.speed, this.settings.pedestrianRadius, this.settings.personalSpace,
     );
+    // While justArrived still holds the tick's arrivals, and before the removal
+    // below shuffles anybody between slots.
+    this.metrics.sample(this.agents, this.settings.pedestrianRadius);
     this.playArrivals();
     // After the sound and before the frame: the plop is placed by where a
     // pedestrian landed, so the arrivals have to still be there to be heard,
@@ -2179,6 +2206,7 @@ export class App {
 
   private debugLines(): string[] {
     const m = this.mouseWorld;
+    const walking = this.metrics.readout();
     return [
       `Pedestrians Alive: ${this.agents.count}`,
       `Selected: ${this.agents.selectionCount}`,
@@ -2192,6 +2220,12 @@ export class App {
       // number would have been the timer's.
       `FPS: ${this.fps}`,
       `TPS: ${this.running ? this.tps : 0}`,
+      // The literature's three numbers, so "is this realistic" has something to
+      // be checked against: free walking should read about 1.3 m/s, and a
+      // corridor past 2 persons/m2 visibly slower.
+      `Speed: ${walking.meanSpeedMps.toFixed(2)} m/s`,
+      `Density: ${walking.meanDensity.toFixed(1)} avg / ${walking.maxDensity.toFixed(1)} max /m2`,
+      `Throughput: ${walking.throughputPerSecond.toFixed(1)} /s`,
     ];
   }
 

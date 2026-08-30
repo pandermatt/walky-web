@@ -523,7 +523,7 @@ const DENSITY_WINDOW = 3;
  * the corridor is busy or nearly empty. Pace needs to know how full the place is,
  * not how pressed one pedestrian feels, and that is a question about a wider circle.
  */
-const PACE_WINDOW = 5;
+export const PACE_WINDOW = 5;
 
 /**
  * How far a pedestrian can be influenced from: its own body, its personal space,
