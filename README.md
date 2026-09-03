@@ -1086,6 +1086,61 @@ image script broke silently once when `makeWall` grew an options argument — it
 kept running and quietly rendered every wall in a random colour, because nothing
 was checking it.
 
+## The wallpapers
+
+Four pictures, each at 3840×2160 and at 1290×2796, drawn by `tools/wallpapers.ts`
+the same way the share image is: real worlds, real `Agents.step`, and the state
+the renderer reads. They are on
+[pandermatt.ch/side-projects](https://pandermatt.ch/side-projects#wallpapers).
+
+| | What is in it |
+|---|---|
+| **Counterflow** | 5,580 pedestrians in a 26m corridor, half walking each way, twenty seconds after being started as a checkerboard. The lanes are the crowd's. |
+| **Bottleneck** | 1,380 pedestrians and a 5.4m gap, forty seconds in: the arch over the opening, and the plume beyond it. |
+| **Trails** | A minute of walking as a long exposure — one stroked track per pedestrian, bright where hundreds took the same line. |
+| **Sightlines** | The visibility graph itself, the expanded hulls, and routes read back out of a finished Dijkstra field. |
+
+```bash
+npm run dev
+# then open http://localhost:5173/tools/wallpapers.html and press Save all
+```
+
+Save posts each PNG to `build/wallpaperWriter.ts`, the same dev-only arrangement
+`ogWriter` uses, with the filename in the query rather than fixed — which is the
+whole of the added risk, and is why the name is matched against a pattern with no
+slash and no dot segment in it before it is joined to anything.
+
+They are **not** written to `public/`. The service worker precaches everything
+under it, so committing fourteen megabytes of wallpaper there would have Walky
+pull the lot down the first time anyone opened it — an offline guarantee about
+files the app never asks for. They go to `wallpapers/`, which is ignored, and are
+committed to whichever site serves them; `WALKY_WALLPAPER_DIR` points the writer
+straight at that checkout.
+
+Three things make a wallpaper rather than a screenshot, and they are the only
+places these depart from what the app draws:
+
+- **No chrome, no text, no wordmark.** It sits behind somebody's work.
+- **The frame is a crop, not a fit.** Walls run off every edge, and the goals are
+  usually outside it — a pedestrian that arrives turns black and stops, and a
+  heap of black dots in the corner is not what any of these are about.
+- **Hairlines scale.** A 1px ring is a thread at 3840 across, so every stroke is
+  quoted in world units and scales with the picture. The ring is the same
+  fraction of a pedestrian at both sizes.
+
+The portrait file is the landscape one turned a quarter turn rather than a second
+scenario built vertically, so the phone and the desktop wallpaper are the same
+crowd at the same instant seen from a different edge, and a crowd that walks
+across the desktop walks up the phone.
+
+Two costs worth knowing before changing anything here. The crowds are slow on
+purpose — 1.35 m/s is 1.25 px/tick, so a pedestrian crosses a 3400px frame in
+about three thousand ticks, and every one of these runs for thousands rather than
+hundreds. And the trails are strokes, not stamps: a dot per pedestrian per tick
+is half a million circles and comes out as a dotted mist, where a polyline per
+pedestrian is seven hundred paths and comes out as a line, which is what a track
+is.
+
 ## Credits
 
 Google Sans Flex by **David Berlow**, under the SIL Open Font License 1.1 —
