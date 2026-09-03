@@ -1088,17 +1088,38 @@ was checking it.
 
 ## The wallpapers
 
-Four pictures, each at 3840×2160 and at 1290×2796, drawn by `tools/wallpapers.ts`
+Six pictures, each at 3840×2160 and at 1290×2796, drawn by `tools/wallpapers.ts`
 the same way the share image is: real worlds, real `Agents.step`, and the state
 the renderer reads. They are on
 [pandermatt.ch/side-projects](https://pandermatt.ch/side-projects#wallpapers).
 
 | | What is in it |
 |---|---|
+| **Crossing** | 10,160 pedestrians in a closed room whose every wall is a goal, thirty seconds in: dots to every edge, in sixteen colours. |
+| **Confetti** | The same sixteen destinations with the room a fifth as full — 3,240 at about a metre apart. |
 | **Counterflow** | 5,580 pedestrians in a 26m corridor, half walking each way, twenty seconds after being started as a checkerboard. The lanes are the crowd's. |
 | **Bottleneck** | 1,380 pedestrians and a 5.4m gap, forty seconds in: the arch over the opening, and the plume beyond it. |
 | **Trails** | A minute of walking as a long exposure — one stroked track per pedestrian, bright where hundreds took the same line. |
 | **Sightlines** | The visibility graph itself, the expanded hulls, and routes read back out of a finished Dijkstra field. |
+
+### How many colours a picture can have
+
+A pedestrian takes the colour of the goal it is heading for (`Agents.setGoal`),
+so **the number of colours in a frame is the number of goals on its map**. The
+four scenes with walls in them have two goals apiece and are therefore two
+colours; the two dot fields are a closed room whose entire wall is sixteen goal
+blocks, and are therefore sixteen. The blocks take their colours from
+`randomBrightColor`, so every one of them is a colour a wall could genuinely come
+out — the seeds are chosen rather than the colours, because the rule allows a
+draw that is nearly white or barely saturated and a pale dot loses the white ring
+it wears. The two seeds in use put none of either in their first sixteen draws
+and cover all twelve thirty-degree hue buckets.
+
+A closed room is also what keeps the frame full. Send a crowd at goals scattered
+in open air and it walks off the edge of the picture; send it at the walls of the
+room it is standing in and it crosses the room instead, so the last frame is as
+full as the first. The wall is outside the crop, which is also where a pedestrian
+turns black on arriving.
 
 ```bash
 npm run dev

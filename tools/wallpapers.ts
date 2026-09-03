@@ -44,7 +44,9 @@ import { groupWalls } from '../src/state/groups.ts';
 import { expandPolygon, type Point } from '../src/sim/geometry.ts';
 import { pxPerTickFromMps } from '../src/sim/units.ts';
 import { DASH } from '../src/render/overlay.ts';
-import { BACKGROUND, BLUE, ORANGE, WHITE, toCss, withAlpha, type RGB } from '../src/palette.ts';
+import {
+  BACKGROUND, BLUE, ORANGE, WHITE, randomBrightColor, toCss, withAlpha, type RGB,
+} from '../src/palette.ts';
 import { LIME, MAGENTA, RUST, SKY, TEAL } from './brand.ts';
 
 /**
@@ -536,9 +538,156 @@ function trails(): Scene {
   };
 }
 
+/**
+ * A closed room whose entire wall is goals, in as many colours as it has blocks.
+ *
+ * Two things follow from it, and both are the point of the two scenes below.
+ *
+ * A pedestrian takes the colour of the goal it is heading for (`Agents.setGoal`),
+ * so the number of colours a crowd can be is the number of goals on the map --
+ * which is why the four scenes above are two colours each. Sixteen goals is
+ * sixteen colours, drawn by the palette rule rather than picked: `makeWall`
+ * defaults to `randomBrightColor()`, so every one of them is a colour a wall in
+ * the app could genuinely come out.
+ *
+ * And a closed room does not drain. Send a crowd at goals scattered around the
+ * open air and it walks off the edge of the picture; send it at the walls of the
+ * room it is standing in and it crosses the room instead, so the frame stays as
+ * full at the end of the run as it was at the start. The wall is outside the
+ * frame, so what is in the frame is only ever crowd -- and a pedestrian that
+ * arrives turns black, which happens against the wall, out of sight.
+ */
+function roomOfGoals(hx: number, hy: number, thickness: number, across: number, down: number): Wall[] {
+  const goals: Wall[] = [];
+  const push = (a: Point, b: Point) => goals.push(goalWall(rectanglePolygon(a, b), randomBrightColor()));
+
+  // The top and bottom bars run the full width including the corners, so the
+  // room is closed without a fifth kind of block to hold them.
+  const w = (2 * (hx + thickness)) / across;
+  for (let i = 0; i < across; i++) {
+    const x0 = -hx - thickness + i * w;
+    push([x0, -hy - thickness], [x0 + w, -hy]);
+    push([x0, hy], [x0 + w, hy + thickness]);
+  }
+  const h = (2 * hy) / down;
+  for (let j = 0; j < down; j++) {
+    const y0 = -hy + j * h;
+    push([-hx - thickness, y0], [-hx, y0 + h]);
+    push([hx, y0], [hx + thickness, y0 + h]);
+  }
+  return goals;
+}
+
+/**
+ * Fills a rectangle with pedestrians and scatters the goals through them.
+ *
+ * The assignment is a hash of the grid position rather than a run of one goal
+ * then the next, so neighbours are almost never headed the same way. That is
+ * what makes the field colourful *and* what makes it move: a crowd sorted into
+ * blocks by destination walks as blocks, and a crowd salted with all sixteen
+ * crosses itself everywhere at once.
+ */
+function fill(agents: Agents, goals: Wall[], hx: number, hy: number, pitch: number): void {
+  const cols = Math.floor((2 * hx) / pitch);
+  const rows = Math.floor((2 * hy) / pitch);
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      const k = agents.add([-hx + (i + 0.5) * pitch, -hy + (j + 0.5) * pitch]);
+      // Two coprime strides against a power-of-two count: adjacent cells differ
+      // in both directions, and no row repeats the row above it.
+      const goal = goals[(i * 7 + j * 11) % goals.length];
+      agents.setGoal(k, goal.id, goal.color);
+    }
+  }
+}
+
+/**
+ * 5. Crossing -- the crowd with nothing else in the frame.
+ *
+ * Fourteen thousand pedestrians in a closed room, each walking to one of sixteen
+ * goals on its wall, thirty seconds in. No walls in shot, no diagnostics, no
+ * empty floor: dots to every edge.
+ *
+ * It is not a texture, though. Everyone in it is going somewhere, and going
+ * somewhere through a crowd that is going everywhere else is what draws the
+ * streams -- the threads of one colour running through the mixture are people
+ * who fell in behind each other because it was cheaper than walking round.
+ */
+function crossing(): Scene {
+  // Chosen rather than picked: the rule allows a colour that is nearly white or
+  // barely saturated, and a pale dot loses the white ring it wears. This seed's
+  // first sixteen draws have none of either and land in twelve of the twelve
+  // thirty-degree hue buckets, so the field carries a red and an orange as well
+  // as the greens and blues a shorter draw tends to be all of.
+  seedRandom(165670);
+
+  const goals = roomOfGoals(2200, 1400, 220, 5, 3);
+  const nav = new Navigation();
+  nav.rebuild(goals, RADIUS);
+
+  const agents = new Agents();
+  // A pitch of 34 is a little over a body width apart: dense enough that the
+  // field has no holes in it at any scale, loose enough that it is a crowd
+  // walking rather than a crowd stuck.
+  fill(agents, goals, 2160, 1360, 34);
+  settle(agents, nav, 1800);
+
+  return {
+    slug: 'crossing',
+    title: 'A crowd crossing itself, sixteen destinations',
+    // Closer in than the scenes above. Those are pictures of an arrangement and
+    // want to show all of it; this is a picture of a texture, and a texture read
+    // from too far away is noise -- at 3400 across the dots came out seven
+    // pixels wide in a 960px preview and the whole thing looked like static.
+    desktop: { centre: [0, 0], across: 2400 },
+    phone: { centre: [0, 0], across: 1900 },
+    paint(ctx, hair) {
+      drawCrowd(ctx, agents, hair);
+    },
+  };
+}
+
+/**
+ * 6. Confetti -- the same idea with the room mostly empty.
+ *
+ * The airy one. Four and a half thousand pedestrians at nearly a metre apart, so
+ * the ground is as much of the picture as the crowd is and a desktop full of
+ * icons still has somewhere to put them. Same sixteen goals, same rule, and a
+ * short run -- long enough that the grid it was painted on has broken up and
+ * everybody is walking, short enough that it has not yet gathered into streams.
+ *
+ * At this spacing the white ring is doing the work: at a distance the dots read
+ * as scattered colour, and up close each one is a person with a body and a
+ * bubble, which is the whole difference between this and a wallpaper of circles.
+ */
+function confetti(): Scene {
+  // A different draw of the same rule, chosen the same way. See `crossing`.
+  seedRandom(317471);
+
+  const goals = roomOfGoals(2200, 1400, 220, 5, 3);
+  const nav = new Navigation();
+  nav.rebuild(goals, RADIUS);
+
+  const agents = new Agents();
+  fill(agents, goals, 2160, 1360, 60);
+  settle(agents, nav, 900);
+
+  return {
+    slug: 'confetti',
+    title: 'A thin crowd, sixteen destinations',
+    desktop: { centre: [0, 0], across: 3000 },
+    phone: { centre: [0, 0], across: 2300 },
+    paint(ctx, hair) {
+      drawCrowd(ctx, agents, hair);
+    },
+  };
+}
+
 /* ------------------------------------------------------------------ plumbing */
 
-export const SCENES: Array<() => Scene> = [bottleneck, counterflow, sightlines, trails];
+export const SCENES: Array<() => Scene> = [
+  bottleneck, counterflow, sightlines, trails, crossing, confetti,
+];
 
 /**
  * Paints one scene at one size.
