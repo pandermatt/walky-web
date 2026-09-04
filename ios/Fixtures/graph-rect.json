@@ -1,0 +1,68 @@
+{
+  "kind": "graph",
+  "name": "graph-rect",
+  "proves": "the simplest case: one convex part, four expanded corners, one goal",
+  "radius": 13,
+  "walls": [
+    {
+      "index": 0,
+      "polygons": [
+        [
+          [
+            -200,
+            -120
+          ],
+          [
+            200,
+            -120
+          ],
+          [
+            200,
+            120
+          ],
+          [
+            -200,
+            120
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 1,
+      "polygons": [
+        [
+          [
+            500,
+            -60
+          ],
+          [
+            600,
+            -60
+          ],
+          [
+            600,
+            60
+          ],
+          [
+            500,
+            60
+          ]
+        ]
+      ],
+      "color": [
+        255,
+        200,
+        0
+      ],
+      "isGoal": true,
+      "isBorder": false
+    }
+  ]
+}

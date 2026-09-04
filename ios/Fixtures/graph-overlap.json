@@ -1,0 +1,98 @@
+{
+  "kind": "graph",
+  "name": "graph-overlap",
+  "proves": "two overlapping walls kept as separate obstacles, and the shell broad phase",
+  "radius": 13,
+  "walls": [
+    {
+      "index": 0,
+      "polygons": [
+        [
+          [
+            -300,
+            -100
+          ],
+          [
+            0,
+            -100
+          ],
+          [
+            0,
+            100
+          ],
+          [
+            -300,
+            100
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 1,
+      "polygons": [
+        [
+          [
+            -60,
+            -260
+          ],
+          [
+            140,
+            -260
+          ],
+          [
+            140,
+            60
+          ],
+          [
+            -60,
+            60
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 2,
+      "polygons": [
+        [
+          [
+            400,
+            -60
+          ],
+          [
+            500,
+            -60
+          ],
+          [
+            500,
+            60
+          ],
+          [
+            400,
+            60
+          ]
+        ]
+      ],
+      "color": [
+        255,
+        200,
+        0
+      ],
+      "isGoal": true,
+      "isBorder": false
+    }
+  ]
+}
