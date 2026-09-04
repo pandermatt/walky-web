@@ -80,8 +80,91 @@ case "list":
     exit(1)
   }
 
+case "graph":
+  do {
+    let (graphs, _) = try FixtureSet.load(from: fixtures())
+    print("visibility graph and routing fields vs V8\n")
+    var failed = 0
+    for e in graphs {
+      let fixture = try GraphFixture(contentsOf: e.url)
+      let r = Conformance.checkGraph(fixture, e.manifest)
+      let head = "  \(r.name.padding(toLength: 16, withPad: " ", startingAt: 0))"
+                 + "\(String(r.nodeCount).leftPad(4)) nodes  \(String(r.edgeCount).leftPad(6)) edges   "
+      if r.ok {
+        print(head + "identical")
+      } else {
+        failed += 1
+        print(head + "DIVERGES")
+        for m in r.mismatches {
+          print("       \(m.what) [\(m.index)]")
+          print("         got  \(m.got)")
+          print("         want \(m.want)")
+        }
+      }
+    }
+    print("")
+    if failed > 0 {
+      print("\(failed) of \(graphs.count) graph fixtures diverge.")
+      print("Geometry must be identical before behaviour.ts is worth porting: once a")
+      print("crowd is walking, a graph bug and a behaviour bug look exactly alike.")
+      exit(1)
+    }
+    print("All \(graphs.count) graph fixtures bit-identical to V8.")
+  } catch {
+    FileHandle.standardError.write(Data("could not check graphs: \(error)\n".utf8))
+    exit(1)
+  }
+
+case "trace", "all":
+  do {
+    var failed = 0
+    if command == "all" {
+      let (graphs, _) = try FixtureSet.load(from: fixtures())
+      print("visibility graph and routing fields vs V8\n")
+      for e in graphs {
+        let r = Conformance.checkGraph(try GraphFixture(contentsOf: e.url), e.manifest)
+        print("  \(r.name.padding(toLength: 16, withPad: " ", startingAt: 0))"
+              + (r.ok ? "identical" : "DIVERGES"))
+        if !r.ok {
+          failed += 1
+          for m in r.mismatches {
+            print("       \(m.what) [\(m.index)]")
+            print("         got  \(m.got)")
+            print("         want \(m.want)")
+          }
+        }
+      }
+      print("")
+    }
+
+    let (_, traces) = try FixtureSet.load(from: fixtures())
+    print("recorded runs vs V8, tick by tick\n")
+    for e in traces {
+      let fixture = try TraceFixture(contentsOf: e.url)
+      let r = Conformance.checkTrace(fixture, e.manifest)
+      let head = "  \(r.name.padding(toLength: 16, withPad: " ", startingAt: 0))"
+                 + "\(String(r.ticks).leftPad(4)) ticks   "
+      if r.ok {
+        print(head + "identical")
+      } else {
+        failed += 1
+        print(head + "matched \(r.matchedTo) of \(r.ticks)")
+        if let d = r.detail { print("       \(d)") }
+      }
+    }
+    print("")
+    if failed > 0 {
+      print("\(failed) fixture(s) diverge.")
+      exit(1)
+    }
+    print("Every fixture bit-identical to V8.")
+  } catch {
+    FileHandle.standardError.write(Data("could not check traces: \(error)\n".utf8))
+    exit(1)
+  }
+
 default:
-  FileHandle.standardError.write(Data("usage: walky-conform [math|list]\n".utf8))
+  FileHandle.standardError.write(Data("usage: walky-conform [math|list|graph|trace|all]\n".utf8))
   exit(2)
 }
 
