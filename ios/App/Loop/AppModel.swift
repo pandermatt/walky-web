@@ -34,6 +34,18 @@ final class AppModel {
   private var link: CADisplayLink?
   private var renderPending = true
 
+  /// Frames and ticks actually delivered in the last second.
+  ///
+  /// Measured where a frame is really painted rather than assumed from the
+  /// display link's nominal rate -- `drawInformationString` had no frame rate
+  /// to report, because Swing repainted on a timer and the number would have
+  /// been the timer's.
+  private(set) var fps = 0
+  private(set) var tps = 0
+  private var frameCount = 0
+  private var tickCount = 0
+  private var lastSecond = 0.0
+
   init() {
     world.onRequestRender = { [weak self] in self?.needsFrame() }
     world.onNotify = { [weak self] message in self?.show(message) }
@@ -72,14 +84,32 @@ final class AppModel {
 
   private func tick(_ link: CADisplayLink) {
     // `link.timestamp` is seconds; Clock counts milliseconds.
+    let before = world.simTicks
     if world.advance(link.timestamp * 1000) { renderPending = true }
     if world.running { renderPending = true }
+    tickCount += world.simTicks - before
     if renderPending {
       renderPending = false
+      frameCount += 1
       redraw.version &+= 1
     }
-    toolbar.running = world.running
-    toolbar.canUndo = world.canUndo
+    if link.timestamp - lastSecond >= 1 {
+      fps = frameCount
+      tps = tickCount
+      frameCount = 0
+      tickCount = 0
+      lastSecond = link.timestamp
+    }
+    // Written only on change, and that is not an optimisation.
+    //
+    // `@Observable`'s generated setter calls `withMutation` on every set,
+    // whether or not the value differs -- so assigning these unconditionally
+    // invalidated ToolbarView sixty times a second, rebuilding its Buttons
+    // underneath a finger that was still down. A tap spanning two frames was
+    // landing on a button that no longer existed, which is what made play/pause
+    // miss every second or third press.
+    if toolbar.running != world.running { toolbar.running = world.running }
+    if toolbar.canUndo != world.canUndo { toolbar.canUndo = world.canUndo }
   }
 
   private func needsFrame() {

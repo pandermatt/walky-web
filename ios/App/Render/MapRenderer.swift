@@ -134,7 +134,7 @@ enum MapRenderer {
       .opacity(alpha)
   }
 
-  static func draw(_ world: WalkyWorld, _ cache: RenderCache,
+  static func draw(_ world: WalkyWorld, _ cache: RenderCache, _ stats: DebugStats,
                    into ctx: inout GraphicsContext, size: CGSize) {
     world.prepareForRender()
     cache.refresh(world)
@@ -147,6 +147,9 @@ enum MapRenderer {
     let scale = vp.scale
 
     ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color(BACKGROUND)))
+
+    // Kept before the world transform, for anything drawn in screen units.
+    var screen = ctx
 
     // World space from here down: one transform rather than converting every
     // point, which is what makes the cached wall paths reusable.
@@ -187,6 +190,10 @@ enum MapRenderer {
 
     drawAgents(world, into: &ctx, hairline: hairline)
     drawPreview(world, into: &ctx, hairline: hairline, scale: scale)
+
+    if world.settings.showDebug {
+      drawDebug(debugLines(world, stats), into: &screen, size: size)
+    }
   }
 
   /// Batched by packed colour: one fill per distinct colour rather than per
@@ -302,6 +309,57 @@ enum MapRenderer {
       case .target, .squiggle:
         ctx.stroke(Path(ellipseIn: box), with: .color(color(ORANGE)), lineWidth: 2 / scale)
       }
+    }
+  }
+}
+
+/// The diagnostic readout, on the platform's monospace.
+///
+/// Ports `app.ts:2223`. It stays monospaced deliberately: it is a diagnostic
+/// drawn over the map, and it should look like one rather than like chrome.
+///
+/// The last three lines are the pedestrian literature's numbers, so "is this
+/// realistic" has something to be checked against -- free walking should read
+/// about 1.3 m/s, and a corridor past 2 persons/m² visibly slower.
+struct DebugStats {
+  var fps: Int
+  var tps: Int
+}
+
+extension MapRenderer {
+  static func debugLines(_ world: WalkyWorld, _ stats: DebugStats) -> [String] {
+    let m = world.mouseWorld
+    let walking = world.metrics.readout()
+    return [
+      "Pedestrians Alive: \(world.agents.count)",
+      "Selected: \(world.agents.selectionCount)",
+      "Walls: \(world.walls.count)",
+      "Zoom level: \(world.viewport.zoomLevel) (scale \(String(format: "%.3f", world.viewport.scale)))",
+      m.map { "X: \(Int(jsRound($0.x))) / Y: \(Int(jsRound($0.y)))" } ?? "X: - / Y: -",
+      "FPS: \(stats.fps)",
+      "TPS: \(world.running ? stats.tps : 0)",
+      "Speed: \(String(format: "%.2f", walking.meanSpeedMps)) m/s",
+      "Density: \(String(format: "%.1f", walking.meanDensity)) avg / "
+        + "\(String(format: "%.1f", walking.maxDensity)) max /m2",
+      "Throughput: \(String(format: "%.1f", walking.throughputPerSecond)) /s",
+    ]
+  }
+
+  /// Drawn in *screen* space, from a copy of the context taken before the world
+  /// transform was applied -- `GraphicsContext` is a struct, so the copy keeps
+  /// the untransformed CTM while still drawing to the same canvas.
+  static func drawDebug(_ lines: [String], into ctx: inout GraphicsContext, size: CGSize) {
+    let lineHeight: CGFloat = 15
+    let margin: CGFloat = 12
+    // Above the toolbar, which the readout must not hide behind.
+    let bottom = size.height - 110
+    var y = bottom - CGFloat(Swift.max(lines.count, 1) - 1) * lineHeight
+    for line in lines {
+      var text = ctx.resolve(Text(line)
+        .font(.system(size: 11, weight: .regular, design: .monospaced)))
+      text.shading = .color(color(WHITE, 0.75))
+      ctx.draw(text, at: CGPoint(x: margin, y: y), anchor: .leading)
+      y += lineHeight
     }
   }
 }

@@ -15,7 +15,8 @@ struct RootView: View {
 
   var body: some View {
     ZStack {
-      MapCanvas(world: model.world, redraw: model.redraw)
+      MapCanvas(world: model.world, redraw: model.redraw,
+                stats: { DebugStats(fps: model.fps, tps: model.tps) })
 
       if let router {
         TouchCanvas(router: router).ignoresSafeArea()

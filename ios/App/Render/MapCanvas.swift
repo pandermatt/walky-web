@@ -11,6 +11,7 @@ import WalkyCore
 struct MapCanvas: View {
   let world: WalkyWorld
   let redraw: Redraw
+  let stats: () -> DebugStats
   @State private var cache = RenderCache()
 
   var body: some View {
@@ -23,7 +24,7 @@ struct MapCanvas: View {
       // `@unchecked Sendable`: if SwiftUI ever renders this off the main
       // thread, this traps loudly instead of racing the simulation quietly.
       MainActor.assumeIsolated {
-        MapRenderer.draw(world, cache, into: &ctx, size: size)
+        MapRenderer.draw(world, cache, stats(), into: &ctx, size: size)
       }
     }
     .ignoresSafeArea()

@@ -41,7 +41,8 @@ public final class WalkyWorld: PointerHost {
 
   private var undoStack: [MapSnapshot] = []
   private var navDirty = true
-  private var simTicks = 0
+  /// Ticks stepped since launch, so a frame can report how many it just ran.
+  public private(set) var simTicks = 0
   private var renderPending = false
 
   /// Anything the host wants to know: a render is wanted, or a message shown.
