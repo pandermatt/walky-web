@@ -112,10 +112,40 @@ public final class Settings {
   }
 
   /// What the crowd walks on, by id so the choice survives being stored.
-  public var groundId: String = Grounds.classic.id {
+  /// `Grounds.automatic` -- the default -- defers to `appearance`.
+  public var groundId: String = Grounds.automatic {
     didSet { defaults?.set(groundId, forKey: Keys.ground) }
   }
-  public var ground: Ground { Grounds.named(groundId) }
+
+  /// Whether the system is in dark mode, pushed in from the view layer:
+  /// WalkyCore has no SwiftUI and cannot read it.
+  ///
+  /// Only ever *read* while `followsSystem` is true, which is the only time it
+  /// is trustworthy -- the moment the app states a colour scheme of its own,
+  /// what the view layer observes is that statement coming back rather than
+  /// the system's own setting.
+  public var systemIsDark: Bool = true
+
+  /// The ground actually drawn.
+  ///
+  /// Appearance drives it, so choosing Light does what it says -- lights the
+  /// map, not merely the settings sheet. Picking a ground outright overrides
+  /// that and keeps overriding it, which is what a deliberate choice should
+  /// do; Automatic is a row in the list, so the override is reversible.
+  public var ground: Ground {
+    guard groundId == Grounds.automatic else { return Grounds.named(groundId) }
+    switch appearance {
+    case .light: return Grounds.paper
+    case .dark: return Grounds.classic
+    case .system: return systemIsDark ? Grounds.classic : Grounds.paper
+    }
+  }
+
+  /// True when the app should state no colour scheme at all and take the
+  /// system's. Also the only condition under which `systemIsDark` can be read.
+  public var followsSystem: Bool {
+    appearance == .system && groundId == Grounds.automatic
+  }
 
   /// The colour behind the armed tool. Persisted alongside the other two.
   public var accentId: String = Accents.orange.id {
@@ -147,8 +177,9 @@ public final class Settings {
     if let raw = defaults?.string(forKey: Keys.ground) {
       // Through `named` rather than assigned raw: a ground since renamed or
       // removed falls back to Classic, instead of leaving the app painting on
-      // a ground that no longer exists.
-      groundId = Grounds.named(raw).id
+      // a ground that no longer exists. Automatic is not a ground and would
+      // not survive that lookup, so it is checked first.
+      groundId = raw == Grounds.automatic ? raw : Grounds.named(raw).id
     }
     if let raw = defaults?.string(forKey: Keys.accent) {
       accentId = Accents.named(raw).id

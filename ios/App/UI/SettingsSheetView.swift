@@ -58,6 +58,8 @@ struct SettingsSheetView: View {
       .onChange(of: settings.showPersonalSpace) { _, _ in onChange() }
       .onChange(of: settings.showDebug) { _, _ in onChange() }
       .onChange(of: settings.groundId) { _, _ in onChange() }
+      // Appearance moves the ground now, not just the chrome.
+      .onChange(of: settings.appearance) { _, _ in onChange() }
     }
   }
 
@@ -77,12 +79,43 @@ struct SettingsSheetView: View {
   /// in reasonable time".
   @ViewBuilder private var groundSection: some View {
     Section {
+      automaticRow
       ForEach(Grounds.all) { ground in groundRow(ground) }
     } header: { Text("Ground") } footer: {
       Text(Self.groundFooter)
     }
   }
 
+
+  /// The row that defers to Appearance, and the default.
+  ///
+  /// A row rather than a hidden state, because "automatic until you touch it"
+  /// with no way back is a trap: once a ground is picked outright there has to
+  /// be something to pick to undo it.
+  private var automaticRow: some View {
+    let chosen = settings.groundId == Grounds.automatic
+    return Button {
+      settings.groundId = Grounds.automatic
+    } label: {
+      HStack(spacing: 12) {
+        // The swatch shows what it currently resolves to, so the row says
+        // which ground rather than only that something decides.
+        groundSwatch(settings.ground)
+        VStack(alignment: .leading, spacing: 1) {
+          Text("Automatic").foregroundStyle(.primary)
+          Text("Follows Appearance").font(.caption).foregroundStyle(.secondary)
+        }
+        Spacer()
+        if chosen {
+          Image(systemName: "checkmark")
+            .font(.body.weight(.semibold))
+            .foregroundStyle(MapRenderer.color(settings.accent.color))
+        }
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
 
   /// One ground row. Its own function because the nested overlays are what
   /// pushed the Form past the type checker's budget.
@@ -177,9 +210,10 @@ struct SettingsSheetView: View {
   }
 
   private static let groundFooter: String =
-    "What the crowd walks on. Classic is the 2016 original's own background, "
-    + "and the pedestrians' rings follow the ground so they stay visible on a "
-    + "pale one."
+    "What the crowd walks on. Automatic takes it from Appearance -- Light is "
+    + "Paper, Dark is Classic -- and picking one here overrides that until you "
+    + "come back. Classic is the 2016 original's own background, and the "
+    + "pedestrians' rings follow the ground so they stay visible on a pale one."
 
   private static let accentFooter: String =
     "The colour behind the tool you are holding, and the tick beside the "

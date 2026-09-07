@@ -45,6 +45,11 @@ public struct Ground: Identifiable, Sendable, Equatable {
 }
 
 public enum Grounds {
+  /// Not a ground: the id meaning "whatever Appearance says". It is the
+  /// default, so the one visible control lights the map as well as the chrome
+  /// and a new install has nothing to reconcile.
+  public static let automatic = "automatic"
+
   /// The original's, and the default. `shadowOf` twice over Java's DARK_GRAY,
   /// which is where #1E1E1E comes from -- derived here as it is in palette.ts,
   /// so it cannot drift from the thing it is a port of.

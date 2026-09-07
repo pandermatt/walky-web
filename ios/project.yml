@@ -87,22 +87,19 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Walky
-        # The app is always dark: the map is #1E1E1E and always has been, and
-        # the web app has no light mode either. Declaring it rather than
-        # inheriting the system's has two effects worth having.
-        #
-        # Run on a Mac as a "Designed for iPad" app, the window chrome follows
-        # the app's interface style, so without this Walky gets a light title
-        # bar sitting on top of a dark map. And on iPhone it stops the settings
-        # sheet coming up as a bright white slab over the map -- which was
-        # always incongruous and is simply wrong for an app with one ground
-        # colour.
-        UIUserInterfaceStyle: Dark
         UILaunchScreen: {}
-        # The map is the whole screen and it is #1E1E1E, so the status bar
-        # needs light text over it.
-        UIStatusBarStyle: UIStatusBarStyleLightContent
-        UIViewControllerBasedStatusBarAppearance: false
+        # No UIUserInterfaceStyle and no UIStatusBarStyle here on purpose.
+        #
+        # Both were declared once, to keep a Mac from giving Walky a light
+        # title bar over a dark map. Declaring them costs the app any way of
+        # ever seeing the system's own appearance -- the window is the app's
+        # statement coming back -- and the Appearance setting's "System" would
+        # have quietly meant "Dark". RootView states the scheme instead, from
+        # that setting, so the default is still dark and the Mac title bar
+        # still black, but the app can now be told to stop saying so.
+        #
+        # The status bar follows the same statement: it sits over the map, and
+        # a fixed light style would put a white clock on the Paper ground.
         ITSAppUsesNonExemptEncryption: false
         # Alternate icons, as loose PNGs at the bundle root -- the only shape
         # this mechanism has ever taken. `CFBundleIconFiles` lists base names;
