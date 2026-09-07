@@ -59,11 +59,67 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: App
-        excludes: ["Walky.icon/**"]
-      # An Icon Composer document is one file, not a folder of loose SVGs --
-      # xcodegen would otherwise walk into it and hand actool three unrelated
-      # images and a stray JSON.
+        excludes:
+          - "Walky.icon/**"
+          - "Cross-Four.icon/**"
+          - "Cross-One.icon/**"
+          - "Ground-Blueprint.icon/**"
+          - "Ground-Classic.icon/**"
+          - "Ground-Lime.icon/**"
+          - "Ground-Magenta.icon/**"
+          - "Ground-Midnight.icon/**"
+          - "Ground-Orange.icon/**"
+          - "Ground-Paper.icon/**"
+          - "Ground-Rust.icon/**"
+          - "Ground-Sky.icon/**"
+          - "Ground-Teal.icon/**"
+          - "Walker-Lime.icon/**"
+          - "Walker-Magenta.icon/**"
+          - "Walker-Orange.icon/**"
+          - "Walker-Rust.icon/**"
+          - "Walker-Sky.icon/**"
+          - "Walker-Teal.icon/**"
+      # An Icon Composer document is one file, not a folder of loose layers --
+      # xcodegen would otherwise walk into every one of them and hand actool a
+      # pile of unrelated images and a stray JSON apiece. The alternates are
+      # generated: `swift run walky-icons`, from Sources/WalkyCore/AppIcons.swift.
       - path: App/Walky.icon
+        type: file
+      - path: App/Cross-Four.icon
+        type: file
+      - path: App/Cross-One.icon
+        type: file
+      - path: App/Ground-Blueprint.icon
+        type: file
+      - path: App/Ground-Classic.icon
+        type: file
+      - path: App/Ground-Lime.icon
+        type: file
+      - path: App/Ground-Magenta.icon
+        type: file
+      - path: App/Ground-Midnight.icon
+        type: file
+      - path: App/Ground-Orange.icon
+        type: file
+      - path: App/Ground-Paper.icon
+        type: file
+      - path: App/Ground-Rust.icon
+        type: file
+      - path: App/Ground-Sky.icon
+        type: file
+      - path: App/Ground-Teal.icon
+        type: file
+      - path: App/Walker-Lime.icon
+        type: file
+      - path: App/Walker-Magenta.icon
+        type: file
+      - path: App/Walker-Orange.icon
+        type: file
+      - path: App/Walker-Rust.icon
+        type: file
+      - path: App/Walker-Sky.icon
+        type: file
+      - path: App/Walker-Teal.icon
         type: file
     dependencies:
       # WalkyCore re-exports WalkySim, so the app gets both.
@@ -81,6 +137,35 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: Walky
+        # What `setAlternateIconName` may be given. actool takes a `.icon`
+        # document here as readily as for the primary: it compiles each one into
+        # Assets.car and writes a `CFBundleAlternateIcons` entry naming it, which
+        # is why no icon dictionary is declared under `info:` below. Loose PNGs
+        # at the bundle root are the usual shape for this and cannot be Liquid
+        # Glass, which is the whole reason for the detour.
+        #
+        # AppIconTests checks this list against `AppIcons.alternates`: that table
+        # is Swift and this is YAML, and an icon missing from here is simply
+        # never offered at runtime.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES:
+          - Cross-Four
+          - Cross-One
+          - Ground-Blueprint
+          - Ground-Classic
+          - Ground-Lime
+          - Ground-Magenta
+          - Ground-Midnight
+          - Ground-Orange
+          - Ground-Paper
+          - Ground-Rust
+          - Ground-Sky
+          - Ground-Teal
+          - Walker-Lime
+          - Walker-Magenta
+          - Walker-Orange
+          - Walker-Rust
+          - Walker-Sky
+          - Walker-Teal
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: YES
     info:
@@ -101,35 +186,6 @@ targets:
         # The status bar follows the same statement: it sits over the map, and
         # a fixed light style would put a white clock on the Paper ground.
         ITSAppUsesNonExemptEncryption: false
-        # Alternate icons, as loose PNGs at the bundle root -- the only shape
-        # this mechanism has ever taken. `CFBundleIconFiles` lists base names;
-        # the system appends @2x/@3x/~ipad itself, which is why 83.5pt has to be
-        # a second base name rather than a fourth file under the first.
-        #
-        # `CFBundlePrimaryIcon` is deliberately absent: actool writes it from
-        # Walky.icon, and naming it here would only invite the two to disagree.
-        CFBundleIcons:
-          CFBundleAlternateIcons:
-            Classic:
-              CFBundleIconFiles: [AltIcon-Classic]
-              UIPrerenderedIcon: false
-            Night:
-              CFBundleIconFiles: [AltIcon-Night]
-              UIPrerenderedIcon: false
-            Amber:
-              CFBundleIconFiles: [AltIcon-Amber]
-              UIPrerenderedIcon: false
-        CFBundleIcons~ipad:
-          CFBundleAlternateIcons:
-            Classic:
-              CFBundleIconFiles: [AltIcon-Classic, AltIcon-Classic-83.5]
-              UIPrerenderedIcon: false
-            Night:
-              CFBundleIconFiles: [AltIcon-Night, AltIcon-Night-83.5]
-              UIPrerenderedIcon: false
-            Amber:
-              CFBundleIconFiles: [AltIcon-Amber, AltIcon-Amber-83.5]
-              UIPrerenderedIcon: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

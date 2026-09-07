@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+    <circle cx="194.56" cy="487.91" r="135.44"
+            fill="rgb(255,200,0)"
+            stroke="rgb(255,255,255)" stroke-width="20.90"/>
+    <circle cx="406.19" cy="487.91" r="135.44"
+            fill="rgb(41,214,168)"
+            stroke="rgb(255,255,255)" stroke-width="20.90"/>
+    <circle cx="617.81" cy="487.91" r="135.44"
+            fill="rgb(168,214,66)"
+            stroke="rgb(255,255,255)" stroke-width="20.90"/>
+    <circle cx="829.44" cy="487.91" r="135.44"
+            fill="rgb(196,25,192)"
+            stroke="rgb(255,255,255)" stroke-width="20.90"/>
+</svg>

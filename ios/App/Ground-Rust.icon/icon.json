@@ -1,0 +1,49 @@
+{
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.83922,0.25882,0.15294,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "stripes.png",
+          "name": "stripes",
+          "is-glass": true
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "walker.png",
+          "name": "walker",
+          "is-glass": true
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": [
+      "iOS"
+    ]
+  }
+}
