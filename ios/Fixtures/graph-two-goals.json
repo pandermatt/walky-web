@@ -1,0 +1,158 @@
+{
+  "kind": "graph",
+  "name": "graph-two-goals",
+  "proves": "one routing field per goal, and the order they are inserted in",
+  "radius": 13,
+  "walls": [
+    {
+      "index": 0,
+      "polygons": [
+        [
+          [
+            -500,
+            -300
+          ],
+          [
+            500,
+            -300
+          ],
+          [
+            500,
+            -240
+          ],
+          [
+            -500,
+            -240
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 1,
+      "polygons": [
+        [
+          [
+            -500,
+            240
+          ],
+          [
+            500,
+            240
+          ],
+          [
+            500,
+            300
+          ],
+          [
+            -500,
+            300
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 2,
+      "polygons": [
+        [
+          [
+            -80,
+            -120
+          ],
+          [
+            80,
+            -120
+          ],
+          [
+            80,
+            120
+          ],
+          [
+            -80,
+            120
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 3,
+      "polygons": [
+        [
+          [
+            420,
+            -60
+          ],
+          [
+            500,
+            -60
+          ],
+          [
+            500,
+            60
+          ],
+          [
+            420,
+            60
+          ]
+        ]
+      ],
+      "color": [
+        255,
+        200,
+        0
+      ],
+      "isGoal": true,
+      "isBorder": false
+    },
+    {
+      "index": 4,
+      "polygons": [
+        [
+          [
+            -500,
+            -60
+          ],
+          [
+            -420,
+            -60
+          ],
+          [
+            -420,
+            60
+          ],
+          [
+            -500,
+            60
+          ]
+        ]
+      ],
+      "color": [
+        255,
+        200,
+        0
+      ],
+      "isGoal": true,
+      "isBorder": false
+    }
+  ]
+}

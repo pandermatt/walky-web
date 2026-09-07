@@ -1,0 +1,104 @@
+# The Xcode app target, generated rather than committed.
+#
+# A pbxproj is thousands of lines of UUIDs that Xcode rewrites on first save
+# and reports as "damaged" with no diagnostics when one entry is wrong. This
+# file is the project, reviewable in a diff; run `xcodegen generate` after
+# changing it or after adding a source file.
+#
+# Everything that is not pixels lives in the WalkyCore package instead, so it
+# can be tested without a simulator. See Package.swift.
+name: Walky
+
+options:
+  bundleIdPrefix: ch.pandermatt
+  deploymentTarget: { iOS: "17.0" }
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  Walky:
+    path: .
+
+# Building this
+# -------------
+#   xcodegen generate
+#   xcodebuild build -project Walky.xcodeproj -scheme Walky -sdk iphonesimulator \
+#     -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+#
+# That is the ordinary command, and it works once an iOS simulator *runtime* is
+# installed. Two things make installing one harder than it sounds, both learned
+# the hard way: it needs an admin account, and the download hangs at "Preparing
+# to download..." with no error at all behind iCloud Private Relay or on some
+# university networks.
+#
+# With no runtime installed, no -destination resolves and only this works:
+#
+#   xcodebuild build -project Walky.xcodeproj -target Walky -sdk iphonesimulator \
+#     -configuration Release ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO
+#
+#   -target, not -scheme       A scheme resolves a destination, which fails
+#                              outright with no runtime. A target builds against
+#                              the SDK, which is always present.
+#   -configuration Release     Having no scheme, -target does not propagate the
+#                              configuration to the package's sub-project, which
+#                              builds Release. Ask for Debug and the app hunts
+#                              WalkyCore.swiftmodule in Debug-iphonesimulator
+#                              while the package put it in Release-, reported as
+#                              the very misleading "no such module 'WalkyCore'".
+#   ARCHS + ONLY_ACTIVE_ARCH   Without an active architecture to infer, the build
+#                              computes none and "succeeds" having compiled
+#                              nothing and produced no binary.
+#
+# It compiles everything including .metal shaders, so it stays a real check even
+# when nothing can be run.
+
+targets:
+  Walky:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: App
+        excludes: ["Walky.icon/**"]
+      # An Icon Composer document is one file, not a folder of loose SVGs --
+      # xcodegen would otherwise walk into it and hand actool three unrelated
+      # images and a stray JSON.
+      - path: App/Walky.icon
+        type: file
+    dependencies:
+      # WalkyCore re-exports WalkySim, so the app gets both.
+      - package: Walky
+        product: WalkyCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ch.pandermatt.walky
+        PRODUCT_NAME: Walky
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        # Matched to the package's swift-tools-version so the concurrency
+        # diagnostics at the module boundary are the same on both sides.
+        SWIFT_STRICT_CONCURRENCY: complete
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: Walky
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Walky
+        UILaunchScreen: {}
+        # The map is the whole screen and it is #1E1E1E, so the status bar
+        # needs light text over it.
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight

@@ -1,0 +1,84 @@
+{
+  "kind": "graph",
+  "name": "graph-yu",
+  "proves": "three parts, and a goal inside the cavity that one hull per wall made unreachable",
+  "radius": 13,
+  "walls": [
+    {
+      "index": 0,
+      "polygons": [
+        [
+          [
+            -300,
+            -240
+          ],
+          [
+            -160,
+            -240
+          ],
+          [
+            -160,
+            80
+          ],
+          [
+            160,
+            80
+          ],
+          [
+            160,
+            -240
+          ],
+          [
+            300,
+            -240
+          ],
+          [
+            300,
+            240
+          ],
+          [
+            -300,
+            240
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 1,
+      "polygons": [
+        [
+          [
+            -40,
+            -160
+          ],
+          [
+            40,
+            -160
+          ],
+          [
+            40,
+            -100
+          ],
+          [
+            -40,
+            -100
+          ]
+        ]
+      ],
+      "color": [
+        255,
+        200,
+        0
+      ],
+      "isGoal": true,
+      "isBorder": false
+    }
+  ]
+}

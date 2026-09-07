@@ -1,0 +1,76 @@
+{
+  "kind": "graph",
+  "name": "graph-ell",
+  "proves": "convexDecompose splitting one concave shape into two parts",
+  "radius": 13,
+  "walls": [
+    {
+      "index": 0,
+      "polygons": [
+        [
+          [
+            -200,
+            -200
+          ],
+          [
+            100,
+            -200
+          ],
+          [
+            100,
+            -40
+          ],
+          [
+            -40,
+            -40
+          ],
+          [
+            -40,
+            200
+          ],
+          [
+            -200,
+            200
+          ]
+        ]
+      ],
+      "color": [
+        110,
+        120,
+        160
+      ],
+      "isGoal": false,
+      "isBorder": false
+    },
+    {
+      "index": 1,
+      "polygons": [
+        [
+          [
+            400,
+            -60
+          ],
+          [
+            500,
+            -60
+          ],
+          [
+            500,
+            60
+          ],
+          [
+            400,
+            60
+          ]
+        ]
+      ],
+      "color": [
+        255,
+        200,
+        0
+      ],
+      "isGoal": true,
+      "isBorder": false
+    }
+  ]
+}
