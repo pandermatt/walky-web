@@ -19,12 +19,18 @@ import WalkyCore
 @MainActor
 final class RenderCache {
   private var wallsRevision = -1
+  private var hullRadius = -1.0
   private(set) var wallPaths: [(path: Path, color: RGB, isGoal: Bool)] = []
   private(set) var hullPaths: [(path: Path, color: RGB)] = []
+  private(set) var partPaths: [(path: Path, color: RGB)] = []
 
   func refresh(_ world: WalkyWorld) {
-    guard wallsRevision != world.worldRevision else { return }
+    // The hulls are expanded by the pedestrian radius, so the radius setting
+    // invalidates them as surely as an edit does.
+    let radius = world.settings.pedestrianRadius
+    guard wallsRevision != world.worldRevision || hullRadius != radius else { return }
     wallsRevision = world.worldRevision
+    hullRadius = radius
 
     wallPaths = world.walls.map { wall in
       var p = Path()
@@ -37,15 +43,38 @@ final class RenderCache {
     }
 
     // One dashed outline per connected group of touching shapes, not per wall.
+    //
+    // Expanded by the pedestrian radius, which is the whole point of drawing
+    // it. The raw hull of a rectangle *is* that rectangle, so an unexpanded
+    // outline lands exactly on the wall's own edge and reads as missing --
+    // and worse, it would show a boundary pedestrians appear to cross, because
+    // what cannot enter a wall is a circle, not a point. Expanded, the dashed
+    // line is exactly where a pedestrian's centre may go, and it is the same
+    // geometry the navigation graph and the legality checks use.
     hullPaths = groupWalls(world.walls).compactMap { group in
       guard group.hull.count >= 3 else { return nil }
       guard let first = world.walls.first(where: { $0.id == group.wallIds[0] }) else { return nil }
-      var p = Path()
-      p.move(to: CGPoint(x: group.hull[0].x, y: group.hull[0].y))
-      for q in group.hull.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
-      p.closeSubpath()
-      return (p, first.color)
+      // The group's colour is its lowest-numbered member's, so it holds still
+      // as unrelated shapes are drawn elsewhere.
+      return (ring(expandPolygon(group.hull, radius)), first.color)
     }
+
+    // The convex parts a wall was decomposed into: a diagnostic for how a shape
+    // was split, off by default. Already expanded -- these are the obstacles
+    // navigation actually runs on.
+    partPaths = world.nav.obstacles.compactMap { ob in
+      guard let wall = world.walls.first(where: { $0.id == ob.wallId }) else { return nil }
+      return (ring(ob.hull), wall.color)
+    }
+  }
+
+  private func ring(_ points: [Point]) -> Path {
+    var p = Path()
+    guard let first = points.first else { return p }
+    p.move(to: CGPoint(x: first.x, y: first.y))
+    for q in points.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
+    p.closeSubpath()
+    return p
   }
 }
 
@@ -84,12 +113,18 @@ enum MapRenderer {
       ctx.stroke(w.path, with: .color(color(shadowOf(w.color))), lineWidth: hairline)
     }
 
+    // DASH = [9, 9] in screen points, so divided by the scale to stay 9pt at
+    // every zoom -- the dashes are chrome, not part of the map.
+    let dash = StrokeStyle(lineWidth: hairline, dash: [9 / scale, 9 / scale])
+    // Parts first: where both are on, the hull is the one drawn over the top.
+    if world.settings.showConvexParts {
+      for h in cache.partPaths {
+        ctx.stroke(h.path, with: .color(color(h.color, 0.35)), style: dash)
+      }
+    }
     if world.settings.showConvexHull {
-      // DASH = [9, 9] in screen points, so divided by the scale to stay 9pt at
-      // every zoom -- the dashes are chrome, not part of the map.
-      let dash = StrokeStyle(lineWidth: hairline, dash: [9 / scale, 9 / scale])
       for h in cache.hullPaths {
-        ctx.stroke(h.path, with: .color(color(h.color, 0.55)), style: dash)
+        ctx.stroke(h.path, with: .color(color(h.color)), style: dash)
       }
     }
 
