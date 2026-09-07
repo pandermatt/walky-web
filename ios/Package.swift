@@ -10,13 +10,24 @@ let package = Package(
   platforms: [.macOS(.v14), .iOS(.v17)],
   products: [
     .library(name: "WalkySim", targets: ["WalkySim"]),
+    .library(name: "WalkyCore", targets: ["WalkyCore"]),
     .executable(name: "walky-conform", targets: ["WalkyConform"]),
   ],
   targets: [
     // fdlibm, as V8 uses it. See Sources/CWalkyMath/README for why this exists.
     .target(name: "CWalkyMath"),
     .target(name: "WalkySim", dependencies: ["CWalkyMath"]),
+    // Everything the app needs that is logic rather than pixels: the camera,
+    // the tools, the pointer state machine, the world's edits and undo.
+    //
+    // A library rather than app-target sources for the same reason WalkySim is
+    // one: there is no simulator runtime on this machine, so anything that
+    // lives only in the Xcode target is code that can be compiled and never
+    // run. This keeps the intricate half of the app under `swift test` and
+    // leaves the untestable surface as genuinely just pixels.
+    .target(name: "WalkyCore", dependencies: ["WalkySim"]),
     .executableTarget(name: "WalkyConform", dependencies: ["WalkySim"]),
     .testTarget(name: "WalkySimTests", dependencies: ["WalkySim"]),
+    .testTarget(name: "WalkyCoreTests", dependencies: ["WalkyCore"]),
   ]
 )

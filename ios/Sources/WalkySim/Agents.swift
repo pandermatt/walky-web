@@ -52,11 +52,11 @@ public final class Agents {
   public var spawned: [UInt8]
 
   /// Indices that crossed into `arrived` during the most recent `step`.
-  public private(set) var justArrived: [Int] = []
+  public internal(set) var justArrived: [Int] = []
   /// Involuntary steps taken this tick -- pedestrians the crowd moved.
   public var carries = 0
-  public private(set) var count = 0
-  private var capacity: Int
+  public internal(set) var count = 0
+  internal var capacity: Int
 
   public init(_ capacity: Int = 4096) {
     self.capacity = capacity
@@ -132,10 +132,17 @@ public final class Agents {
 
   public func setGoal(_ i: Int, _ wallId: Int, _ rgb: RGB) {
     goal[i] = Int32(wallId)
+    // A pedestrian takes the colour of the goal it is heading for.
     color[i] = packRgb(rgb)
     arrived[i] = 0
     hasWaypoint[i] = 0
-    costToGoal[i] = .infinity
+    // Deliberately *not* clearing costToGoal, which agents.ts:517 also leaves
+    // alone. An earlier draft cleared it, and the fixtures could never have
+    // caught that: they only call setGoal at setup, where it is already
+    // infinity. Reassigning a goal on a walking crowd is the case that
+    // differs -- costToGoal is what ranks who yields to whom
+    // (behaviour.ts:781), so clearing it would make everyone re-assigned
+    // outrank the whole crowd for one tick.
   }
 
   /// Removes one agent by swapping the last into its slot. Order is not
@@ -258,6 +265,8 @@ public final class Agents {
     }
   }
 
+  internal func clearJustArrived() { justArrived.removeAll(keepingCapacity: true) }
+
   /// The one place an agent becomes arrived, so nothing watching it is missed.
   private func markArrived(_ i: Int) {
     arrived[i] = 1
@@ -265,7 +274,7 @@ public final class Agents {
     justArrived.append(i)
   }
 
-  private func grow() {
+  internal func grow() {
     let next = capacity * 2
     func growF(_ a: inout [Float], _ fill: Float = 0) {
       a.append(contentsOf: [Float](repeating: fill, count: next - a.count))
@@ -337,4 +346,193 @@ public func traitOf(_ ox: Double, _ oy: Double, _ seed: Int32) -> Double {
   h = imul(h ^ ushr(h, 13), Int32(bitPattern: 3266489917))
   h ^= ushr(h, 16)
   return Double(toUint32(h)) / 4294967296
+}
+
+// MARK: - Undo, reset and picking
+//
+// Ports the rest of `src/sim/agents.ts`: everything the app needs that a
+// running simulation does not.
+
+/// Everything about the crowd an undo has to put back.
+///
+/// Only what a map edit can change. The per-tick working state -- waypoints,
+/// step budgets, cost to goal -- is derived, so restoring it would be storing a
+/// cache; `restore` clears it and the next tick builds it again.
+public struct AgentsSnapshot {
+  public var count: Int
+  public var x: [Float]
+  public var y: [Float]
+  public var originX: [Float]
+  public var originY: [Float]
+  public var goal: [Int32]
+  public var color: [UInt32]
+  public var arrived: [UInt8]
+  public var selected: [UInt8]
+  public var spawned: [UInt8]
+}
+
+extension Agents {
+  public func clear() { count = 0 }
+
+  public func clearSelection() {
+    for i in 0..<count { selected[i] = 0 }
+  }
+
+  public var selectionCount: Int {
+    var n = 0
+    for i in 0..<count where selected[i] != 0 { n += 1 }
+    return n
+  }
+
+  /// Whether every pedestrian with somewhere to be has got there.
+  ///
+  /// Pedestrians with no goal are not counted in either direction: one standing
+  /// where it was painted was never going anywhere. False with nobody bound for
+  /// anywhere at all, since "everyone has arrived" is not a thing an empty
+  /// crowd has done.
+  public var allArrived: Bool {
+    var bound = 0
+    for i in 0..<count {
+      if goal[i] < 0 { continue }
+      if arrived[i] == 0 { return false }
+      bound += 1
+    }
+    return bound > 0
+  }
+
+  /// The pedestrian under a point, or -1. Topmost wins, as tapping expects.
+  public func indexAt(_ p: Point, _ radius: Double) -> Int {
+    var i = count - 1
+    while i >= 0 {
+      if jsHypot(Double(x[i]) - p.x, Double(y[i]) - p.y) <= radius { return i }
+      i -= 1
+    }
+    return -1
+  }
+
+  /// Cuts loose every pedestrian bound for a wall that has just been erased.
+  ///
+  /// Not tidiness: `Navigation` has no field for a wall that is gone, so
+  /// `nextWaypoint` answers nil and those pedestrians stand still for ever --
+  /// while `allArrived` goes on saying the run is unfinished.
+  public func clearGoal(_ wallId: Int) {
+    for i in 0..<count where goal[i] == Int32(wallId) {
+      goal[i] = -1
+      arrived[i] = 0
+      hasWaypoint[i] = 0
+      costToGoal[i] = .infinity
+    }
+  }
+
+  /// Takes off the map every generator pedestrian that has reached its goal.
+  ///
+  /// Backwards, like every removal loop here: `removeAt` swaps the last agent
+  /// down into the freed slot, so walking down means the slot swapped in is
+  /// always one already looked at and known to be staying.
+  @discardableResult
+  public func removeArrivedSpawned() -> Int {
+    var removed = 0
+    var i = count - 1
+    while i >= 0 {
+      if spawned[i] != 0 && arrived[i] != 0 { removeAt(i); removed += 1 }
+      i -= 1
+    }
+    return removed
+  }
+
+  /// Clears the flow, leaving the painted crowd. What Reset means once
+  /// generators exist: a pedestrian a generator let out has no starting line to
+  /// be put back on, so putting it back means taking it away.
+  @discardableResult
+  public func removeSpawned() -> Int {
+    var removed = 0
+    var i = count - 1
+    while i >= 0 {
+      if spawned[i] != 0 { removeAt(i); removed += 1 }
+      i -= 1
+    }
+    return removed
+  }
+
+  /// The crowd as it stands, copied out for undo.
+  public func snapshot() -> AgentsSnapshot {
+    let n = count
+    return AgentsSnapshot(
+      count: n,
+      x: Array(x[0..<n]), y: Array(y[0..<n]),
+      originX: Array(originX[0..<n]), originY: Array(originY[0..<n]),
+      goal: Array(goal[0..<n]), color: Array(color[0..<n]),
+      arrived: Array(arrived[0..<n]), selected: Array(selected[0..<n]),
+      spawned: Array(spawned[0..<n]))
+  }
+
+  /// Puts a snapshot back, whatever the crowd has become since.
+  public func restore(_ snap: AgentsSnapshot) {
+    while capacity < snap.count { grow() }
+    let n = snap.count
+    for i in 0..<n {
+      x[i] = snap.x[i]; y[i] = snap.y[i]
+      originX[i] = snap.originX[i]; originY[i] = snap.originY[i]
+      goal[i] = snap.goal[i]
+      color[i] = snap.color[i]
+      arrived[i] = snap.arrived[i]
+      selected[i] = snap.selected[i]
+      spawned[i] = snap.spawned[i]
+    }
+    // Derived state, cleared rather than restored: a waypoint belongs to a map
+    // that may no longer exist, and a stale one would be walked to.
+    for i in 0..<n {
+      hasWaypoint[i] = 0
+      waypointNode[i] = -1
+      headingX[i] = 0; headingY[i] = 0
+      waited[i] = 0
+      stalled[i] = 0
+      pressure[i] = 0
+      pushX[i] = 0; pushY[i] = 0
+      density[i] = 0
+      stepDist[i] = 0
+      effectiveSpace[i] = 0
+      costToGoal[i] = .infinity
+    }
+    // Not derived from the tick but from the pedestrian: recomputed rather than
+    // restored, so it comes back identical without being stored. This is what
+    // makes undo not quietly change the crowd's personality.
+    for i in 0..<n {
+      trait[i] = Float(traitOf(Double(originX[i]), Double(originY[i]), SPACE_SEED))
+      assertiveness[i] = Float(traitOf(Double(originX[i]), Double(originY[i]), NERVE_SEED))
+      party[i] = Int32(partyOf(Double(originX[i]), Double(originY[i])))
+    }
+    clearJustArrived()
+    carries = 0
+    count = n
+  }
+
+  /// Back to origin, as `controller.Resetable` / `Map.resetPedestrianLocation` did.
+  ///
+  /// The colour is painted again rather than kept: a run leaves it saying what
+  /// happened -- black for everyone who arrived -- and a crowd put back on its
+  /// starting line still wearing the last run's result reads as a crowd that
+  /// has already finished. One still bound for a goal gets that goal's colour;
+  /// only a pedestrian with nowhere to be takes a fresh one.
+  ///
+  /// `freshColor` is a parameter where agents.ts:468 calls `randomBrightColor()`
+  /// directly. Same reason `add` takes its colour: making the nondeterminism
+  /// explicit means a caller cannot introduce it by accident.
+  public func resetPositions(_ goalColors: [Int32: RGB], _ freshColor: () -> RGB) {
+    for i in 0..<count {
+      x[i] = originX[i]
+      y[i] = originY[i]
+      color[i] = packRgb(goalColors[goal[i]] ?? freshColor())
+      arrived[i] = 0
+      hasWaypoint[i] = 0
+      headingX[i] = 0; headingY[i] = 0
+      waited[i] = 0
+      stalled[i] = 0
+      pressure[i] = 0
+      pushX[i] = 0; pushY[i] = 0
+      density[i] = 0
+      stepDist[i] = 0
+      effectiveSpace[i] = 0
+    }
+  }
 }
