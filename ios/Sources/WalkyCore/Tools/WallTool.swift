@@ -64,6 +64,13 @@ public final class WallTool: Tool {
   }
 
   public func onPointerUp(_ e: PointerInfo, _ ctx: ToolContext) {
+    // No hover on iOS: once the finger is gone there is no pointer to preview
+    // under, and a ghost left at the last touch point sits on the map for the
+    // rest of the session. The web keeps it because a mouse really is still
+    // hovering there. Cleared at the top so every path out of here drops it,
+    // including the early return below.
+    mouse = nil
+
     let press = pressAt
     pressAt = nil
     if press == nil { return }

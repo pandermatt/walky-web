@@ -171,6 +171,69 @@ struct GoalToolTests {
   }
 }
 
+@Suite("No hover on iOS")
+@MainActor
+struct HoverTests {
+  /// The web keeps a cursor ghost after a gesture because a mouse really is
+  /// still hovering there. A finger is not, so a ghost left at the last touch
+  /// point sits on the map for the rest of the session -- which is exactly
+  /// what happened, and is visible in the first freehand wall drawn on device.
+
+  @Test("the wall tool's ghost does not outlive the touch")
+  func wallGhost() {
+    let r = Recorder(); let t = WallTool()
+    t.onPointerDown(down(Point(10, 10)), r.ctx)
+    // Under the 5pt drag threshold, so this is still a tap and the ghost shows.
+    // Move further and the tool starts tracing, which hides the ghost anyway.
+    t.onPointerMove(move(Point(13, 13)), r.ctx)
+    #expect(t.preview().cursorGhost != nil)
+    t.onPointerUp(up(Point(13, 13)), r.ctx)
+    #expect(t.preview().cursorGhost == nil)
+  }
+
+  @Test("a traced stroke leaves no ghost behind either")
+  func wallGhostAfterTrace() {
+    let r = Recorder(); let t = WallTool()
+    t.onPointerDown(down(Point(0, 0)), r.ctx)
+    for i in stride(from: 0.0, through: 90.0, by: 5) { t.onPointerMove(move(Point(i, i)), r.ctx) }
+    t.onPointerUp(up(Point(90, 90)), r.ctx)
+    #expect(t.preview().cursorGhost == nil)
+  }
+
+  @Test("the brush's ghost dots clear on lift")
+  func pedestrianGhost() {
+    let r = Recorder(); let t = PedestrianTool()
+    t.onPointerDown(down(Point(0, 0)), r.ctx)
+    t.onPointerMove(move(Point(20, 0)), r.ctx)
+    #expect(!t.preview().pendingPedestrians.isEmpty)
+    t.onPointerUp(up(Point(20, 0)), r.ctx)
+    #expect(t.preview().pendingPedestrians.isEmpty)
+  }
+
+  @Test("the goal tool's target lines clear on lift")
+  func goalLines() {
+    let r = Recorder(); r.goalHits = false
+    let t = GoalTool()
+    t.onPointerMove(move(Point(30, 30)), r.ctx)
+    #expect(t.preview().targetLines != nil)
+    t.onPointerUp(up(Point(30, 30)), r.ctx)
+    #expect(t.preview().targetLines == nil)
+  }
+
+  @Test("the rectangle tool's ghost clears, and the first corner survives")
+  func rectangleGhost() {
+    let r = Recorder(); let t = RectangleTool()
+    t.onPointerDown(down(Point(10, 10)), r.ctx)
+    t.onPointerUp(up(Point(10, 10)), r.ctx)          // a tap: sets the first corner
+    #expect(t.preview().cursorGhost == nil)
+    #expect(t.preview().pendingRect == nil)
+    // The corner is still held, so a second tap completes the rectangle.
+    t.onPointerDown(down(Point(90, 70)), r.ctx)
+    t.onPointerUp(up(Point(90, 70)), r.ctx)
+    #expect(r.walls.count == 1)
+  }
+}
+
 @Suite("WallTool")
 @MainActor
 struct WallToolTests {

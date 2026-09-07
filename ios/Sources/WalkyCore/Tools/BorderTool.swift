@@ -44,6 +44,10 @@ public final class BorderTool: Tool {
     }
     guard let f = first else {
       first = press
+    // No hover on iOS: once the finger is gone there is no pointer to preview
+    // under, and a ghost left at the last touch point sits there for the rest
+    // of the session. The web keeps it because a mouse really is still there.
+      mouse = nil
       ctx.requestRender()
       return
     }

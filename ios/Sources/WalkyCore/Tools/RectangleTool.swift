@@ -46,6 +46,10 @@ public final class RectangleTool: Tool {
     // Treated as a click: first sets a corner, second completes.
     guard let f = first else {
       first = press
+    // No hover on iOS: once the finger is gone there is no pointer to preview
+    // under, and a ghost left at the last touch point sits there for the rest
+    // of the session. The web keeps it because a mouse really is still there.
+      mouse = nil
       ctx.requestRender()
       return
     }

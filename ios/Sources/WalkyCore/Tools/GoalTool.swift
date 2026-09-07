@@ -38,6 +38,15 @@ public final class GoalTool: Tool {
     ctx.requestRender()
   }
 
+  public func onPointerUp(_ e: PointerInfo, _ ctx: ToolContext) {
+    // No hover on iOS: once the finger is gone there is no pointer to preview
+    // under, and a ghost left at the last touch point sits there for the rest
+    // of the session. The web keeps it because a mouse really is still there.
+    mouse = nil
+    color = nil
+    ctx.requestRender()
+  }
+
   public func cancel() {
     mouse = nil
     color = nil

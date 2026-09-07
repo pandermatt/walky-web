@@ -136,6 +136,12 @@ struct ToolbarView: View {
       .font(.system(size: 19, weight: .medium))
       .foregroundStyle(.primary)
       .frame(width: tap, height: tap)
+      // Without this the button is only pressable on the glyph itself. A
+      // `.frame` is a layout box, not a hit box: SwiftUI hit-tests a Button
+      // against its label's drawn content, so the transparent space around a
+      // thin SF Symbol -- most of a 44pt cell -- was falling through to the
+      // canvas underneath, where it read as a drag on the map.
+      .contentShape(Rectangle())
   }
 }
 
@@ -147,7 +153,15 @@ private extension View {
       // the #1E1E1E ground, and picking up the colour of a wall that passes
       // beneath. An opaque pane or a heavy tint would leave the effect nothing
       // to sample and render as a flat capsule; adaptive is the point.
-      glassEffect(.regular.interactive(), in: .capsule)
+      //
+      // Deliberately *not* `.interactive()` here. Interactive glass responds to
+      // touch, and on the container that means the bar itself reacts to a drag
+      // that was meant for a button inside it. It belongs on the armed pill,
+      // which is a control, not on the surface the controls sit on.
+      glassEffect(.regular, in: .capsule)
+        // A near-miss between two cells should do nothing, rather than reach
+        // the map and start drawing on it.
+        .contentShape(Capsule())
     } else {
       background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.35), lineWidth: 0.5))
