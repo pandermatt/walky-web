@@ -10,6 +10,18 @@ import { EMPTY_PREVIEW, type PointerInfo, type Tool, type ToolContext, type Tool
  * enough commits the rectangle directly, while a press and release in roughly the
  * same spot falls back to the original two-click mode.
  */
+/**
+ * Past this, a press-and-release counts as a drag rather than the first of two
+ * clicks. **Pixels of finger travel, not world units** -- so it is multiplied by
+ * `worldPerPixel()` at the comparison, exactly as `wallTool.ts` and
+ * `textTool.ts` already do.
+ *
+ * It was compared raw for a long time. At zoom 0 the two readings coincide,
+ * which is why nothing showed on a desktop; zoomed out five notches a 6-unit
+ * drag is under 4pt of finger travel, so on a phone every tap became a drag and
+ * two-click mode was unreachable. The iOS port fixed this first and left a note
+ * saying the same fix was owed here.
+ */
 const DRAG_THRESHOLD = 6;
 
 export class RectangleTool implements Tool {
@@ -39,7 +51,7 @@ export class RectangleTool implements Tool {
     if (!press) return;
     const here = snap(e.world);
 
-    if (distance(press, here) >= DRAG_THRESHOLD) {
+    if (distance(press, here) >= DRAG_THRESHOLD * ctx.worldPerPixel()) {
       // Dragged: the press and release are the two corners.
       this.commit(press, here, ctx);
       return;

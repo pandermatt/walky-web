@@ -108,7 +108,7 @@ describe('an enclosure encloses', () => {
 
 describe('BorderTool', () => {
   /** A context that records what the tool commits and nothing else. */
-  function stubContext(): { ctx: ToolContext; walls: { polygons: Point[][]; options?: WallOptions }[] } {
+  function stubContext(worldPerPixel = 1): { ctx: ToolContext; walls: { polygons: Point[][]; options?: WallOptions }[] } {
     const walls: { polygons: Point[][]; options?: WallOptions }[] = [];
     const ctx = {
       addWall: () => true,
@@ -133,7 +133,7 @@ describe('BorderTool', () => {
       requestRender: () => {},
       colorAt: () => null,
       agentPositions: () => [],
-      worldPerPixel: () => 1,
+      worldPerPixel: () => worldPerPixel,
       // The tool under test never erases; the eraser has its own file.
       eraseTargetAt: () => null,
       eraseAt: () => false,
@@ -144,6 +144,26 @@ describe('BorderTool', () => {
   function at(world: Point, buttons = 1): PointerInfo {
     return { world, screen: world, dxScreen: 0, dyScreen: 0, shiftKey: false, buttons };
   }
+
+  it('measures the drag threshold in pixels, so zooming out does not turn every tap into a drag', () => {
+    // DRAG_THRESHOLD is 6 *pixels*. Zoomed out far enough that one pixel is ten
+    // world units, a 9-unit slip of the finger is under a pixel of travel and
+    // has to stay a click -- otherwise the first tap commits a sliver of a
+    // border and two-click mode can never be reached. Compared raw, this is
+    // 9 >= 6 and the wall is committed.
+    const { ctx, walls } = stubContext(10);
+    const tool = new BorderTool();
+    const nudged: Point = [9, 0];
+
+    tool.onPointerDown(at(A), ctx);
+    tool.onPointerUp(at(nudged, 0), ctx);
+    expect(walls).toHaveLength(0);
+
+    // And the second click still completes it, which is the mode the bug hid.
+    tool.onPointerDown(at(B), ctx);
+    tool.onPointerUp(at(B, 0), ctx);
+    expect(walls).toHaveLength(1);
+  });
 
   it('marks the frame it commits as a border, so the hull grouping skips it', () => {
     const { ctx, walls } = stubContext();

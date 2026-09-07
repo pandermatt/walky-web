@@ -215,12 +215,16 @@ struct SettingsSheetView: View {
     + "come back. Classic is the 2016 original's own background, and the "
     + "pedestrians' rings follow the ground so they stay visible on a pale one."
 
+  // Careful with this one: it used to argue for Orange by calling it the colour
+  // the route to a goal is drawn in, which stopped being visible the moment
+  // Route to goal defaulted off. A footer may not point at something the reader
+  // cannot see.
   private static let accentFooter: String =
     "The colour behind the tool you are holding, and the tick beside the "
     + "ground above. The bar itself stays untinted so its glass keeps taking "
-    + "colour from the map behind it. Orange is the colour the route to a goal "
-    + "is drawn in, which is where the app's accent came from in the first "
-    + "place."
+    + "colour from the map behind it. Orange is the 2016 original's own accent, "
+    + "and still what a route to a goal is drawn in when you switch that on "
+    + "below."
 
   private static let about: String =
     "A pedestrian simulator. Draw walls, mark a goal, paint a crowd, and "
