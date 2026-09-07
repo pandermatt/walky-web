@@ -12,6 +12,7 @@ let package = Package(
     .library(name: "WalkySim", targets: ["WalkySim"]),
     .library(name: "WalkyCore", targets: ["WalkyCore"]),
     .executable(name: "walky-conform", targets: ["WalkyConform"]),
+    .executable(name: "walky-icons", targets: ["WalkyIcons"]),
   ],
   targets: [
     // fdlibm, as V8 uses it. See Sources/CWalkyMath/README for why this exists.
@@ -27,6 +28,10 @@ let package = Package(
     // leaves the untestable surface as genuinely just pixels.
     .target(name: "WalkyCore", dependencies: ["WalkySim"]),
     .executableTarget(name: "WalkyConform", dependencies: ["WalkySim"]),
+    // Renders the alternate app icons. It depends on WalkyCore so the icon
+    // colours *are* the theme's colours rather than a second copy of them --
+    // see Sources/WalkyCore/AppIcons.swift.
+    .executableTarget(name: "WalkyIcons", dependencies: ["WalkyCore"]),
     .testTarget(name: "WalkySimTests", dependencies: ["WalkySim"]),
     .testTarget(name: "WalkyCoreTests", dependencies: ["WalkyCore"]),
   ]

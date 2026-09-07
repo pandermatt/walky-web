@@ -2,34 +2,14 @@ import SwiftUI
 import UIKit
 import WalkyCore
 
-/// One of the icons the app can wear.
+/// The Settings section that changes which icon the app wears.
 ///
-/// The three alternates are all the same drawing: `icon.png` from the 2016 Java
-/// app, a walking figure over three receding crosswalk stripes, which was
-/// Walky's first icon and is the only artwork that survived the rewrite. It is
-/// a silhouette, so what changes between them is the ground behind it -- and
-/// the three grounds are the app's own colours rather than new ones. See
-/// `Icons/generate.sh`.
-struct AppIcon: Identifiable, Equatable {
-  /// What `setAlternateIconName` wants; nil is the icon the app ships with.
-  let name: String?
-  let label: String
-  let note: String
-  /// The bundle image for the row's thumbnail. The primary's is the PNG actool
-  /// writes out of `Walky.icon` -- which is why it is not called AltIcon-.
-  let preview: String
-
-  var id: String { name ?? "primary" }
-
-  static let all: [AppIcon] = [
-    AppIcon(name: nil, label: "Walky", note: "Three walkers", preview: "Walky60x60"),
-    AppIcon(name: "Classic", label: "Classic", note: "2016, on paper", preview: "AltIcon-Classic"),
-    AppIcon(name: "Night", label: "Night", note: "2016, on the ground", preview: "AltIcon-Night"),
-    AppIcon(name: "Amber", label: "Amber", note: "2016, on orange", preview: "AltIcon-Amber"),
-  ]
-}
-
-/// The Settings section that changes it.
+/// What there is to choose from is `AppIcons.all` in WalkyCore, which is also
+/// what `swift run walky-icons` renders -- one table, so this cannot offer an
+/// icon that was never drawn. Nineteen of them, which is why they are tiles in
+/// a grid rather than rows in a list: at that length you pick an icon by
+/// looking at it, and a list of nineteen is a scroll with the answer somewhere
+/// in it.
 ///
 /// Nothing here is persisted by us: iOS remembers the choice across launches
 /// and `alternateIconName` is the truth, so storing a copy could only ever go
@@ -41,12 +21,30 @@ struct AppIconSection: View {
   @State private var current: String? = UIApplication.shared.alternateIconName
   @State private var failure: String?
 
+  /// Wide enough for a 64pt tile and its name, and it is `.adaptive` so the
+  /// row count follows the sheet rather than a number typed in here -- four
+  /// across on a phone, more on an iPad.
+  private let columns = [GridItem(.adaptive(minimum: 68), spacing: 10)]
+
   var body: some View {
     // Absent rather than disabled where it cannot work -- notably a Mac
     // running this as a "Designed for iPad" app, where the icon is the Mac's.
     if UIApplication.shared.supportsAlternateIcons {
       Section {
-        ForEach(AppIcon.all) { row($0) }
+        ForEach(AppIconFamily.allCases, id: \.self) { family in
+          let icons = AppIcons.all.filter { $0.family == family }
+          if !icons.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+              Text(family.label)
+                .font(.caption).fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+              LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(icons) { tile($0) }
+              }
+            }
+            .padding(.vertical, 4)
+          }
+        }
       } header: {
         Text("App icon")
       } footer: {
@@ -55,40 +53,45 @@ struct AppIconSection: View {
     }
   }
 
-  private func row(_ icon: AppIcon) -> some View {
+  private func tile(_ icon: AppIcon) -> some View {
     let chosen = current == icon.name
     return Button {
       choose(icon)
     } label: {
-      HStack(spacing: 12) {
-        thumbnail(icon)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(icon.label).foregroundStyle(.primary)
-          Text(icon.note).font(.caption).foregroundStyle(.secondary)
-        }
-        Spacer()
-        if chosen {
-          Image(systemName: "checkmark")
-            .font(.body.weight(.semibold))
-            .foregroundStyle(MapRenderer.color(accent))
-        }
+      VStack(spacing: 5) {
+        thumbnail(icon, chosen: chosen)
+        Text(icon.label)
+          .font(.caption2)
+          .foregroundStyle(chosen ? .primary : .secondary)
+          .lineLimit(1)
       }
       // A `.plain` Button hit-tests against its label's drawn content, and a
-      // row that is mostly Spacer has almost none.
+      // tile is mostly padding.
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
   }
 
-  private func thumbnail(_ icon: AppIcon) -> some View {
+  private func thumbnail(_ icon: AppIcon, chosen: Bool) -> some View {
     let art = UIImage(named: icon.preview)
+    let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
     return Group {
       if let art { Image(uiImage: art).resizable() } else { Color.secondary.opacity(0.2) }
     }
-    .frame(width: 42, height: 42)
-    .clipShape(RoundedRectangle(cornerRadius: 9.5, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 9.5, style: .continuous)
-      .strokeBorder(.primary.opacity(0.15)))
+    .frame(width: 64, height: 64)
+    .clipShape(shape)
+    .overlay(shape.strokeBorder(.primary.opacity(0.15)))
+    // The tick sits on the icon rather than beside it: in a grid there is no
+    // "beside", and the corner is the one place no artwork reaches.
+    .overlay(alignment: .bottomTrailing) {
+      if chosen {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.body)
+          .symbolRenderingMode(.palette)
+          .foregroundStyle(.white, MapRenderer.color(accent))
+          .padding(2)
+      }
+    }
   }
 
   /// The async form on purpose: the completion-handler one calls back on no
@@ -107,6 +110,7 @@ struct AppIconSection: View {
   }
 
   private static let footer: String =
-    "All three alternates are the 2016 app's own icon, on three of the colours "
-    + "this one already uses. iOS says so itself when you switch."
+    "Crossing puts the app's own pedestrians on the 2016 icon's crosswalk. "
+    + "Ground and Walker are that icon's walking figure, in colours this app "
+    + "already uses. iOS says so itself when you switch."
 }
