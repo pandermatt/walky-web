@@ -23,6 +23,8 @@ final class RenderCache {
   private(set) var wallPaths: [(path: Path, color: RGB, isGoal: Bool)] = []
   private(set) var hullPaths: [(path: Path, color: RGB)] = []
   private(set) var partPaths: [(path: Path, color: RGB)] = []
+  private var goalPathKey = ""
+  private(set) var goalPaths = Path()
 
   func refresh(_ world: WalkyWorld) {
     // The hulls are expanded by the pedestrian radius, so the radius setting
@@ -68,6 +70,53 @@ final class RenderCache {
     }
   }
 
+  /// The route each pedestrian is going to walk.
+  ///
+  /// Ports `app.ts:1978`. Two things there are load-bearing rather than
+  /// incidental:
+  ///
+  /// A pedestrian *with* a waypoint reads its remaining route straight off the
+  /// Dijkstra predecessors, which costs nothing. One *without* has to have its
+  /// route predicted, and that is a full graph scan each -- so it is skipped
+  /// while running, where an agent without a waypoint is one whose route just
+  /// failed, and re-searching it every frame would put the per-agent search
+  /// back into the loop the whole navigation rewrite took it out of.
+  ///
+  /// Capped at 1500. Past that the picture is an unreadable mat of lines and
+  /// building one array per agent per frame costs more than the simulation.
+  func refreshGoalPaths(_ world: WalkyWorld) {
+    let key = "\(world.worldRevision):\(world.agentRevision):\(world.running ? 1 : 0)"
+    guard goalPathKey != key else { return }
+    goalPathKey = key
+
+    var out = Path()
+    let a = world.agents
+    var drawn = 0
+    for i in 0..<a.count where drawn < 1500 {
+      if a.arrived[i] != 0 { continue }
+      let goalId = Int(a.goal[i])
+      if goalId < 0 { continue }
+      let head = Point(Double(a.x[i]), Double(a.y[i]))
+
+      var path: [Point]
+      if a.hasWaypoint[i] != 0 {
+        let rest = world.nav.pathFromNode(Int(a.waypointNode[i]), goalId)
+        path = rest.isEmpty
+          ? [head, Point(Double(a.waypointX[i]), Double(a.waypointY[i]))]
+          : [head] + rest
+      } else {
+        if world.running { continue }
+        path = world.nav.routeFrom(head, goalId)
+      }
+      if path.count < 2 { continue }
+
+      out.move(to: CGPoint(x: path[0].x, y: path[0].y))
+      for q in path.dropFirst() { out.addLine(to: CGPoint(x: q.x, y: q.y)) }
+      drawn += 1
+    }
+    goalPaths = out
+  }
+
   private func ring(_ points: [Point]) -> Path {
     var p = Path()
     guard let first = points.first else { return p }
@@ -89,6 +138,7 @@ enum MapRenderer {
                    into ctx: inout GraphicsContext, size: CGSize) {
     world.prepareForRender()
     cache.refresh(world)
+    if world.settings.showLineToTarget { cache.refreshGoalPaths(world) }
 
     var vp = world.viewport
     vp.width = size.width
@@ -126,6 +176,13 @@ enum MapRenderer {
       for h in cache.hullPaths {
         ctx.stroke(h.path, with: .color(color(h.color)), style: dash)
       }
+    }
+
+    // Under the crowd: the route belongs to the map the pedestrians walk on,
+    // and drawn over them it would hide the dots it is about.
+    if world.settings.showLineToTarget {
+      ctx.stroke(cache.goalPaths, with: .color(color(ORANGE)),
+                 style: StrokeStyle(lineWidth: 2 / scale, lineCap: .round, lineJoin: .round))
     }
 
     drawAgents(world, into: &ctx, hairline: hairline)
