@@ -1,0 +1,42 @@
+{
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.11765,0.11765,0.11765,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "walker-left.svg",
+          "name": "walker-left",
+          "is-glass": true
+        },
+        {
+          "image-name": "walker-right.svg",
+          "name": "walker-right",
+          "is-glass": true
+        },
+        {
+          "image-name": "walker-lead.svg",
+          "name": "walker-lead",
+          "is-glass": true
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": [
+      "iOS"
+    ]
+  }
+}

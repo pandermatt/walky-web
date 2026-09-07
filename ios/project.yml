@@ -59,6 +59,12 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: App
+        excludes: ["Walky.icon/**"]
+      # An Icon Composer document is one file, not a folder of loose SVGs --
+      # xcodegen would otherwise walk into it and hand actool three unrelated
+      # images and a stray JSON.
+      - path: App/Walky.icon
+        type: file
     dependencies:
       # WalkyCore re-exports WalkySim, so the app gets both.
       - package: Walky
@@ -74,7 +80,7 @@ targets:
         # diagnostics at the module boundary are the same on both sides.
         SWIFT_STRICT_CONCURRENCY: complete
         TARGETED_DEVICE_FAMILY: "1,2"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_APPICON_NAME: Walky
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: YES
     info:
