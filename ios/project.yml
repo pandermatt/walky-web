@@ -19,6 +19,39 @@ packages:
   Walky:
     path: .
 
+# Building this
+# -------------
+#   xcodegen generate
+#   xcodebuild build -project Walky.xcodeproj -scheme Walky -sdk iphonesimulator \
+#     -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+#
+# That is the ordinary command, and it works once an iOS simulator *runtime* is
+# installed. Two things make installing one harder than it sounds, both learned
+# the hard way: it needs an admin account, and the download hangs at "Preparing
+# to download..." with no error at all behind iCloud Private Relay or on some
+# university networks.
+#
+# With no runtime installed, no -destination resolves and only this works:
+#
+#   xcodebuild build -project Walky.xcodeproj -target Walky -sdk iphonesimulator \
+#     -configuration Release ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO
+#
+#   -target, not -scheme       A scheme resolves a destination, which fails
+#                              outright with no runtime. A target builds against
+#                              the SDK, which is always present.
+#   -configuration Release     Having no scheme, -target does not propagate the
+#                              configuration to the package's sub-project, which
+#                              builds Release. Ask for Debug and the app hunts
+#                              WalkyCore.swiftmodule in Debug-iphonesimulator
+#                              while the package put it in Release-, reported as
+#                              the very misleading "no such module 'WalkyCore'".
+#   ARCHS + ONLY_ACTIVE_ARCH   Without an active architecture to infer, the build
+#                              computes none and "succeeds" having compiled
+#                              nothing and produced no binary.
+#
+# It compiles everything including .metal shaders, so it stays a real check even
+# when nothing can be run.
+
 targets:
   Walky:
     type: application

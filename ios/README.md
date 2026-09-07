@@ -12,22 +12,20 @@ Xcode, a simulator or a device.
 
 ## Building the app
 
-There is no iOS simulator runtime installed on this machine, so the app can be
-compiled but not booted. Every flag below is load-bearing for that; see the
-comment at the top of `project.yml` for what each one is working around.
-
 ```bash
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcodegen generate                       # after any change to project.yml or a new file
-xcodebuild build -project Walky.xcodeproj -target Walky -sdk iphonesimulator \
-  -configuration Release ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO
+xcodegen generate                       # after changing project.yml or adding a file
+xcodebuild build -project Walky.xcodeproj -scheme Walky -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
-It is a real check rather than a vacuous one: it catches type errors across the
-WalkyCore module boundary, and would catch a bad `.metal` shader too.
+This needs an iOS simulator **runtime** (Xcode ▸ Settings ▸ Components, ~8 GB).
+Installing one requires an admin account, and the download hangs at "Preparing
+to download…" with no error message behind iCloud Private Relay or on some
+university networks — if it stalls, try another network before assuming Xcode is
+broken.
 
-To actually run it, install the runtime (Xcode ▸ Settings ▸ Components, ~8 GB)
-and open `Walky.xcodeproj`.
+Without a runtime the app can still be *compiled*; see the comment at the top of
+`project.yml` for the flags that takes and why each is needed.
 
 ## Running the package
 
