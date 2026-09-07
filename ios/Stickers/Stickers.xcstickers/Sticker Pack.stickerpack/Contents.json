@@ -11,9 +11,6 @@
       "filename": "crowd.sticker"
     },
     {
-      "filename": "crush.sticker"
-    },
-    {
       "filename": "counterflow.sticker"
     },
     {
@@ -26,9 +23,6 @@
       "filename": "detour.sticker"
     },
     {
-      "filename": "border.sticker"
-    },
-    {
       "filename": "route.sticker"
     },
     {
@@ -39,12 +33,6 @@
     },
     {
       "filename": "select.sticker"
-    },
-    {
-      "filename": "erase.sticker"
-    },
-    {
-      "filename": "undo.sticker"
     }
   ]
 }

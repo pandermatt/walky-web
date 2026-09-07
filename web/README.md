@@ -782,8 +782,8 @@ art stays well inside the inner 80%, so a circular crop cannot clip the rings.
 ### The same primitives again, as an iMessage sticker pack
 
 `tools/stickers.ts` writes `../ios/Stickers/Stickers.xcstickers`, the pack the
-iOS app embeds. Thirteen stickers, and not one of them is artwork: a pedestrian
-is a circle in a goal colour inside a white ring, a wall is a block over the
+iOS app embeds. Nine stickers, and not one of them is artwork: a pedestrian is
+a circle in a goal colour inside a white ring, a wall is a block over the
 `shadowOf` shadow palette.ts still carries from 2016, a route is a bent line in
 the orange of the `goal-paths` layer. Same argument as the icons — change the
 palette rule and the pack changes with it.
@@ -806,13 +806,12 @@ It is the one place the pack departs from what the app draws, and it is the same
 kind of departure as `STROKE_BOOST` on the share card below: a decision about
 being looked at somewhere else, at a size nobody chose.
 
-Eight of the thirteen are drawn — the crowd, a crush, counterflow, a crowd
-arriving at a goal, a bottleneck, an L-shaped detour, a border, a route. The
-other five are 2016 toolbar icons dropped in whole: `addWall`, `addWallSquare`,
-`select`, `erase` and `undo`, which are the ones that are *about* something
-rather than being a control.
+Six of the nine are drawn — the crowd, counterflow, a crowd arriving at a goal,
+a bottleneck, an L-shaped detour, a route. The other three are 2016 toolbar icons
+dropped in whole: `addWall`, `addWallSquare` and `select`, which are the ones
+that are *about* something rather than being a control.
 
-Those five needed the one thing the drawn marks did not. Most of the original
+Those three needed the one thing the drawn marks did not. Most of the original
 set is black line art made for Swing's light toolbar — it is why the strip in
 this app is light and not dark, and on a message bubble it would have the same
 problem with no strip to fix it. `clear.png` is the one icon in the set that

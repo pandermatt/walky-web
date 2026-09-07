@@ -3,9 +3,9 @@
  *
  * Run with:  npx vite-node tools/stickers.ts
  *
- * Thirteen stickers, of two kinds.
+ * Nine stickers, of two kinds.
  *
- * Eight are built out of the same primitives as `appIcons.ts` and `iosIcon.ts`,
+ * Six are built out of the same primitives as `appIcons.ts` and `iosIcon.ts`,
  * and for the same reason: a pedestrian here is a circle in a goal colour with a
  * white ring, which is what `PedestrianPanel.drawPedestrian` has drawn since
  * 2016, and a wall is a block in a colour `randomBrightColor` could have
@@ -13,8 +13,8 @@
  * anybody has to take on trust -- and if the palette rule changes, the stickers
  * change with it.
  *
- * The other five are 2016 toolbar icons, dropped in whole. See `original` below
- * for which, why those five, and what had to be done to them.
+ * The other three are 2016 toolbar icons, dropped in whole. See `original`
+ * below for which, why those three, and what had to be done to them.
  *
  * Like the icons and the share card, the output is committed and this is not
  * part of `npm run build`. Regenerating is a decision.
@@ -143,25 +143,6 @@ function crowd(reach: number): string {
 }
 
 /**
- * Seven packed until their rings cross: a hexagon and its middle.
- *
- * What a crowd does at a bottleneck. The centres sit 1.72 radii apart, which is
- * inside the personal space the model asks for -- a crush is the state where
- * everybody has given theirs up.
- */
-function crush(): string {
-  const r = REACH / 2.9;
-  const ring = r * 0.16;
-  const s = r * 1.72;
-  const dots = [pedestrian(CENTRE, CENTRE, r, MAGENTA, ring)];
-  for (let i = 0; i < 6; i++) {
-    const a = Math.PI / 6 + (i * Math.PI) / 3;
-    dots.push(pedestrian(CENTRE + s * Math.cos(a), CENTRE + s * Math.sin(a), r, MAGENTA, ring));
-  }
-  return dots.join('\n  ');
-}
-
-/**
  * Two files passing: the case the whole model exists to get right.
  *
  * Different colours because they are walking to different goals, offset by half
@@ -218,23 +199,31 @@ function goal(): string {
  * match is a map somebody arranged.
  */
 function bottleneck(): string {
-  const r = REACH * 0.21;
+  const r = REACH * 0.175;
   const ring = r * 0.18;
-  // Narrow, and running off the top and bottom of the tile: a wall is a thing
-  // you cannot go round, and a block with air above it is a thing you can.
   const x0 = CENTRE + REACH * 0.08;
   const x1 = CENTRE + REACH * 0.38;
   // The gap is a little wider than a pedestrian and no wider: what makes a queue
   // is that only one of them fits at a time.
   const gap = r + ring + KEY * 2;
+  // A wedge, not a line. A crowd arrives on a front and leaves in single file,
+  // and the shape between those two is the whole reason a bottleneck is a thing
+  // worth simulating.
+  const wedge: Point[] = [
+    [CENTRE - REACH * 0.8, CENTRE - REACH * 0.72],
+    [CENTRE - REACH * 0.8, CENTRE],
+    [CENTRE - REACH * 0.8, CENTRE + REACH * 0.72],
+    [CENTRE - REACH * 0.48, CENTRE - REACH * 0.38],
+    [CENTRE - REACH * 0.48, CENTRE + REACH * 0.38],
+    [CENTRE - REACH * 0.16, CENTRE],
+    // In the gap, and out the far side.
+    [CENTRE + REACH * 0.23, CENTRE],
+    [CENTRE + REACH * 0.78, CENTRE],
+  ];
   return [
     block(rect(x0, -KEY * 2, x1, CENTRE - gap), RUST),
     block(rect(x0, CENTRE + gap, x1, BOX + KEY * 2), SKY),
-    pedestrian(CENTRE - REACH * 0.86, CENTRE - REACH * 0.46, r, MAGENTA, ring),
-    pedestrian(CENTRE - REACH * 0.86, CENTRE + REACH * 0.46, r, MAGENTA, ring),
-    pedestrian(CENTRE - REACH * 0.48, CENTRE, r, MAGENTA, ring),
-    pedestrian(CENTRE + REACH * 0.23, CENTRE, r, MAGENTA, ring),
-    pedestrian(CENTRE + REACH * 0.78, CENTRE, r, MAGENTA, ring),
+    ...wedge.map(([x, y]) => pedestrian(x, y, r, MAGENTA, ring)),
   ].join('\n  ');
 }
 
@@ -274,34 +263,6 @@ function detour(): string {
     block(shifted, shadowOf(RUST)),
     block(ell, RUST),
     ...walk.map(([x, y]) => pedestrian(x, y, r, LIME, ring)),
-  ].join('\n  ');
-}
-
-/**
- * A border: the one tool that makes a shape with an inside.
- *
- * Four bars committed as a single wall, from BorderToolMouseListener -- so it is
- * drawn as four bars here too, in one colour, rather than as a stroked
- * rectangle. What is inside it is a crowd with nowhere to go.
- */
-function border(): string {
-  const a = REACH * 0.95;
-  const t = REACH * 0.26;
-  const bar = (x0: number, y0: number, x1: number, y1: number) =>
-    block(rect(x0, y0, x1, y1), SKY);
-  const r = REACH * 0.21;
-  const ring = r * 0.18;
-  const R = r * 1.0;
-  const dx = R * Math.cos(Math.PI / 6);
-  const dy = R * Math.sin(Math.PI / 6);
-  return [
-    bar(CENTRE - a, CENTRE - a, CENTRE + a, CENTRE - a + t),
-    bar(CENTRE - a, CENTRE + a - t, CENTRE + a, CENTRE + a),
-    bar(CENTRE - a, CENTRE - a + t, CENTRE - a + t, CENTRE + a - t),
-    bar(CENTRE + a - t, CENTRE - a + t, CENTRE + a, CENTRE + a - t),
-    pedestrian(CENTRE - dx, CENTRE + dy, r, MAGENTA, ring),
-    pedestrian(CENTRE + dx, CENTRE + dy, r, MAGENTA, ring),
-    pedestrian(CENTRE, CENTRE - R, r, MAGENTA, ring),
   ].join('\n  ');
 }
 
@@ -387,18 +348,14 @@ interface Sticker {
 
 const STICKERS: Sticker[] = [
   { name: 'crowd', label: 'A crowd of three pedestrians', art: crowd(REACH) },
-  { name: 'crush', label: 'A crush of pedestrians', art: crush() },
   { name: 'counterflow', label: 'Two crowds walking through each other', art: counterflow() },
   { name: 'goal', label: 'A crowd arriving at a goal', art: goal() },
   { name: 'bottleneck', label: 'A crowd funnelling through a gap between two walls', art: bottleneck() },
   { name: 'detour', label: 'A crowd walking around an L-shaped wall', art: detour() },
-  { name: 'border', label: 'A crowd inside a border', art: border() },
   { name: 'route', label: 'A pedestrian and its route to a goal', art: route() },
   { name: 'paint-square', label: 'Paint a square wall', art: original('addWallSquare.png') },
   { name: 'paint-freeform', label: 'Paint a freeform wall', art: original('addWall.png') },
   { name: 'select', label: 'Select', art: original('select.png') },
-  { name: 'erase', label: 'Erase', art: original('erase.svg') },
-  { name: 'undo', label: 'Undo', art: original('undo.png') },
 ];
 
 /**

@@ -30,7 +30,7 @@ Without a runtime the app can still be *compiled*; see the comment at the top of
 
 ## The sticker pack
 
-`Walky.app` embeds `WalkyStickers.appex`, an iMessage pack of thirteen stickers.
+`Walky.app` embeds `WalkyStickers.appex`, an iMessage pack of nine stickers.
 It has no code: its only build phase is Resources, the executable in the `.appex`
 is a stub Xcode links for it, and everything it ships is one compiled asset
 catalogue.
