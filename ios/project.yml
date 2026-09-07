@@ -51,6 +51,24 @@ packages:
 #
 # It compiles everything including .metal shaders, so it stays a real check even
 # when nothing can be run.
+#
+# Launching on a phone
+# --------------------
+# The first launch after each install is slow on a device and instant
+# afterwards. Almost none of that is the app: measured from kernel process
+# start, Walky is drawing its first frame 284ms in on a warm simulator launch
+# and 613ms in on a cold one, of which ~190-480ms is dyld and the frameworks,
+# before any of our code runs. What is slow on a device is the install:
+# iOS code-signs and validates every Mach-O in the bundle, and dyld has no
+# prebuilt launch closure yet. Xcode then waits to attach debugserver, which is
+# the "Running Walky on iPhone..." phase and is not the app starting at all.
+#
+# To tell the two apart, let Xcode finish, quit the app, and tap its icon on the
+# home screen. That launch is the app's own launch. If it is quick, nothing here
+# needs fixing.
+#
+# What did help: ENABLE_DEBUG_DYLIB below, which takes the bundle from three
+# Mach-Os to one.
 
 targets:
   Walky:
@@ -82,6 +100,17 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: Walky
         CODE_SIGN_STYLE: Automatic
+        # One Mach-O, not three.
+        #
+        # Xcode 16 defaults Debug builds to a 40 KB stub executable plus a
+        # 2.2 MB Walky.debug.dylib plus a __preview.dylib, so that SwiftUI
+        # previews can hot-swap code. This project has no #Preview blocks at
+        # all, so all it buys here is two extra Mach-Os for the device to
+        # code-sign, validate and bind on the first launch after every install
+        # -- which is exactly the launch that felt slow. It costs nothing in
+        # the simulator, where signature validation is a no-op, which is why
+        # this is invisible until you run on a phone.
+        ENABLE_DEBUG_DYLIB: NO
         ENABLE_USER_SCRIPT_SANDBOXING: YES
     info:
       path: App/Info.plist
