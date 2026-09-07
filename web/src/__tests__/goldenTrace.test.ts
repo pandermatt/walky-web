@@ -27,7 +27,7 @@ import { SCENARIOS, buildScenario, R } from '../../tools/traceScenarios.ts';
  * prove it reproduces across processes and across time.
  */
 
-const FIXTURES = resolve(import.meta.dirname, '../../ios/Fixtures');
+const FIXTURES = resolve(import.meta.dirname, '../../../ios/Fixtures');
 
 describe('golden traces still reproduce', () => {
   for (const spec of SCENARIOS) {

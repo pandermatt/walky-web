@@ -20,7 +20,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const OUT = resolve(import.meta.dirname, '../ios/Fixtures/math.wkmp');
+const OUT = resolve(import.meta.dirname, '../../ios/Fixtures/math.wkmp');
 const MAGIC = 0x504d4b57; // "WKMP" little-endian
 const VERSION = 1;
 const SAMPLES = 20_000;

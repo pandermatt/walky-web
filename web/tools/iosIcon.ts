@@ -27,7 +27,7 @@ import { BACKGROUND, WHITE, toCss, type RGB } from '../src/palette.ts';
 import { LIME, MAGENTA, TEAL } from './brand.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'ios/App/Walky.icon');
+const OUT = join(ROOT, '../ios/App/Walky.icon');
 
 /** Icon Composer's canvas. */
 const BOX = 1024;

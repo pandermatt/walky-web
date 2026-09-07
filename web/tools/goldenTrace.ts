@@ -22,7 +22,7 @@ import { SCENARIOS, buildScenario, R } from './traceScenarios.ts';
 import { GRAPH_SCENARIOS } from './graphScenarios.ts';
 import type { Wall } from '../src/state/model.ts';
 
-const OUT = resolve(import.meta.dirname, '../ios/Fixtures');
+const OUT = resolve(import.meta.dirname, '../../ios/Fixtures');
 const GRAPH_MAGIC = 0x5247_4b57; // "WKGR"
 const GRAPH_VERSION = 1;
 
