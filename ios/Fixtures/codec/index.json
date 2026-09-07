@@ -1,0 +1,57 @@
+{
+  "empty": {
+    "bytes": 15,
+    "walls": 0,
+    "agents": 0,
+    "labels": 0,
+    "generators": 0,
+    "speed": 1.35,
+    "zoomLevel": 0,
+    "firstWallId": null,
+    "lastLabelText": null
+  },
+  "settings": {
+    "bytes": 20,
+    "walls": 0,
+    "agents": 0,
+    "labels": 0,
+    "generators": 0,
+    "speed": 2.15,
+    "zoomLevel": -12.5,
+    "firstWallId": null,
+    "lastLabelText": null
+  },
+  "walls": {
+    "bytes": 73,
+    "walls": 3,
+    "agents": 0,
+    "labels": 0,
+    "generators": 0,
+    "speed": 1.35,
+    "zoomLevel": 3.25,
+    "firstWallId": 7,
+    "lastLabelText": null
+  },
+  "agents": {
+    "bytes": 63,
+    "walls": 1,
+    "agents": 4,
+    "labels": 0,
+    "generators": 0,
+    "speed": 1.35,
+    "zoomLevel": 0,
+    "firstWallId": 3,
+    "lastLabelText": null
+  },
+  "labelsAndGenerators": {
+    "bytes": 98,
+    "walls": 1,
+    "agents": 0,
+    "labels": 2,
+    "generators": 2,
+    "speed": 1.35,
+    "zoomLevel": 0,
+    "firstWallId": 1,
+    "lastLabelText": "Ausgang → 🚶‍♂️"
+  }
+}
