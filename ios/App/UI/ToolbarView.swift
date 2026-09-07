@@ -23,6 +23,16 @@ struct ToolbarView: View {
   /// than about the look.
   private let tap: CGFloat = 44
 
+  /// The namespace the armed pill travels in.
+  ///
+  /// This is what separates a system tab bar from a row of buttons on glass.
+  /// The selection indicator carries *one* `glassEffectID` wherever it is, so
+  /// when it moves from one cell to another Liquid Glass does not fade one out
+  /// and another in -- it flows the shape across, the way the pill under a tab
+  /// in Music or TV does. Without it the tint simply pops between cells, which
+  /// looks like a highlight rather than like a material.
+  @Namespace private var glass
+
   /// SF Symbols rather than the 2016 PNGs.
   ///
   /// The originals are kept in the web app for good reason -- they are the
@@ -65,10 +75,15 @@ struct ToolbarView: View {
       Divider().frame(height: tap * 0.45).opacity(0.35)
       menuCell
     }
-    .padding(5)
+    .padding(6)
     .glassBar()
-    .padding(.horizontal, 12)
-    .padding(.bottom, 6)
+    // Floating clear of the edges, as a system tab bar does, rather than
+    // spanning the full width like a docked toolbar.
+    .padding(.horizontal, 16)
+    .padding(.bottom, 10)
+    // The pill travels rather than jumps.
+    .animation(.snappy(duration: 0.32, extraBounce: 0.08), value: state.selected)
+    .animation(.snappy(duration: 0.25), value: state.running)
   }
 
   // MARK: - Cells
@@ -85,7 +100,7 @@ struct ToolbarView: View {
   private func toolCell(id: ToolId, icon iconName: String, title: String) -> some View {
     let armed = state.selected == id
     return Button { onTool(id) } label: {
-      icon(iconName).armed(armed)
+      icon(iconName).armed(armed, in: glass)
     }
     .buttonStyle(.plain)
     .accessibilityLabel(title)
@@ -146,14 +161,18 @@ private extension View {
   /// Under Liquid Glass the circle is a tinted glass shape *inside the bar's
   /// container*, so it merges with the bar rather than floating over it -- the
   /// thing the container exists for.
-  @ViewBuilder func armed(_ on: Bool) -> some View {
+  @ViewBuilder func armed(_ on: Bool, in namespace: Namespace.ID) -> some View {
     if #available(iOS 26.0, *) {
       // Only the armed tool gets a shape. Giving every cell a `.tint(.clear)`
       // glass circle still draws a circle -- seven of them, which reads as
-      // noise. A tab bar shapes the selected item and leaves the rest bare,
-      // and that is the whole reason the armed one is legible at a glance.
+      // noise. A tab bar shapes the selected item and leaves the rest bare.
+      //
+      // The id is the same string on every cell on purpose: whichever one is
+      // armed claims it, so moving the selection is one shape changing place
+      // rather than two shapes crossfading, and Liquid Glass flows it across.
       if on {
         glassEffect(.regular.tint(WalkyOrange.color).interactive(), in: .circle)
+          .glassEffectID("armed", in: namespace)
       } else {
         self
       }
