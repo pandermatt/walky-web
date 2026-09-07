@@ -104,6 +104,35 @@ targets:
         UIStatusBarStyle: UIStatusBarStyleLightContent
         UIViewControllerBasedStatusBarAppearance: false
         ITSAppUsesNonExemptEncryption: false
+        # Alternate icons, as loose PNGs at the bundle root -- the only shape
+        # this mechanism has ever taken. `CFBundleIconFiles` lists base names;
+        # the system appends @2x/@3x/~ipad itself, which is why 83.5pt has to be
+        # a second base name rather than a fourth file under the first.
+        #
+        # `CFBundlePrimaryIcon` is deliberately absent: actool writes it from
+        # Walky.icon, and naming it here would only invite the two to disagree.
+        CFBundleIcons:
+          CFBundleAlternateIcons:
+            Classic:
+              CFBundleIconFiles: [AltIcon-Classic]
+              UIPrerenderedIcon: false
+            Night:
+              CFBundleIconFiles: [AltIcon-Night]
+              UIPrerenderedIcon: false
+            Amber:
+              CFBundleIconFiles: [AltIcon-Amber]
+              UIPrerenderedIcon: false
+        CFBundleIcons~ipad:
+          CFBundleAlternateIcons:
+            Classic:
+              CFBundleIconFiles: [AltIcon-Classic, AltIcon-Classic-83.5]
+              UIPrerenderedIcon: false
+            Night:
+              CFBundleIconFiles: [AltIcon-Night, AltIcon-Night-83.5]
+              UIPrerenderedIcon: false
+            Amber:
+              CFBundleIconFiles: [AltIcon-Amber, AltIcon-Amber-83.5]
+              UIPrerenderedIcon: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

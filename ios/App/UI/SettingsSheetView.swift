@@ -32,6 +32,7 @@ struct SettingsSheetView: View {
 
         groundSection
         accentSection
+        AppIconSection(accent: settings.accent.color)
 
         Section("Show") {
           Toggle("Convex hulls", isOn: $settings.showConvexHull)
