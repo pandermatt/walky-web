@@ -28,6 +28,41 @@ broken.
 Without a runtime the app can still be *compiled*; see the comment at the top of
 `project.yml` for the flags that takes and why each is needed.
 
+## The sticker pack
+
+`Walky.app` embeds `WalkyStickers.appex`, an iMessage pack of nine stickers.
+It has no code: its only build phase is Resources, the executable in the `.appex`
+is a stub Xcode links for it, and everything it ships is one compiled asset
+catalogue.
+
+Nothing in `Stickers/` is drawn by hand. `../web/tools/stickers.ts` writes the
+whole `.xcstickers` — the PNGs, every `Contents.json`, and the twelve sizes of
+the Messages drawer icon — out of the same primitives as the app icon, and the
+output is committed. Regenerating is a decision, the way regenerating the icons
+is:
+
+```bash
+cd ../web && npx vite-node tools/stickers.ts
+```
+
+`web/README.md` has what is in the pack and why the marks are drawn the way they
+are. Two things about the target are worth knowing here:
+
+- **Its Info.plist is generated like the app's**, from `info:` in `project.yml`.
+  iOS refuses to install an app whose embedded extension carries a different
+  `CFBundleShortVersionString`, and two plists written by the same generator
+  agree on that by construction where two written by hand agree until somebody
+  edits one.
+- **`NSStickerSharingLevel` is a plist key here, not a build setting.**
+  `INFOPLIST_KEY_NSStickerSharingLevel` is only read on the
+  `GENERATE_INFOPLIST_FILE` path; set alongside a generated plist it is silently
+  inert and the built `.appex` simply does not have the key — which costs
+  nothing at build time and quietly stops a recipient without Walky from keeping
+  a sticker, the only way a pack ever travels further than the app does.
+
+To see it: build and run, then open Messages, open the sticker browser from the
+compose bar, and the pack is a tab in it under the Walky mark.
+
 ## Running the package
 
 Set `DEVELOPER_DIR` — `xcode-select` points at CommandLineTools on this machine,

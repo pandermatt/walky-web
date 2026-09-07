@@ -1,0 +1,38 @@
+{
+  "info": {
+    "version": 1,
+    "author": "xcode"
+  },
+  "properties": {
+    "grid-size": "regular"
+  },
+  "stickers": [
+    {
+      "filename": "crowd.sticker"
+    },
+    {
+      "filename": "counterflow.sticker"
+    },
+    {
+      "filename": "goal.sticker"
+    },
+    {
+      "filename": "bottleneck.sticker"
+    },
+    {
+      "filename": "detour.sticker"
+    },
+    {
+      "filename": "route.sticker"
+    },
+    {
+      "filename": "paint-square.sticker"
+    },
+    {
+      "filename": "paint-freeform.sticker"
+    },
+    {
+      "filename": "select.sticker"
+    }
+  ]
+}
