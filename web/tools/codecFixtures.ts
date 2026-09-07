@@ -22,6 +22,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { encodeScenario } from '../src/state/codec.ts';
+import { encodeLink } from '../src/state/shareLink.ts';
 import { FIXTURES } from './codecScenarios.ts';
 
 const OUT = resolve(import.meta.dirname, '../../ios/Fixtures/codec');
@@ -45,5 +46,21 @@ for (const [name, scenario] of Object.entries(FIXTURES)) {
   };
   console.log(`${name.padEnd(22)} ${String(bytes.length).padStart(5)} bytes`);
 }
+// A deflated link, written by the browser's own deflate-raw, so the Swift side
+// can prove that Compression framework's COMPRESSION_ZLIB really is the same
+// format rather than taking Apple's documentation for it. The big scenario, so
+// that deflate actually wins and the FLAG_DEFLATED path is the one taken.
+const bulky = {
+  ...FIXTURES.labelsAndGenerators,
+  agents: Array.from({ length: 400 }, (_, i) => ({
+    x: i * 3, y: (i % 20) * 3, originX: i * 3, originY: (i % 20) * 3,
+    goal: 1, arrived: false, color: [255, 200, 0] as [number, number, number],
+  })),
+};
+const link = await encodeLink(bulky);
+if (!link.startsWith('#m=')) throw new Error('link lost its prefix');
+writeFileSync(resolve(OUT, 'deflated.link'), link);
+console.log(`deflated.link          ${String(link.length).padStart(5)} chars`);
+
 writeFileSync(resolve(OUT, 'index.json'), JSON.stringify(index, null, 2) + '\n');
 console.log(`\nwrote ${Object.keys(FIXTURES).length} fixtures to ${OUT}`);

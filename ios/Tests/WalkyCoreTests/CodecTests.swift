@@ -33,11 +33,13 @@ struct CodecTests {
     let lastLabelText: String?
   }
 
-  static let index: [String: Expected] = {
-    let url = dir.appendingPathComponent("index.json")
-    let data = try! Data(contentsOf: url)
-    return try! JSONDecoder().decode([String: Expected].self, from: data)
-  }()
+  /// Thrown rather than force-unwrapped: a `try!` here runs during static
+  /// initialisation, so a fixture that does not match takes the whole test
+  /// process down with a fatalError instead of failing the one test that cares.
+  static func index() throws -> [String: Expected] {
+    let data = try Data(contentsOf: dir.appendingPathComponent("index.json"))
+    return try JSONDecoder().decode([String: Expected].self, from: data)
+  }
 
   static func bytes(_ name: String) throws -> [UInt8] {
     [UInt8](try Data(contentsOf: dir.appendingPathComponent("\(name).wkcd")))
@@ -47,7 +49,7 @@ struct CodecTests {
         arguments: ["empty", "settings", "walls", "agents", "labelsAndGenerators"])
   func roundTrip(_ name: String) throws {
     let original = try Self.bytes(name)
-    let expected = try #require(Self.index[name])
+    let expected = try #require(try Self.index()[name])
     #expect(original.count == expected.bytes)
 
     let core = try Codec.decode(original)
