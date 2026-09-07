@@ -31,6 +31,17 @@ final class AppModel {
   let toolbar = ToolbarState()
   var notice: String?
 
+  /// A sheet is over the map.
+  ///
+  /// Simulated time keeps running -- a settings sheet is not a pause, and the
+  /// crowd should be where it would have been when you close it -- but there
+  /// is no reason to *draw* a map nobody can see. The Canvas is the expensive
+  /// half of a frame, and on a full crowd it was repainting sixty times a
+  /// second behind an opaque sheet.
+  var isCovered = false {
+    didSet { if !isCovered { renderPending = true } }
+  }
+
   private var link: CADisplayLink?
   private var renderPending = true
 
@@ -88,7 +99,7 @@ final class AppModel {
     if world.advance(link.timestamp * 1000) { renderPending = true }
     if world.running { renderPending = true }
     tickCount += world.simTicks - before
-    if renderPending {
+    if renderPending && !isCovered {
       renderPending = false
       frameCount += 1
       redraw.version &+= 1

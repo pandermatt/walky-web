@@ -45,6 +45,7 @@ struct RootView: View {
     .sheet(isPresented: $showingSettings) {
       SettingsSheetView(settings: model.world.settings) { model.world.requestRender() }
     }
+    .onChange(of: showingSettings) { _, open in model.isCovered = open }
     .onAppear {
       if router == nil { router = PointerRouter(host: model.world) }
       model.start()
