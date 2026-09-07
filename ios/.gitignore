@@ -4,5 +4,6 @@ xcuserdata/
 *.xcuserdatad
 .swiftpm/
 App/Info.plist
+Stickers/Info.plist
 *.xcodeproj/
 build/

@@ -779,6 +779,48 @@ squircle and a launcher applies its own shape, so rounding them here would round
 an already-rounded corner and leave the ground showing outside it. The maskable
 art stays well inside the inner 80%, so a circular crop cannot clip the rings.
 
+### The same primitives again, as an iMessage sticker pack
+
+`tools/stickers.ts` writes `../ios/Stickers/Stickers.xcstickers`, the pack the
+iOS app embeds. Thirteen stickers, and not one of them is artwork: a pedestrian
+is a circle in a goal colour inside a white ring, a wall is a block over the
+`shadowOf` shadow palette.ts still carries from 2016, a route is a bent line in
+the orange of the `goal-paths` layer. Same argument as the icons — change the
+palette rule and the pack changes with it.
+
+```bash
+npx vite-node tools/stickers.ts
+```
+
+**The ground is transparent, and the ring is re-tuned for it.** The favicon gets
+away with an opaque tile; a sticker cannot, because it is dropped onto somebody
+else's bubble or somebody else's photo, and a tile there reads as a screenshot
+of the app rather than as a sticker of it. So the ground goes away and comes back
+as an edge: every mark is drawn over a silhouette of itself in `#1E1E1E`, grown
+by 2% of the tile. That is what keeps a white ring on a white bubble and a dark
+dot on a dark one, and it does a second job for free — a crowd lays its own
+ground down dot by dot, so the one in front cuts a dark edge into the ring of the
+one behind, which is what they look like on the map anyway.
+
+It is the one place the pack departs from what the app draws, and it is the same
+kind of departure as `STROKE_BOOST` on the share card below: a decision about
+being looked at somewhere else, at a size nobody chose.
+
+Eight of the thirteen are drawn — the crowd, a crush, counterflow, a crowd
+arriving at a goal, a bottleneck, an L-shaped detour, a border, a route. The
+other five are 2016 toolbar icons dropped in whole: `addWall`, `addWallSquare`,
+`select`, `erase` and `undo`, which are the ones that are *about* something
+rather than being a control.
+
+Those five needed the one thing the drawn marks did not. Most of the original
+set is black line art made for Swing's light toolbar — it is why the strip in
+this app is light and not dark, and on a message bubble it would have the same
+problem with no strip to fix it. `clear.png` is the one icon in the set that
+already solved it, by carrying a white outline in the file, so the others are
+given the same one here, dilated off their own alpha with `feMorphology`. Black
+art on a light bubble, a white edge on a dark one, and nothing invented that the
+set had not already done to itself.
+
 ### Installed on a phone, the toolbar moves to the thumb
 
 Installed there is no browser chrome, which makes the top-left corner the far
