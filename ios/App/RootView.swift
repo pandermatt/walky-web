@@ -13,6 +13,14 @@ struct RootView: View {
   @State private var showingSettings = false
   @Environment(\.scenePhase) private var scenePhase
 
+  private var colorScheme: ColorScheme? {
+    switch model.world.settings.appearance {
+    case .system: nil
+    case .light: .light
+    case .dark: .dark
+    }
+  }
+
   var body: some View {
     ZStack {
       MapCanvas(world: model.world, redraw: model.redraw,
@@ -32,6 +40,7 @@ struct RootView: View {
         }
         Spacer()
         ToolbarView(state: model.toolbar,
+                    tint: model.world.settings.accent,
                     onTool: { model.world.setTool(model.toolbar.selected == $0 ? nil : $0) },
                     onAction: { action in
                       if case .settings = action { showingSettings = true }
@@ -40,10 +49,20 @@ struct RootView: View {
       }
       .animation(.snappy(duration: 0.2), value: model.notice)
     }
-    .background(MapRenderer.color(BACKGROUND))
+    .background(MapRenderer.color(model.world.settings.ground.background))
+    // The root follows the **ground**, not the appearance setting, and the
+    // status bar is why. It sits over the map, so on a pale ground it has to
+    // be dark content -- Paper with a dark scheme put a white clock on an
+    // almost-white background. Appearance governs the chrome instead, and is
+    // applied to the sheet below.
+    .preferredColorScheme(model.world.settings.ground.isLight ? .light : .dark)
     .statusBarHidden(false)
     .sheet(isPresented: $showingSettings) {
       SettingsSheetView(settings: model.world.settings) { model.world.requestRender() }
+        // The chrome's own lighting. Declared rather than inherited: on a Mac
+        // the window chrome follows this, which is why an undeclared style gave
+        // Walky a light title bar over a dark map.
+        .preferredColorScheme(colorScheme)
     }
     .onChange(of: showingSettings) { _, open in model.isCovered = open }
     .onAppear {

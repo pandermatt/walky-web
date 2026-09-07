@@ -99,6 +99,62 @@ public final class Settings {
   /// Whether a pedestrian plops when it reaches its goal.
   public var sound = true
 
+  /// How the chrome is lit. Dark by default: the app has one ground colour and
+  /// always has, so inheriting the system's appearance was never right.
+  ///
+  /// Persisted, unlike every setting above it. A slider is part of the map you
+  /// are building and belongs to the session; a theme is a statement about how
+  /// you like the app, and forgetting it on every launch would make the picker
+  /// a toy. The rest stay in memory until scenarios are ported and there is
+  /// somewhere for a whole map to live.
+  public var appearance: Appearance = .dark {
+    didSet { defaults?.set(appearance.rawValue, forKey: Keys.appearance) }
+  }
+
+  /// What the crowd walks on, by id so the choice survives being stored.
+  public var groundId: String = Grounds.classic.id {
+    didSet { defaults?.set(groundId, forKey: Keys.ground) }
+  }
+  public var ground: Ground { Grounds.named(groundId) }
+
+  /// The colour behind the armed tool. Persisted alongside the other two.
+  public var accentId: String = Accents.orange.id {
+    didSet { defaults?.set(accentId, forKey: Keys.accent) }
+  }
+  public var accent: Accent { Accents.named(accentId) }
+
+  private enum Keys {
+    static let appearance = "walky.appearance"
+    static let ground = "walky.ground"
+    static let accent = "walky.accent"
+  }
+
+  /// Where the two persisted choices live. A property rather than a custom
+  /// `init` because `@Observable` generates stored properties of its own, and
+  /// an initialiser that has to satisfy them buys nothing here.
+  ///
+  /// Settable so a test can point at its own store instead of the simulator's.
+  public var defaults: UserDefaults? = .standard
+
+  /// Reads back what was stored. Called once at launch; deliberately explicit
+  /// rather than hidden in an initialiser, so a test can construct a Settings
+  /// without touching UserDefaults at all.
+  public func restore() {
+    if let raw = defaults?.string(forKey: Keys.appearance),
+       let stored = Appearance(rawValue: raw) {
+      appearance = stored
+    }
+    if let raw = defaults?.string(forKey: Keys.ground) {
+      // Through `named` rather than assigned raw: a ground since renamed or
+      // removed falls back to Classic, instead of leaving the app painting on
+      // a ground that no longer exists.
+      groundId = Grounds.named(raw).id
+    }
+    if let raw = defaults?.string(forKey: Keys.accent) {
+      accentId = Accents.named(raw).id
+    }
+  }
+
   public init() {}
 
   /// Holds every numeric setting to its own range, as a slider would have.

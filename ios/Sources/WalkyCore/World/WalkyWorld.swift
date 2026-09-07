@@ -55,6 +55,7 @@ public final class WalkyWorld: PointerHost {
   public var tool: (any Tool)? { activeTool.flatMap { tools[$0] } }
 
   public init() {
+    settings.restore()
     tools[.wall] = WallTool()
     tools[.rectangle] = RectangleTool()
     tools[.border] = BorderTool()

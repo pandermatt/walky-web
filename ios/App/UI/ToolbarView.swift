@@ -16,6 +16,7 @@ import WalkyCore
 /// sitting on top of it as a separate disc.
 struct ToolbarView: View {
   let state: ToolbarState
+  let tint: Accent
   let onTool: (ToolId) -> Void
   let onAction: (ToolbarAction) -> Void
 
@@ -76,7 +77,7 @@ struct ToolbarView: View {
       menuCell
     }
     .padding(6)
-    .glassBar()
+    .glassBar(tint)
     // Floating clear of the edges, as a system tab bar does, rather than
     // spanning the full width like a docked toolbar.
     .padding(.horizontal, 16)
@@ -100,7 +101,7 @@ struct ToolbarView: View {
   private func toolCell(id: ToolId, icon iconName: String, title: String) -> some View {
     let armed = state.selected == id
     return Button { onTool(id) } label: {
-      icon(iconName).armed(armed, in: glass)
+      icon(iconName).armed(armed, tint.color, in: glass)
     }
     .buttonStyle(.plain)
     .accessibilityLabel(title)
@@ -147,7 +148,7 @@ struct ToolbarView: View {
 
 private extension View {
   /// The bar's own material.
-  @ViewBuilder func glassBar() -> some View {
+  @ViewBuilder func glassBar(_ tint: Accent) -> some View {
     if #available(iOS 26.0, *) {
       // Untinted, so it adapts to whatever the map puts behind it -- dark over
       // the #1E1E1E ground, and picking up the colour of a wall that passes
@@ -158,6 +159,7 @@ private extension View {
       // touch, and on the container that means the bar itself reacts to a drag
       // that was meant for a button inside it. It belongs on the armed pill,
       // which is a control, not on the surface the controls sit on.
+      // Untinted on purpose -- see Accent. The colour goes on the armed cell.
       glassEffect(.regular, in: .capsule)
         // A near-miss between two cells should do nothing, rather than reach
         // the map and start drawing on it.
@@ -175,7 +177,7 @@ private extension View {
   /// Under Liquid Glass the circle is a tinted glass shape *inside the bar's
   /// container*, so it merges with the bar rather than floating over it -- the
   /// thing the container exists for.
-  @ViewBuilder func armed(_ on: Bool, in namespace: Namespace.ID) -> some View {
+  @ViewBuilder func armed(_ on: Bool, _ tint: RGB, in namespace: Namespace.ID) -> some View {
     if #available(iOS 26.0, *) {
       // Only the armed tool gets a shape. Giving every cell a `.tint(.clear)`
       // glass circle still draws a circle -- seven of them, which reads as
@@ -185,22 +187,13 @@ private extension View {
       // armed claims it, so moving the selection is one shape changing place
       // rather than two shapes crossfading, and Liquid Glass flows it across.
       if on {
-        glassEffect(.regular.tint(WalkyOrange.color).interactive(), in: .circle)
+        glassEffect(.regular.tint(MapRenderer.color(tint)).interactive(), in: .circle)
           .glassEffectID("armed", in: namespace)
       } else {
         self
       }
     } else {
-      background { if on { Circle().fill(WalkyOrange.color.opacity(0.85)) } }
+      background { if on { Circle().fill(MapRenderer.color(tint).opacity(0.85)) } }
     }
   }
-}
-
-/// `ORANGE` is the path-to-goal colour, and the app's accent by derivation --
-/// see the palette note in `Palette.swift`.
-enum WalkyOrange {
-  /// Written out rather than routed through `MapRenderer.color`, which is
-  /// main-actor isolated for the renderer's sake and cannot be read from a
-  /// `ViewBuilder` extension.
-  static let color = Color(red: 255 / 255, green: 200 / 255, blue: 0 / 255)
 }

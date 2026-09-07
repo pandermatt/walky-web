@@ -146,7 +146,12 @@ enum MapRenderer {
     world.viewport = vp
     let scale = vp.scale
 
-    ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color(BACKGROUND)))
+    // The ground and every outline drawn over it come from the chosen theme.
+    // On the classic ground these are exactly BACKGROUND and WHITE, so nothing
+    // about the original's look depends on the theme existing.
+    let ground = world.settings.ground
+    let ink = ground.ink
+    ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color(ground.background)))
 
     // Kept before the world transform, for anything drawn in screen units.
     var screen = ctx
@@ -188,11 +193,11 @@ enum MapRenderer {
                  style: StrokeStyle(lineWidth: 2 / scale, lineCap: .round, lineJoin: .round))
     }
 
-    drawAgents(world, into: &ctx, hairline: hairline)
-    drawPreview(world, into: &ctx, hairline: hairline, scale: scale)
+    drawAgents(world, into: &ctx, hairline: hairline, ink: ink)
+    drawPreview(world, into: &ctx, hairline: hairline, scale: scale, ink: ink)
 
     if world.settings.showDebug {
-      drawDebug(debugLines(world, stats), into: &screen, size: size)
+      drawDebug(debugLines(world, stats), into: &screen, size: size, ink: ink)
     }
   }
 
@@ -200,7 +205,7 @@ enum MapRenderer {
   /// agent. A freshly painted rainbow crowd is the worst case; a crowd aimed at
   /// a goal is two fills.
   private static func drawAgents(_ world: WalkyWorld, into ctx: inout GraphicsContext,
-                                 hairline: Double) {
+                                 hairline: Double, ink: RGB) {
     let a = world.agents
     guard a.count > 0 else { return }
     let r = world.settings.pedestrianRadius
@@ -217,7 +222,7 @@ enum MapRenderer {
       ctx.fill(path, with: .color(color(unpackRgb(packed))))
       all.addPath(path)
     }
-    ctx.stroke(all, with: .color(color(WHITE)), lineWidth: hairline)
+    ctx.stroke(all, with: .color(color(ink)), lineWidth: hairline)
 
     if world.settings.showPersonalSpace {
       var rings = Path()
@@ -227,14 +232,14 @@ enum MapRenderer {
         let x = Double(a.x[i]), y = Double(a.y[i]), rr = r + s
         rings.addEllipse(in: CGRect(x: x - rr, y: y - rr, width: rr * 2, height: rr * 2))
       }
-      ctx.stroke(rings, with: .color(color(WHITE, 0.25)), lineWidth: hairline)
+      ctx.stroke(rings, with: .color(color(ink, 0.25)), lineWidth: hairline)
     }
   }
 
   /// What the armed tool is about to do. Ports the tool-preview half of
   /// `overlay.ts`, drawn over the map rather than under it.
   private static func drawPreview(_ world: WalkyWorld, into ctx: inout GraphicsContext,
-                                  hairline: Double, scale: Double) {
+                                  hairline: Double, scale: Double, ink: RGB) {
     guard let preview = world.tool?.preview() else { return }
     let dash = StrokeStyle(lineWidth: hairline, dash: [9 / scale, 9 / scale])
 
@@ -244,26 +249,26 @@ enum MapRenderer {
       p.move(to: CGPoint(x: pts[0].x, y: pts[0].y))
       for q in pts.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
       if preview.pendingWallTracing { p.closeSubpath() }
-      ctx.stroke(p, with: .color(color(WHITE)), style: dash)
+      ctx.stroke(p, with: .color(color(ink)), style: dash)
       if !preview.pendingWallTracing {
         var dots = Path()
         for q in pts {
           dots.addEllipse(in: CGRect(x: q.x - 5 / scale, y: q.y - 5 / scale,
                                      width: 10 / scale, height: 10 / scale))
         }
-        ctx.fill(dots, with: .color(color(WHITE)))
+        ctx.fill(dots, with: .color(color(ink)))
       }
     }
 
     if let rect = preview.pendingRect {
       let r = CGRect(x: min(rect.0.x, rect.1.x), y: min(rect.0.y, rect.1.y),
                      width: abs(rect.1.x - rect.0.x), height: abs(rect.1.y - rect.0.y))
-      ctx.stroke(Path(r), with: .color(color(WHITE)), style: dash)
+      ctx.stroke(Path(r), with: .color(color(ink)), style: dash)
     }
 
     if !preview.pendingPolygons.isEmpty {
       // Red says the shape would be unusable -- a frame with no room inside.
-      let tint = preview.pendingPolygonsInvalid ? RED : WHITE
+      let tint = preview.pendingPolygonsInvalid ? RED : ink
       let width = preview.pendingPolygonsInvalid ? 2 / scale : hairline
       var p = Path()
       for poly in preview.pendingPolygons where poly.count >= 2 {
@@ -281,7 +286,7 @@ enum MapRenderer {
       for q in preview.pendingPedestrians {
         p.addEllipse(in: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2))
       }
-      ctx.fill(p, with: .color(color(WHITE, 0.55)))
+      ctx.fill(p, with: .color(color(ink, 0.55)))
     }
 
     // Lines from every pedestrian to the pointer, so you can see what the crowd
@@ -303,9 +308,9 @@ enum MapRenderer {
       let box = CGRect(x: ghost.at.x - s, y: ghost.at.y - s, width: s * 2, height: s * 2)
       switch ghost.kind {
       case .square, .eraser:
-        ctx.stroke(Path(box), with: .color(color(WHITE)), lineWidth: hairline)
+        ctx.stroke(Path(box), with: .color(color(ink)), lineWidth: hairline)
       case .frame:
-        ctx.stroke(Path(box), with: .color(color(WHITE)), lineWidth: 3 / scale)
+        ctx.stroke(Path(box), with: .color(color(ink)), lineWidth: 3 / scale)
       case .target, .squiggle:
         ctx.stroke(Path(ellipseIn: box), with: .color(color(ORANGE)), lineWidth: 2 / scale)
       }
@@ -348,7 +353,8 @@ extension MapRenderer {
   /// Drawn in *screen* space, from a copy of the context taken before the world
   /// transform was applied -- `GraphicsContext` is a struct, so the copy keeps
   /// the untransformed CTM while still drawing to the same canvas.
-  static func drawDebug(_ lines: [String], into ctx: inout GraphicsContext, size: CGSize) {
+  static func drawDebug(_ lines: [String], into ctx: inout GraphicsContext,
+                        size: CGSize, ink: RGB) {
     let lineHeight: CGFloat = 15
     let margin: CGFloat = 12
     // Above the toolbar, which the readout must not hide behind.
@@ -357,7 +363,7 @@ extension MapRenderer {
     for line in lines {
       var text = ctx.resolve(Text(line)
         .font(.system(size: 11, weight: .regular, design: .monospaced)))
-      text.shading = .color(color(WHITE, 0.75))
+      text.shading = .color(color(ink, 0.75))
       ctx.draw(text, at: CGPoint(x: margin, y: y), anchor: .leading)
       y += lineHeight
     }
