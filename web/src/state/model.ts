@@ -101,8 +101,15 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   showVisibleLines: false,
-  showLineToTarget: true,
-  showConvexHull: true,
+  // Both of these used to start on. They are diagnostics, and on a map you have
+  // not drawn yet they are the only thing on the screen: orange thread hunting
+  // for a goal that does not exist, over dashed outlines of nothing. Changed
+  // here as well as in the iOS port rather than there alone -- clampSettings
+  // below falls a missing key back to this object and codec.ts packs the
+  // toggles positionally, so a shared link has to mean the same picture in both
+  // apps.
+  showLineToTarget: false,
+  showConvexHull: false,
   showConvexParts: false,
   showPersonalSpace: false,
   showDebug: false,

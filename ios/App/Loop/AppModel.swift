@@ -141,7 +141,8 @@ final class AppModel {
     case .undo: world.undo()
     case .clear: world.clearAll()
     case .resetZoom: world.resetZoom()
-    case .settings: break   // handled by the view, which owns the sheet
+    // Both raise a sheet, and the view owns the sheet.
+    case .settings, .welcome: break
     }
     toolbar.canUndo = world.canUndo
     needsFrame()
@@ -164,4 +165,4 @@ private final class DisplayLinkProxy: NSObject {
   @objc func fire(_ link: CADisplayLink) { onFire(link) }
 }
 
-enum ToolbarAction { case start, resetPedestrians, undo, clear, resetZoom, settings }
+enum ToolbarAction { case start, resetPedestrians, undo, clear, resetZoom, settings, welcome }

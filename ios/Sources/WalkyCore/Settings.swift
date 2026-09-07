@@ -68,9 +68,25 @@ public enum NumericSetting: String, CaseIterable, Sendable {
 @Observable
 public final class Settings {
   public var showVisibleLines = false
-  public var showLineToTarget = true
-  /// The dashed outline around each connected group of shapes.
-  public var showConvexHull = true
+  /// Off, and `DEFAULT_SETTINGS` at `state/model.ts:104` was changed to match.
+  ///
+  /// Both this and the hull below used to start on. They are diagnostics, and
+  /// on a map you have not drawn yet they are the *only* thing on the screen:
+  /// orange thread hunting for a goal that does not exist, over dashed outlines
+  /// of nothing. The web could carry that because its icon strip has hover
+  /// tooltips to explain itself; `ui/tooltip.ts` says outright that those never
+  /// appear on a touch device, which is how the phone ended up as the one
+  /// surface with diagnostics on and no way to find out what they were.
+  ///
+  /// Changed in both ports rather than here alone. `clampSettings`
+  /// (`state/scenario.ts:233`) falls a missing key back to `DEFAULT_SETTINGS`
+  /// and `codec.ts:281` packs the toggles positionally, so had only this port
+  /// moved, the same shared link would have decoded to a different picture in
+  /// each app once the codec is ported. Agreeing removes that before it exists.
+  public var showLineToTarget = false
+  /// The dashed outline around each connected group of shapes. Off, and matched
+  /// in the web app, for the reason above.
+  public var showConvexHull = false
   /// The convex *decomposition*: a diagnostic for how a shape was split, dense
   /// enough to bury the hull it would otherwise be confused with. Off by default.
   public var showConvexParts = false
@@ -153,10 +169,23 @@ public final class Settings {
   }
   public var accent: Accent { Accents.named(accentId) }
 
+  /// Whether the welcome sheet has already had its one uninvited showing.
+  ///
+  /// Not a preference -- nothing in the settings sheet shows it -- but it is a
+  /// fact about this install that has to outlive a launch, and this is the one
+  /// type that owns a store. `@AppStorage` would have worked and would have put
+  /// a second persistence mechanism, and a raw key outside `Keys`, in the view
+  /// layer; it would also be unreachable from `swift test`, which cannot load
+  /// the app target at all.
+  public var hasSeenWelcome = false {
+    didSet { defaults?.set(hasSeenWelcome, forKey: Keys.welcome) }
+  }
+
   private enum Keys {
     static let appearance = "walky.appearance"
     static let ground = "walky.ground"
     static let accent = "walky.accent"
+    static let welcome = "walky.welcomeSeen"
   }
 
   /// Where the two persisted choices live. A property rather than a custom
@@ -184,6 +213,11 @@ public final class Settings {
     if let raw = defaults?.string(forKey: Keys.accent) {
       accentId = Accents.named(raw).id
     }
+    // `bool(forKey:)` is false for a key that was never written, which is
+    // exactly what a fresh install should mean. Guarded on the store rather
+    // than defaulted, so a Settings without one keeps its own false instead of
+    // writing that false straight back out through `didSet`.
+    if let defaults { hasSeenWelcome = defaults.bool(forKey: Keys.welcome) }
   }
 
   public init() {}

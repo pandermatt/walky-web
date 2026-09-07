@@ -73,6 +73,19 @@ struct ThemeTests {
     #expect(s.followsSystem)
   }
 
+  /// The rule that decides a filled button's label colour. Teal at 0.616 is the
+  /// closest to the line, which is why the threshold is pinned rather than left
+  /// to whoever next edits the palette.
+  @Test("Each accent knows whether a label on it must be dark")
+  func accentLabelContrast() {
+    #expect(Accents.orange.isLight)
+    #expect(Accents.lime.isLight)
+    #expect(Accents.teal.isLight)
+    #expect(Accents.sky.isLight == false)
+    #expect(Accents.rust.isLight == false)
+    #expect(Accents.magenta.isLight == false)
+  }
+
   @Test("Automatic survives a round trip through the store")
   func restoresAutomatic() {
     let suite = "walky.tests.\(UUID().uuidString)"

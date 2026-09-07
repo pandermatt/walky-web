@@ -101,6 +101,17 @@ public struct Accent: Identifiable, Sendable, Equatable {
   public let id: String
   public let label: String
   public let color: RGB
+  /// Whether the colour is pale enough that a label on top of it has to be
+  /// dark. The same question `Ground.isLight` answers, asked of the tint under
+  /// a filled button.
+  ///
+  /// Rec. 601 luma rather than a guess: Amber, Lime and Teal come out light and
+  /// take a black label, Sky, Rust and Magenta take white. White on Amber
+  /// (255, 200, 0) is a smear, which is what this exists to prevent.
+  public var isLight: Bool {
+    (0.299 * Double(color.0) + 0.587 * Double(color.1) + 0.114 * Double(color.2)) / 255 > 0.6
+  }
+
   public static func == (a: Accent, b: Accent) -> Bool { a.id == b.id }
 }
 

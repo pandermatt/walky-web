@@ -43,7 +43,7 @@ function richScenario(): ScenarioCore {
   const settings: Settings = {
     ...DEFAULT_SETTINGS,
     showVisibleLines: true,
-    showConvexHull: false,
+    showConvexHull: true,
     showDebug: true,
     sound: false,
     speed: 2.15,

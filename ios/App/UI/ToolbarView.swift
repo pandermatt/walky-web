@@ -120,6 +120,11 @@ struct ToolbarView: View {
         Label("Reset zoom", systemImage: "scope")
       }
       Divider()
+      // Above Settings, in the group that is about the app rather than about
+      // the map, and well clear of the destructive item at the bottom.
+      Button { onAction(.welcome) } label: {
+        Label("Getting started", systemImage: "lightbulb")
+      }
       Button { onAction(.settings) } label: { Label("Settings", systemImage: "gearshape") }
       // Destructive last and marked as such, so the one irreversible item in
       // the menu does not sit next to Undo looking like its neighbour.
