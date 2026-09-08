@@ -13,7 +13,7 @@ private final class Recorder {
   var deactivated = 0
   var selectionCleared = 0
   var goalHits = true
-  /// Doors placed, and whether the block had room for one.
+  /// Blocks offered to `markGenerator`, and whether one was there to mark.
   var doorsAt: [Point] = []
   var doorFits = true
   var perPixel: Double = 1
@@ -43,7 +43,7 @@ private final class Recorder {
     pedestrianBlock: { at, _ in [at] },
     addPedestrians: { [unowned self] at in self.pedestriansAt.append(at) },
     setGoalAt: { [unowned self] at in self.goalsAt.append(at); return self.goalHits },
-    addGenerator: { [unowned self] at in self.doorsAt.append(at); return self.doorFits },
+    markGenerator: { [unowned self] at in self.doorsAt.append(at); return self.doorFits },
     selectPedestriansIn: { [unowned self] lasso in
       self.lassos.append(lasso); self.selected = self.lassoCatches; return self.lassoCatches },
     selectionCount: { [unowned self] in self.selected },
@@ -528,8 +528,8 @@ struct MeasureToolTests {
 @Suite("GeneratorTool")
 @MainActor
 struct GeneratorToolTests {
-  @Test("one tap places a door and puts the tool away")
-  func placesAndDisarms() {
+  @Test("a tap marks the block under it and puts the tool away")
+  func marksAndDisarms() {
     let host = Recorder()
     let tool = GeneratorTool()
 
@@ -537,15 +537,16 @@ struct GeneratorToolTests {
     tool.onPointerUp(up(Point(40, 60)), host.ctx)
 
     #expect(host.doorsAt == [Point(40, 60)])
-    // The same bargain MeasureTool strikes: a menu tool has no cell to show it
-    // is armed, so it may not stay armed under a finger that has moved on.
+    // The same bargain the goal tool strikes: the gesture is finished, so the
+    // next tap on the map cannot mark something by accident.
     #expect(host.deactivated == 1)
+    #expect(host.notices.isEmpty)
   }
 
-  @Test("a refused tap leaves the tool in hand")
-  func refusedStaysArmed() {
-    // No room for a block there, so nothing was placed -- and a tool that
-    // stepped off now would cost a trip to the menu to try one pixel over.
+  @Test("a tap on bare ground says so and leaves the tool in hand")
+  func missStaysArmed() {
+    // Nothing there to mark. A miss is a fat finger, not a change of mind, so
+    // it costs another tap rather than a trip back to the menu.
     let host = Recorder()
     host.doorFits = false
     let tool = GeneratorTool()
@@ -553,7 +554,34 @@ struct GeneratorToolTests {
     tool.onPointerDown(down(Point(40, 60)), host.ctx)
     tool.onPointerUp(up(Point(40, 60)), host.ctx)
 
-    #expect(host.doorsAt == [Point(40, 60)])   // it was offered, and declined
+    #expect(host.doorsAt == [Point(40, 60)])   // it was offered, and there was nothing
     #expect(host.deactivated == 0)
+    #expect(host.notices.count == 1)
+  }
+
+  @Test("nothing is marked until the finger lifts")
+  func commitsOnTheLift() {
+    // It used to mark on touch-down, which is the one tool behaviour nobody can
+    // take back mid-gesture.
+    let host = Recorder()
+    let tool = GeneratorTool()
+
+    tool.onPointerDown(down(Point(10, 10)), host.ctx)
+    tool.onPointerMove(move(Point(12, 12)), host.ctx)
+    #expect(host.doorsAt.isEmpty)
+
+    tool.onPointerUp(up(Point(12, 12)), host.ctx)
+    #expect(host.doorsAt == [Point(12, 12)])
+  }
+
+  @Test("no ghost is left parked after the finger lifts")
+  func noHover() {
+    let host = Recorder()
+    let tool = GeneratorTool()
+
+    tool.onPointerDown(down(Point(10, 10)), host.ctx)
+    #expect(tool.preview().cursorGhost != nil)
+    tool.onPointerUp(up(Point(10, 10)), host.ctx)
+    #expect(tool.preview().cursorGhost == nil)
   }
 }

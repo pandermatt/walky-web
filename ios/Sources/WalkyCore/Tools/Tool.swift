@@ -123,8 +123,10 @@ public struct ToolContext {
   public var addPedestrians: (Point) -> Void
   /// Marks the wall under a point as a goal; false when there is no wall there.
   public var setGoalAt: (Point) -> Bool
-  /// Puts a door down. False when the block has no room to let anybody out.
-  public var addGenerator: (Point) -> Bool
+  /// Turns the block under a point into a generator, or back into a plain
+  /// block. False when there is no block there, so the tool can say so -- the
+  /// same contract `setGoalAt` has, because it is the same kind of question.
+  public var markGenerator: (Point) -> Bool
   /// Selects every pedestrian inside a lasso outline, replacing any current
   /// selection, and answers how many it caught. The count is the return value
   /// rather than a second query because "caught nobody" is the one case the
@@ -155,7 +157,7 @@ public struct ToolContext {
     pedestrianBlock: @escaping (Point, Int?) -> [Point],
     addPedestrians: @escaping (Point) -> Void,
     setGoalAt: @escaping (Point) -> Bool,
-    addGenerator: @escaping (Point) -> Bool,
+    markGenerator: @escaping (Point) -> Bool,
     selectPedestriansIn: @escaping ([Point]) -> Int,
     selectionCount: @escaping () -> Int,
     clearSelection: @escaping () -> Void,
@@ -173,7 +175,7 @@ public struct ToolContext {
     self.pedestrianBlock = pedestrianBlock
     self.addPedestrians = addPedestrians
     self.setGoalAt = setGoalAt
-    self.addGenerator = addGenerator
+    self.markGenerator = markGenerator
     self.selectPedestriansIn = selectPedestriansIn
     self.selectionCount = selectionCount
     self.clearSelection = clearSelection

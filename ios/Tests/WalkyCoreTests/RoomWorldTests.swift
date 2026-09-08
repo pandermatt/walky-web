@@ -100,15 +100,16 @@ struct RoomWorldTests {
     let exit = plan.doorways.max { $0.metres < $1.metres }!
     let entrance = plan.doorways.min { $0.metres < $1.metres }!
     world.addWallShape([exit.slab], WallOptions(color: (0, 200, 120)))
-    // The doorway *is* the door: one wall, filling the gap, that people come
-    // out of on the side its goal is on. An open gap would let the crowd walk
+    // The doorway *is* the generator: one wall, filling the gap, that people
+    // come out of on the side its goal is on. An open gap would let the crowd walk
     // straight back out of the room it just entered.
-    #expect(world.addDoor([entrance.slab]))
+    #expect(world.addGeneratorShape([entrance.slab]))
 
     // Last, so it aims the door as well as the crowd.
     world.setGoalAt(exit.at)
     await world.navReady()
-    #expect((world.doors.first?.door?.goal ?? -1) >= 0, "the door should be aimed at the exit")
+    #expect((world.generators.first?.generator?.goal ?? -1) >= 0,
+            "the generator should be aimed at the exit")
 
     world.running = true
     for _ in 0..<(60 * 30) { world.stepOnce() }

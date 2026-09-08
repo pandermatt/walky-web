@@ -237,9 +237,9 @@ final class RoomScanner {
         }
       }
       for (i, doorway) in plan.doorways.enumerated() where roles[i] == .entrance {
-        // **The doorway is the door.** One object where there used to be two: a
-        // slab filling the gap plus a block of floor beside it. A door is a
-        // wall now, so the slab itself can be the thing people come out of, and
+        // **The doorway is the generator.** One object where there used to be
+        // two: a slab filling the gap plus a block of floor beside it. A
+        // generator is a wall now, so the slab itself is what people come out of, and
         // which side they come out of is answered by where the goal is -- see
         // `WalkyWorld.doorMouth`. For a room that is indoors, which is where
         // the exit is.
@@ -248,7 +248,7 @@ final class RoomScanner {
         // first thing the crowd did on the sample room was walk back out of the
         // doorway it had just come in by, because the way round the outside to
         // the exit was shorter than the way past the table.
-        world.addDoor([doorway.slab])
+        world.addGeneratorShape([doorway.slab])
       }
       if let exit { world.setGoalAt(exit) }
 

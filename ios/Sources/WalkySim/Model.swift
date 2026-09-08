@@ -4,23 +4,25 @@ import Foundation
 /// `src/state/model.ts`; the settings, labels and generators follow later.
 public typealias RGB = (r: Int, g: Int, b: Int)
 
-/// What makes a wall a door: a schedule, a queue, and somewhere to send people.
+/// What makes a wall a generator: a schedule, a queue, and somewhere to send
+/// people.
 ///
 /// Ports `Generator` in `src/state/model.ts`, but as a payload on `Wall` rather
-/// than a type of its own beside it. A door **is** a wall in this port: it
-/// blocks the crowd like any other, and people come out of it rather than
-/// through it, which is what a building with a door in it actually does. The web
-/// app keeps generators as separate objects and is not being changed.
+/// than a type of its own beside it. A generator **is** a wall in this port:
+/// any shape on the map can be turned into one, exactly as any shape can be
+/// marked a goal, and people come out of it rather than through it -- which is
+/// what a building with a door in it actually does. The web app keeps
+/// generators as separate objects and is not being changed.
 ///
-/// Nil on an ordinary wall, so a wall either is a door or is not -- one
+/// Nil on an ordinary wall, so a wall either is a generator or is not -- one
 /// optional saying it once, rather than a flag plus three numbers that mean
 /// nothing while it is false.
 ///
 /// The arithmetic behind the schedule is already here and has been since the
 /// port: see `Arrivals.swift`, which turns a door's position and its beat into a
 /// clump size and a gap.
-public final class Door {
-  /// Pedestrians per second, as the slider stood when this one was placed.
+public final class Generator {
+  /// Pedestrians per second, as the slider stood when this one was marked.
   ///
   /// Kept per door rather than read from the settings when it fires, for the
   /// reason a label keeps its own size: a busy door and a quiet one on the same
@@ -52,8 +54,8 @@ public final class Door {
   /// As `Wall.shallowCopy`, and for the same reason: a checkpoint that stored
   /// the object would alias the live one and undo nothing. The queue and the
   /// beat are part of what undo puts back.
-  public func copy() -> Door {
-    Door(rate: rate, goal: goal, owed: owed, beat: beat, wait: wait)
+  public func copy() -> Generator {
+    Generator(rate: rate, goal: goal, owed: owed, beat: beat, wait: wait)
   }
 }
 
@@ -63,25 +65,6 @@ public final class Door {
 /// gives somebody a way out when the middle of it is occupied -- and the
 /// largest that still reads as a door rather than as a room.
 public let GENERATOR_CELLS = 3
-
-/// The square a hand-placed door occupies, in world units.
-///
-/// Derived from the pedestrian radius rather than stored, so it is the size of
-/// the people coming out of it at whatever the radius slider says -- the same
-/// bargain the brush block makes. Placement, the preview and the wall it
-/// becomes all call this, so all three agree by construction.
-///
-/// A door is a wall now, so this footprint is solid: people come out *beside*
-/// it, on the side its goal is on, rather than standing in it. What tells it
-/// from an ordinary wall is not its size but how it is drawn -- dashed and
-/// unfilled, where a wall is filled -- and, on a scanned map, that a real wall
-/// is `WALL_THICKNESS` thick where a doorway is a thin slab. Two cues, neither
-/// of them colour.
-public func generatorSquare(_ at: Point, _ radius: Double) -> [Point] {
-  let half = Double(GENERATOR_CELLS) * radius
-  return rectanglePolygon(Point(at.x - half, at.y - half),
-                          Point(at.x + half, at.y + half))
-}
 
 /// A wall flattened into something that can cross a thread.
 ///
@@ -111,7 +94,8 @@ public struct WallSnapshot: Sendable {
 
   /// `selected` is not carried: it is a pointer-tool state that no part of the
   /// graph reads, and shipping it would invite somebody to trust it. Nor is the
-  /// door: it is a schedule and a queue, and the graph asks only about shape.
+  /// generator: it is a schedule and a queue, and the graph asks only about
+  /// shape.
   public var wall: Wall {
     Wall(id: id, polygons: polygons, hull: hull, color: color,
          isGoal: isGoal, isBorder: isBorder, selected: false)
@@ -127,12 +111,12 @@ public final class Wall {
   public var isGoal: Bool
   public var isBorder: Bool
   public var selected: Bool
-  /// Nil on an ordinary wall. Non-nil makes this a door: still a wall, still
-  /// blocking, but with people coming out of it. See `Door`.
-  public var door: Door?
+  /// Nil on an ordinary wall. Non-nil makes this a generator: still a wall,
+  /// still blocking, but with people coming out of it. See `Generator`.
+  public var generator: Generator?
 
   public init(id: Int, polygons: [[Point]], color: RGB = (150, 150, 150),
-              isGoal: Bool = false, isBorder: Bool = false, door: Door? = nil) {
+              isGoal: Bool = false, isBorder: Bool = false, generator: Generator? = nil) {
     self.id = id
     self.polygons = polygons
     self.hull = monotoneChainHull(polygons.flatMap { $0 })
@@ -140,7 +124,7 @@ public final class Wall {
     self.isGoal = isGoal
     self.isBorder = isBorder
     self.selected = false
-    self.door = door
+    self.generator = generator
   }
 
   /// Takes the hull rather than computing it. Only for `shallowCopy`, where the
@@ -148,7 +132,7 @@ public final class Wall {
   /// wall per checkpoint, forty checkpoints deep, for a value that cannot have
   /// changed.
   public init(id: Int, polygons: [[Point]], hull: [Point], color: RGB,
-              isGoal: Bool, isBorder: Bool, selected: Bool, door: Door? = nil) {
+              isGoal: Bool, isBorder: Bool, selected: Bool, generator: Generator? = nil) {
     self.id = id
     self.polygons = polygons
     self.hull = hull
@@ -156,7 +140,7 @@ public final class Wall {
     self.isGoal = isGoal
     self.isBorder = isBorder
     self.selected = selected
-    self.door = door
+    self.generator = generator
   }
 
   /// The one-level clone an undo snapshot takes, matching `{...w}` at
@@ -172,11 +156,11 @@ public final class Wall {
   /// is never mutated in place. Sharing is free and, unlike in JS, safe --
   /// `[[Point]]` is copy-on-write, so a write anybody did make would fork the
   /// buffer rather than reach through.
-  /// The door is copied rather than shared, because its queue and its beat are
-  /// state a map edit writes -- and so state undo has to put back.
+  /// The generator is copied rather than shared, because its queue and its
+  /// beat are state a map edit writes -- and so state undo has to put back.
   public func shallowCopy() -> Wall {
-    Wall(id: id, polygons: polygons, hull: hull, color: color,
-         isGoal: isGoal, isBorder: isBorder, selected: selected, door: door?.copy())
+    Wall(id: id, polygons: polygons, hull: hull, color: color, isGoal: isGoal,
+         isBorder: isBorder, selected: selected, generator: generator?.copy())
   }
 }
 

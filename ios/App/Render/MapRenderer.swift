@@ -41,7 +41,7 @@ final class RenderCache {
         for q in polygon.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
         p.closeSubpath()
       }
-      return (p, wall.color, wall.isGoal, wall.door != nil)
+      return (p, wall.color, wall.isGoal, wall.generator != nil)
     }
 
     // One dashed outline per connected group of touching shapes, not per wall.
@@ -173,10 +173,10 @@ enum MapRenderer {
     // A line width in points becomes this in world units.
     let hairline = 1 / scale
 
-    // Doors are walls, and are drawn as walls with the fill taken out: a dashed
-    // outline over a faded interior. That is two cues apart from colour --
-    // where a wall is solid a door is hollow, and where a wall's edge is a line
-    // a door's is a dashed one -- which is what makes them tellable apart
+    // A generator is a wall drawn with the fill taken out: a dashed outline
+    // over a faded interior. That is two cues apart from colour -- where a wall
+    // is solid a generator is hollow, and where a wall's edge is a line a
+    // generator's is a dashed one -- which is what makes them tellable apart
     // without relying on colour at all. On a scanned map there is a third: a
     // real wall is `WALL_THICKNESS` thick where a doorway is a thin slab.
     let doorDash = StrokeStyle(lineWidth: 2 / scale, dash: [7 / scale, 5 / scale])
@@ -219,8 +219,8 @@ enum MapRenderer {
       drawMeasurement(measurement, into: &ctx, scale: scale, ink: ink)
     }
 
-    // A lassoed door, marked as the selected pedestrians are.
-    for door in world.doors where door.selected {
+    // A lassoed generator, marked as the selected pedestrians are.
+    for door in world.generators where door.selected {
       var p = Path()
       for polygon in door.polygons where polygon.count >= 3 {
         p.move(to: CGPoint(x: polygon[0].x, y: polygon[0].y))

@@ -264,7 +264,7 @@ final class AppModel {
   private static func armedHint(_ id: ToolId?) -> String? {
     switch id {
     case .measure: "Tap two points to measure the walk between them."
-    case .generator: "Tap where people should come out."
+    case .generator: "Tap a block to make people come out of it."
     default: nil
     }
   }

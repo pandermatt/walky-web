@@ -1,80 +1,70 @@
 import Foundation
 
-/// Puts down a door: a block that lets pedestrians out while the run is on.
+/// Turns a block into a generator: somewhere people come out of.
 /// Ports `src/tools/generatorTool.ts`.
 ///
-/// One tap rather than the brush's stroke. The pedestrian tool paints, because
-/// a crowd is a quantity and painting is how you say how much; a door is a
-/// single thing standing somewhere, and dragging would leave behind a row of
-/// them nobody meant to open.
+/// **Marks rather than places, exactly as the goal tool does.** Any block on
+/// the map can be a generator, the same way any block can be a goal -- you draw
+/// a shape with the tools that draw shapes, and then say what it is. It used to
+/// drop a square block of its own, which was a second way of making walls that
+/// only this tool knew about, and it meant the one thing you would actually
+/// reach for -- "people come out of *that* building" -- was the one thing it
+/// could not do.
 ///
-/// The preview is the real block at the real size and with the real rounded
-/// corners rather than a cursor badge -- the footprint follows the pedestrian
-/// radius, so drawing it is the only honest way to say how much room it is
-/// about to take. It goes red where the block has no room for anybody to stand
-/// in, and a tap there is refused: a door built inside a wall could never let
-/// anybody out, which is the bargain the border tool strikes with a frame too
-/// small to hold a crowd.
+/// A generator is a wall in this port, so people appear beside it rather than
+/// in it, on the side its goal is on: `WalkyWorld.generatorMouth` says why.
 ///
-/// It puts itself away after a placement, as `MeasureTool` does after its
-/// second tap. That costs a trip to the menu for a second door, and buys the
-/// thing a menu tool needs more: a tool with no cell in the bar is a mode you
-/// cannot see you are in, so one that stayed armed would turn the next tap
-/// meant for the map into another door. Arming it says so out loud (see
-/// `AppModel.armedHint`), and placing one ends the sentence.
+/// Tapping one that already is a generator takes it back off. A marking tool
+/// with no un-marking gesture leaves undo as the only way out of a mistap, and
+/// this is the same tap either way.
+///
+/// It steps off after a hit, as the goal tool does after assigning, so the next
+/// tap on the map cannot mark something by accident. A miss keeps it in hand: a
+/// tap on bare ground is a fat finger, not a change of mind.
 @MainActor
 public final class GeneratorTool: Tool {
   public let id = ToolId.generator
   private var mouse: Point?
-  /// `preview()` has no context, so what it needs is cached on the way past.
-  private var radius: Double = 13
-  private var blocked = false
 
   public init() {}
 
   public func onPointerDown(_ e: PointerInfo, _ ctx: ToolContext) {
     if e.buttons != 1 { return }
     mouse = e.world
-    read(e.world, ctx)
-    // Only on success, the way `MeasureTool` and `GoalTool` hold on after a
-    // miss: a tap the world declined leaves the tool in hand so it costs a
-    // second try rather than a trip back to the menu. The refusal is already
-    // on screen -- `read` turned the preview red a frame ago -- and the world
-    // says it as well, so there is nothing to add here.
-    if ctx.addGenerator(e.world) { ctx.deactivateTool() }
+    ctx.requestRender()
   }
 
   public func onPointerMove(_ e: PointerInfo, _ ctx: ToolContext) {
     mouse = e.world
-    read(e.world, ctx)
     ctx.requestRender()
   }
 
+  /// On the lift, as every other tool that commits on a tap does -- marking
+  /// before the finger leaves gives no chance to reconsider.
   public func onPointerUp(_ e: PointerInfo, _ ctx: ToolContext) {
     // No hover on iOS: once the finger is gone there is no pointer to preview
-    // under, and a ghost left at the last touch point sits there for the rest
-    // of the session.
+    // under, and a ghost left at the last touch point sits there all session.
     mouse = nil
+
+    if ctx.markGenerator(e.world) {
+      ctx.deactivateTool()
+    } else {
+      ctx.notify("No block there — tap one to make it a generator.")
+    }
     ctx.requestRender()
   }
 
   public func cancel() {
     mouse = nil
-    blocked = false
-  }
-
-  /// The sizes and the verdict `preview()` will need, taken while there is a
-  /// context to ask.
-  private func read(_ at: Point, _ ctx: ToolContext) {
-    radius = ctx.settings().pedestrianRadius
-    blocked = ctx.pedestrianBlock(at, GENERATOR_CELLS).isEmpty
   }
 
   public func preview() -> ToolPreview {
     guard let mouse else { return .empty }
     var p = ToolPreview()
-    p.pendingPolygons = [generatorSquare(mouse, radius)]
-    p.pendingPolygonsInvalid = blocked
+    // The same ring the goal tool aims with: the two ask the same kind of
+    // question of the same kind of thing, and should not look like two
+    // different gestures.
+    p.cursorGhost = CursorGhost(kind: .target, at: mouse, size: 10)
     return p
   }
 }

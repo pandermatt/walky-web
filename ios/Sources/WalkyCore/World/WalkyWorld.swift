@@ -148,7 +148,7 @@ public final class WalkyWorld: PointerHost {
     pedestrianBlock: { [unowned self] at, cells in self.pedestrianBlock(at, cells) },
     addPedestrians: { [unowned self] at in self.addPedestrians(at) },
     setGoalAt: { [unowned self] at in self.setGoalAt(at) },
-    addGenerator: { [unowned self] at in self.addGenerator(at) },
+    markGenerator: { [unowned self] at in self.toggleGeneratorAt(at) },
     selectPedestriansIn: { [unowned self] lasso in self.selectPedestriansIn(lasso) },
     selectionCount: { [unowned self] in self.agents.selectionCount },
     clearSelection: { [unowned self] in self.clearSelection() },
@@ -312,9 +312,9 @@ public final class WalkyWorld: PointerHost {
     }
     // By its middle, not its corners: a lasso thrown round a door catches the
     // door, and one drawn past the edge of one does not take it along. Only
-    // doors -- an ordinary wall has nothing a selection would do to it, and
-    // `Wall.selected` is the field a door now borrows.
-    for door in doors where pointInPolygon(lasso, middle(door)) {
+    // generators -- an ordinary wall has nothing a selection would do to it,
+    // and `Wall.selected` is the field a generator now borrows.
+    for door in generators where pointInPolygon(lasso, middle(door)) {
       door.selected = true
       caught += 1
     }
@@ -333,34 +333,57 @@ public final class WalkyWorld: PointerHost {
     touch()
   }
 
-  /// A door where the finger went, at the rate the slider says.
+  /// Turns the wall under a point into a generator, or back into a plain wall.
   ///
-  /// A wall, like everything else on the map. What makes it a door is its
-  /// `Door` payload and how it is drawn; what makes it work is that people come
-  /// out *beside* it rather than inside it -- see `doorMouth`.
+  /// Deliberately the same shape as `setGoalAt`: **any block can be a
+  /// generator, exactly as any block can be a goal.** There is nothing to place
+  /// and no footprint to find room for -- you draw a shape with the tools that
+  /// draw shapes, and then say what it is. The tool used to drop a square block
+  /// of its own, which was a second way to make walls that only the generator
+  /// knew about.
+  ///
+  /// Tapping one that already is a generator takes it back off, because a
+  /// marking tool with no un-marking gesture leaves undo as the only way out of
+  /// a mistap.
+  ///
+  /// False when there is no wall there, so the tool can say so.
   @discardableResult
-  public func addGenerator(_ at: Point) -> Bool {
-    // The same legality the brush block asks. It is asked of the footprint the
-    // door is about to occupy, which is a proxy for "this is open floor": a
-    // door in the middle of a building could be built and would never let
-    // anybody out of it.
-    guard !pedestrianBlock(at, GENERATOR_CELLS).isEmpty else {
-      onNotify?("No room for a door there.")
-      return false
+  public func toggleGeneratorAt(_ at: Point) -> Bool {
+    guard let hit = pickWall(at) else { return false }
+    checkpoint()
+    if hit.generator != nil {
+      hit.generator = nil
+      // Its people are already walking and keep their goal: they came out of a
+      // door that has closed behind them, which is what happens to people.
+      onNotify?("No longer a generator.")
+    } else {
+      hit.generator = Generator(rate: settings.generatorRate)
+      // A wall that is already a goal cannot also send people to itself.
+      if hit.isGoal, let other = walls.first(where: { $0.isGoal && $0.id != hit.id }) {
+        hit.generator?.goal = other.id
+      } else if !hit.isGoal, let goal = walls.first(where: \.isGoal) {
+        // Aimed at the goal that already exists, so one tap is enough on a map
+        // that has one. `setGoalAt` is what aims it otherwise.
+        hit.generator?.goal = goal.id
+        hit.color = goal.color
+      }
     }
-    return addDoor([generatorSquare(at, settings.pedestrianRadius)])
+    touch()
+    return true
   }
 
-  /// Any shape, as a door. The room importer hands its doorway slabs straight
-  /// to this, which is what lets a scanned doorway *be* the door rather than
-  /// carrying a block beside it.
+  /// Any shape, as a generator, without a tap.
+  ///
+  /// What the room importer uses: a scanned doorway arrives as a polygon and
+  /// has to become the thing people come out of in one step, with nobody there
+  /// to tap it.
   @discardableResult
-  public func addDoor(_ polygons: [[Point]], _ options: WallOptions? = nil) -> Bool {
+  public func addGeneratorShape(_ polygons: [[Point]], _ options: WallOptions? = nil) -> Bool {
     let usable = polygons.filter { $0.count >= 3 }
     if usable.isEmpty { return false }
     checkpoint()
-    let wall = makeWall(usable, options ?? WallOptions(color: DOOR_GREY))
-    wall.door = Door(rate: settings.generatorRate)
+    let wall = makeWall(usable, options ?? WallOptions(color: GENERATOR_GREY))
+    wall.generator = Generator(rate: settings.generatorRate)
     walls.append(wall)
     removeAgentsUnder(wall)
     markNavDirty()
@@ -368,9 +391,9 @@ public final class WalkyWorld: PointerHost {
     return true
   }
 
-  /// Every wall that is a door, in placement order -- which is the order they
-  /// emit in, and so the order the arrivals hash is walked in.
-  public var doors: [Wall] { walls.filter { $0.door != nil } }
+  /// Every wall that is a generator, in placement order -- which is the order
+  /// they emit in, and so the order the arrivals hash is walked in.
+  public var generators: [Wall] { walls.filter { $0.generator != nil } }
 
   public func clearGeneratorSelection() {
     guard walls.contains(where: \.selected) else { return }
@@ -378,9 +401,9 @@ public final class WalkyWorld: PointerHost {
     touch()
   }
 
-  /// The door under a point, topmost first, or nil.
+  /// The generator under a point, topmost first, or nil.
   public func pickGenerator(_ at: Point) -> Wall? {
-    walls.last { $0.door != nil && wallContains($0, at) }
+    walls.last { $0.generator != nil && wallContains($0, at) }
   }
 
   /// The middle of a wall, for the questions that are about where it *is*
@@ -396,9 +419,9 @@ public final class WalkyWorld: PointerHost {
     return Point((minX + maxX) / 2, (minY + maxY) / 2)
   }
 
-  /// Where a door's people appear: clear of it, on the side its goal is on.
+  /// Where a generator's people appear: clear of it, on the side its goal is on.
   ///
-  /// A door is a wall, so nobody can stand in it, and something has to decide
+  /// A generator is a wall, so nobody can stand in it, and something has to decide
   /// which side of it they come out of. **The side the goal is on** is that
   /// something, and it is the only rule here that is a choice rather than
   /// arithmetic:
@@ -415,9 +438,9 @@ public final class WalkyWorld: PointerHost {
   /// plus the block's half-width, so the block it hands to `pedestrianBlock`
   /// starts where the door stops. `pedestrianBlock` then throws away whatever
   /// is still illegal, exactly as the brush does.
-  private func doorMouth(_ door: Wall) -> Point {
-    let here = middle(door)
-    guard let goalId = door.door?.goal, goalId >= 0,
+  private func generatorMouth(_ source: Wall) -> Point {
+    let here = middle(source)
+    guard let goalId = source.generator?.goal, goalId >= 0,
           let goal = walls.first(where: { $0.id == goalId }) else { return here }
     let there = middle(goal)
     let dx = there.x - here.x, dy = there.y - here.y
@@ -427,9 +450,9 @@ public final class WalkyWorld: PointerHost {
     guard span > 0 else { return here }
     let ux = dx / span, uy = dy / span
 
-    // How far the door reaches in that direction, from its own hull.
+    // How far the generator reaches in that direction, from its own hull.
     var reach = 0.0
-    for p in door.hull {
+    for p in source.hull {
       reach = jsMax(reach, (p.x - here.x) * ux + (p.y - here.y) * uy)
     }
     let clear = reach + Double(GENERATOR_CELLS) * settings.pedestrianRadius
@@ -448,10 +471,10 @@ public final class WalkyWorld: PointerHost {
   /// pile that never goes away.
   private func emit() {
     for wall in walls {
-      guard let door = wall.door, door.goal >= 0 else { continue }
+      guard let door = wall.generator, door.goal >= 0 else { continue }
 
       if door.wait <= 0 {
-        // Hashed on the door's middle, so the same door on the same map replays
+        // Hashed on its middle, so the same generator on the same map replays
         // the same demand -- the invariant the crowd's traits already keep.
         let burst = burstAt(middle(wall), door.beat, door.rate)
         door.owed = jsMin(door.owed + burst.size, QUEUE_MAX)
@@ -465,13 +488,13 @@ public final class WalkyWorld: PointerHost {
       // idle door.
       if door.owed < 1 { continue }
 
-      // The brush's own legality test over the block just outside the door: not
+      // The brush's own legality test over the block just outside it: not
       // inside a wall -- this one included -- and not on top of somebody
       // already standing there. It already refuses two spots within a diameter
       // of each other, so filling every one at once is legal by construction.
       // Empty means the doorway is blocked or full, and the queue waits.
       let colour = walls.first { $0.id == door.goal }?.color ?? wall.color
-      for spot in pedestrianBlock(doorMouth(wall), GENERATOR_CELLS) {
+      for spot in pedestrianBlock(generatorMouth(wall), GENERATOR_CELLS) {
         if door.owed < 1 { break }
         _ = agents.addSpawned(spot, door.goal, colour)
         door.owed -= 1
@@ -495,9 +518,9 @@ public final class WalkyWorld: PointerHost {
     // A door is in "everyone" as squarely as a pedestrian is, and pinning one
     // matters more: aiming a pedestrian sends one person, aiming a door sends
     // everybody it will ever let out.
-    for wall in doors where wall.id != hit.id {
+    for wall in generators where wall.id != hit.id {
       if onlySelected && !wall.selected { continue }
-      wall.door?.goal = hit.id
+      wall.generator?.goal = hit.id
       // The door wears its goal's colour, as its people do: a glance says where
       // the crowd coming out of it is headed.
       wall.color = hit.color
@@ -524,7 +547,9 @@ public final class WalkyWorld: PointerHost {
     for i in 0..<agents.count where agents.goal[i] >= 0 { wanted.insert(Int(agents.goal[i])) }
     // A door heading somewhere counts as somebody heading there, or its goal
     // would be un-marked the moment the last of its people arrived.
-    for wall in doors where (wall.door?.goal ?? -1) >= 0 { wanted.insert(wall.door!.goal) }
+    for wall in generators where (wall.generator?.goal ?? -1) >= 0 {
+      wanted.insert(wall.generator!.goal)
+    }
     for w in walls { w.isGoal = wanted.contains(w.id) }
   }
 
@@ -737,8 +762,8 @@ public final class WalkyWorld: PointerHost {
   /// rather than part of it; the camera; and reset-pedestrians, which puts
   /// everyone back on an origin it never throws away and so undoes itself.
   public func checkpoint() {
-    // The doors come along inside the walls -- `Wall.shallowCopy` copies the
-    // `Door`, queue and beat and all.
+    // The generators come along inside the walls -- `Wall.shallowCopy` copies
+    // the `Generator`, queue and beat and all.
     undoStack.append(MapSnapshot(walls: walls.map { $0.shallowCopy() },
                                  agents: agents.snapshot()))
     if undoStack.count > UNDO_DEPTH { undoStack.removeFirst() }
@@ -770,10 +795,10 @@ public final class WalkyWorld: PointerHost {
     agents.removeSpawned()
     // Back to the top of each door's schedule, not just to an empty queue:
     // Reset means the same demand again, and `Arrivals` is a hash of the beat.
-    for wall in doors {
-      wall.door?.owed = 0
-      wall.door?.beat = 0
-      wall.door?.wait = 0
+    for wall in generators {
+      wall.generator?.owed = 0
+      wall.generator?.beat = 0
+      wall.generator?.wait = 0
     }
     var goalColors: [Int32: RGB] = [:]
     for w in walls where w.isGoal { goalColors[Int32(w.id)] = w.color }

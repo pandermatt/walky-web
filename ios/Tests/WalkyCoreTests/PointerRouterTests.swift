@@ -49,7 +49,7 @@ private final class FakeHost: PointerHost {
     settings: { SettingsSnapshot(pedestrianRadius: 13, personalSpace: 40,
                                  brushSize: 1, borderThickness: 12) },
     pedestrianBlock: { _, _ in [] }, addPedestrians: { _ in },
-    setGoalAt: { _ in true }, addGenerator: { _ in true },
+    setGoalAt: { _ in true }, markGenerator: { _ in true },
     selectPedestriansIn: { _ in 0 }, selectionCount: { 0 },
     clearSelection: {}, standablePoint: { $0 }, deactivateTool: {},
     notify: { _ in }, requestRender: { [unowned self] in self.renders += 1 },

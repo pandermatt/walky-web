@@ -138,7 +138,7 @@ struct ToolbarView: View {
       // not fit a 375pt phone. Like Measure it carries its armed state in the
       // icon, since it has no cell to light up.
       Button { onTool(.generator) } label: {
-        Label(state.selected == .generator ? "Placing doors" : "Add a door",
+        Label(state.selected == .generator ? "Marking a generator" : "Generator",
               systemImage: state.selected == .generator ? "checkmark" : "door.left.hand.open")
       }
       Button { onTool(.measure) } label: {
