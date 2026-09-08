@@ -13,6 +13,9 @@ struct SettingsSheetView: View {
   /// explaining that the recorder is the system's, not Walky's.
   @Bindable var chrome: Chrome
   let onChange: () -> Void
+  /// iOS only, and nil is a legitimate state: the map section is absent rather
+  /// than disabled where there is nothing to import into.
+  var mapSection: AnyView?
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -27,6 +30,8 @@ struct SettingsSheetView: View {
         Section("Drawing") {
           slider(.borderThickness)
         }
+
+        if let mapSection { mapSection }
         Section("Appearance") {
           Picker("Appearance", selection: $settings.appearance) {
             ForEach(Appearance.allCases) { Text($0.label).tag($0) }
@@ -44,6 +49,7 @@ struct SettingsSheetView: View {
           Toggle("Route to goal", isOn: $settings.showLineToTarget)
           Toggle("Personal space", isOn: $settings.showPersonalSpace)
           Toggle("Debug info", isOn: $settings.showDebug)
+          Toggle("Basemap", isOn: $settings.showBasemap)
         }
         Section {
           Toggle("Hide controls", isOn: $chrome.hidden)

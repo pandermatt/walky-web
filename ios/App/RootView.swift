@@ -41,7 +41,7 @@ struct RootView: View {
 
   var body: some View {
     ZStack {
-      MapCanvas(world: model.world, redraw: model.redraw,
+      MapCanvas(world: model.world, redraw: model.redraw, basemap: model.basemap,
                 stats: { DebugStats(fps: model.fps, tps: model.tps) })
 
       if let router {
@@ -143,7 +143,12 @@ struct RootView: View {
       WelcomeSheetView(accent: model.world.settings.accent)
     case .settings:
       SettingsSheetView(settings: model.world.settings,
-                        chrome: model.chrome) { model.world.requestRender() }
+                        chrome: model.chrome,
+                        onChange: { model.world.requestRender() },
+                        mapSection: AnyView(
+                          RealMapSection(world: model.world, basemap: model.basemap,
+                                         importer: model.importer,
+                                         dark: (windowScheme ?? scheme) == .dark)))
     }
   }
 
