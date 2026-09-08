@@ -185,6 +185,40 @@ about 13% of buildings but carry **28-29% of all corners**. That tail is traced
 curves, churches and stations, and it is the only part worth simplifying.
 `SIMPLIFY_ABOVE` is set from those three rows.
 
+### The model's scale
+
+An import is a **1:10 model by default**, and that is the difference between
+watching a crowd and squinting at one. A pedestrian is 13 world units against
+`PX_PER_METRE = 56` -- 0.46m, a correctly sized body -- and a 380m import at 1:1
+is 21,280 units, so on a 402pt phone a person draws at **half a pixel**. At 1:10
+the same person is 4.9pt.
+
+The pedestrian never scales; the map does. That is the whole trick, and its
+price: obstacle inflation grows every building by one pedestrian radius so
+bodies cannot clip walls, and 0.23m of inflation does not shrink with the map.
+
+| scale | person on screen | streets that stay open |
+|---|---|---|
+| 1:1 | 0.49 pt | everything, and 100x the spatial-hash cells |
+| 1:5 | 2.5 pt | wider than 4.6m |
+| **1:10** | **4.9 pt** | **wider than 9.3m** -- the default |
+| 1:20 | 9.8 pt | wider than 19m; warned |
+
+`GeoAnchor` owns the ratio, not the importer. `world` and `coordinate` are
+inverses and the Overpass box, the basemap crop and every MapKit route are
+derived by going back out through `coordinate` -- scale one direction only and
+all three break silently. Every metre readout goes through `GeoAnchor.metres`,
+so a 1:10 map still reports the walk somebody would really take.
+
+**The cross-check that catches a scale bug** is the measure tool's ratio: it
+divides Apple's real-metre route by Walky's, so a mis-scaled Walky figure shows
+up immediately as a ratio near 15 instead of near 1.
+
+Related: `Viewport.zoomLevelMax` is raised from the content in
+`WalkyWorld.resetZoom`. It used to be raised nowhere outside the tests, so the
+camera could not frame an import at all -- a 380m map sat about eight screens
+wide with no way out.
+
 ### What merging buys
 
 `mergeFootprints` drops rings drawn inside other rings (`building:part` detail

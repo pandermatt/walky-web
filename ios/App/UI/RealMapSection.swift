@@ -45,6 +45,23 @@ struct RealMapSection: View {
         // the buildings under it.
         .disabled(importer.isBusy)
 
+      LabeledContent("Scale") {
+        Text("1:\(Int(importer.scale))").foregroundStyle(.secondary)
+      }
+      // Stops rather than a range: the interesting ratios are a handful and
+      // between them is nothing anybody wants.
+      Picker("Scale", selection: $importer.scale) {
+        ForEach(MapImporter.scaleStops, id: \.self) { Text("1:\(Int($0))").tag($0) }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .disabled(importer.isBusy)
+
+      if let caution = importer.scaleCaution {
+        Label(caution, systemImage: "exclamationmark.triangle.fill")
+          .font(.footnote).foregroundStyle(.orange)
+      }
+
       switch importer.phase {
       case .idle:
         EmptyView()

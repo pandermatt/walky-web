@@ -52,6 +52,46 @@ final class MapImporter {
   /// round number: see `ImportBudget`, and the table in `ios/README.md`.
   var sideMetres: Double = 380
 
+  /// Real metres to one world metre: 10 is a 1:10 model.
+  ///
+  /// Ten by default, which is not realism but legibility. At 1:1 a pedestrian
+  /// is a correctly sized 0.46m and a 380m import is 21,280 world units, so a
+  /// person draws at **half a pixel** -- true to life and impossible to watch.
+  /// At 1:10 the same person is 4.9pt and the crowd is the thing on screen.
+  ///
+  /// The price is that obstacle inflation does not scale with the map, so only
+  /// streets wider than about `0.93 * scale` metres still admit anybody: 9.3m
+  /// here, which is a city block or a campus but not an old-town alley.
+  /// `SCALE_SEALS_ABOVE` is where that is said out loud.
+  var scale: Double = 10
+
+  /// The ratios worth offering. 1:1 is the truth, 1:10 is the default, and
+  /// 1:20 is as far as a crowd can be pushed before the streets close on it.
+  static let scaleStops: [Double] = [1, 2, 5, 10, 20]
+
+  /// A pedestrian's body is 2 * 13 world units, and every building is inflated
+  /// by another radius on each side, so a street needs `2 * (r + r) / PX_PER_METRE`
+  /// world metres -- 0.93 real metres per point of scale -- to admit one person.
+  static func sealsBelowMetres(_ scale: Double) -> Double {
+    4 * 13 / PX_PER_METRE * scale
+  }
+
+  /// What to say about the ratio in hand, or nothing at the default.
+  var scaleCaution: String? {
+    if scale < 10 {
+      // The user's own framing: realism is the expensive direction. The world is
+      // wider by the ratio, and `SpatialHash` grids the agents' extent into
+      // cells of a fixed size, so the cell count grows with its square.
+      return "More realistic, and more expensive: the map is "
+        + "\(Int(10 / scale))x wider than 1:10, and pedestrians get small."
+    }
+    if scale > 10 {
+      return "Streets narrower than \(Int(Self.sealsBelowMetres(scale)))m close up at this "
+        + "scale, so a crowd may not be able to leave the square it starts in."
+    }
+    return nil
+  }
+
   private let overpass = OverpassClient()
 
   var isBusy: Bool {
@@ -69,7 +109,7 @@ final class MapImporter {
     Task {
       do {
         let place = try await find(text)
-        let anchor = GeoAnchor(origin: place)
+        let anchor = GeoAnchor(origin: place, scale: scale)
         step(.fetching)
 
         let box = anchor.boundingBox(sideMetres: sideMetres)
@@ -128,7 +168,10 @@ final class MapImporter {
     world.resetZoom()
     step(.placing, 1)
 
-    let half = sideMetres / 2 * PX_PER_METRE
+    // From the anchor, so the crop follows the ratio the buildings were placed
+    // at. Re-deriving it from PX_PER_METRE here is how the ground and the walls
+    // would come apart by exactly the scale factor.
+    let half = anchor.worldHalfWidth(sideMetres: sideMetres)
     basemap.snapshot(anchor: anchor,
                      worldRect: CGRect(x: -half, y: -half, width: half * 2, height: half * 2),
                      dark: dark) { [weak self] problem in
@@ -158,10 +201,13 @@ final class MapImporter {
     world.prepareForRender()
 
     let b = world.contentBounds()
-    let acrossM = ((b?.maxX ?? 0) - (b?.minX ?? 0)) / PX_PER_METRE
+    // Real metres, not world ones: the map is a model, and what somebody wants
+    // to know is how much of the earth is on it.
+    let acrossM = anchor.metres((b?.maxX ?? 0) - (b?.minX ?? 0))
     progress = nil
     phase = .done("""
-      \(polygons.count) buildings, \(corners.formatted()) corners, \(Int(acrossM))m across.
+      \(polygons.count) buildings, \(corners.formatted()) corners, \
+      \(Int(acrossM))m across at 1:\(Int(anchor.scale)).
       """)
   }
 

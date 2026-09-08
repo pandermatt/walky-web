@@ -380,6 +380,25 @@ struct MeasureToolTests {
     #expect(host.measured.count == 1)
     #expect(host.measured[0].0 == Point(10, 10))
     #expect(host.measured[0].1 == Point(200, 10))
+    // Two taps is the whole gesture, so the tool puts itself away. Safe only
+    // because the answer lives on the world and stays drawn without it.
+    #expect(host.deactivated == 1)
+  }
+
+  @Test("a measurement of nothing leaves the tool in hand")
+  func degenerateStaysArmed() {
+    // A fat-fingered double tap on one spot should cost a second try, not a
+    // trip back into the menu to re-arm.
+    let host = Recorder()
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(50, 50)), host.ctx)
+    tool.onPointerUp(up(Point(50, 50)), host.ctx)
+    tool.onPointerDown(down(Point(50, 50)), host.ctx)
+    tool.onPointerUp(up(Point(50, 50)), host.ctx)
+
+    #expect(host.measured.isEmpty)
+    #expect(host.deactivated == 0)
   }
 
   @Test("a drag measures its own two ends")

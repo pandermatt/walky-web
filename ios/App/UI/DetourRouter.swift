@@ -51,7 +51,10 @@ final class DetourRouter {
       // Apple routes from the nearest routable point, not from the tap. The two
       // stubs are added so both figures price the same journey -- without them
       // the ratio compares two different walks and means nothing.
-      let stubs = (distance(a, first) + distance(b, last)) / PX_PER_METRE
+      // Through the anchor, so a 1:10 model's stubs are real metres like the
+      // MKRoute distance they are added to. Dividing by PX_PER_METRE here would
+      // mix a tenth-size stub into a full-size route and quietly bend the ratio.
+      let stubs = anchor.metres(distance(a, first) + distance(b, last))
       let total = route.distance + stubs
 
       world?.setAppleRoute(a, b, points, total)

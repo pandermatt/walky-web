@@ -140,3 +140,62 @@ struct GeoAnchorTests {
     #expect(abs(abs(world.y) - expected) < 0.56)  // 0.56px is a centimetre
   }
 }
+/// A map that is a model of a place rather than the place.
+///
+/// The property that matters is not any one number but that `world` and
+/// `coordinate` stay inverses: the Overpass box, the basemap crop and every
+/// MapKit route are derived by going back out through `coordinate`, so a ratio
+/// applied to one direction only breaks all three at once and silently.
+@Suite("Scaled anchors")
+struct ScaledAnchorTests {
+  private let origin = Coordinate(latitude: 47.4963, longitude: 8.7297)
+
+  @Test("world and coordinate stay inverses at every scale")
+  func roundTrips() {
+    for scale in [1.0, 2, 5, 10, 20] {
+      let anchor = GeoAnchor(origin: origin, scale: scale)
+      for p in [Point(0, 0), Point(1234, -567), Point(-8000, 8000)] {
+        let back = anchor.world(anchor.coordinate(p))
+        #expect(abs(back.x - p.x) < 1e-6, "x at 1:\(Int(scale))")
+        #expect(abs(back.y - p.y) < 1e-6, "y at 1:\(Int(scale))")
+      }
+    }
+  }
+
+  @Test("a box of a given side fetches the same earth at every scale")
+  func boxIsScaleFree() {
+    // If it were not, a 1:10 import would quietly ask Overpass for a tenth of
+    // the area -- or ten times it -- while the slider still said 380m.
+    let full = GeoAnchor(origin: origin, scale: 1).boundingBox(sideMetres: 380)
+    for scale in [2.0, 10, 20] {
+      let model = GeoAnchor(origin: origin, scale: scale).boundingBox(sideMetres: 380)
+      #expect(abs(model.north - full.north) < 1e-9, "north at 1:\(Int(scale))")
+      #expect(abs(model.west - full.west) < 1e-9, "west at 1:\(Int(scale))")
+      #expect(abs(model.south - full.south) < 1e-9)
+      #expect(abs(model.east - full.east) < 1e-9)
+    }
+  }
+
+  @Test("a 1:10 map is a tenth of the world units and still reports real metres")
+  func tenthOfTheWorld() {
+    let life = GeoAnchor(origin: origin, scale: 1)
+    let model = GeoAnchor(origin: origin, scale: 10)
+    let somewhere = Coordinate(latitude: origin.latitude + 0.001, longitude: origin.longitude)
+
+    let big = life.world(somewhere), small = model.world(somewhere)
+    #expect(abs(small.y - big.y / 10) < 1e-6)
+
+    // Both halves of the promise: ten times smaller to walk across, and the
+    // same distance when anybody asks how far it is.
+    #expect(abs(life.metres(big.y) - model.metres(small.y)) < 1e-6)
+    #expect(abs(model.metres(small.y) - big.y / PX_PER_METRE) < 1e-6)
+  }
+
+  @Test("the pedestrian does not scale, which is the whole point")
+  func bodyIsFixed() {
+    // 13 world units is a 0.46m body at 1:1 and a 4.6m giant at 1:10 -- that is
+    // the toy town, and it is why the crowd is visible on a real map at all.
+    let model = GeoAnchor(origin: origin, scale: 10)
+    #expect(abs(model.metres(13) - 13 / PX_PER_METRE * 10) < 1e-9)
+  }
+}

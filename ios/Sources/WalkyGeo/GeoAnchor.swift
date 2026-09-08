@@ -49,12 +49,31 @@ public struct GeoAnchor: Equatable, Sendable {
   /// The coordinate that world `(0, 0)` stands for.
   public let origin: Coordinate
 
+  /// Real metres to one world metre: a model railway's ratio, where 10 means
+  /// 1:10 and 1 means life size.
+  ///
+  /// **It lives here and not in the importer**, because `world` and
+  /// `coordinate` are inverses and half the app depends on their staying that
+  /// way: the Overpass query box, the basemap crop and the walking routes
+  /// MapKit is asked for are all derived by going back out through
+  /// `coordinate`. Scale one direction only and every one of them is silently
+  /// wrong by the ratio.
+  ///
+  /// The pedestrian does **not** scale -- 13 world units is a 0.46m body
+  /// whatever the map is doing -- which is the whole point: at 1:10 people are
+  /// ten times larger against the buildings, which is what makes a real place
+  /// legible on a phone. The cost is that obstacle inflation does not scale
+  /// either, so only streets wider than about `0.93 * scale` metres still admit
+  /// anybody. See `ios/README.md`.
+  public let scale: Double
+
   /// Metres per degree of latitude and of longitude, at the origin.
   private let metresPerDegreeLatitude: Double
   private let metresPerDegreeLongitude: Double
 
-  public init(origin: Coordinate) {
+  public init(origin: Coordinate, scale: Double = 1) {
     self.origin = origin
+    self.scale = scale > 0 ? scale : 1
 
     // WGS84.
     let a = 6_378_137.0
@@ -79,15 +98,24 @@ public struct GeoAnchor: Equatable, Sendable {
   public func world(_ c: Coordinate) -> Point {
     let east = (c.longitude - origin.longitude) * metresPerDegreeLongitude
     let south = (origin.latitude - c.latitude) * metresPerDegreeLatitude
-    return Point(east * PX_PER_METRE, south * PX_PER_METRE)
+    return Point(east * worldPerMetre, south * worldPerMetre)
   }
 
   public func coordinate(_ p: Point) -> Coordinate {
-    let east = p.x / PX_PER_METRE
-    let south = p.y / PX_PER_METRE
+    let east = p.x / worldPerMetre
+    let south = p.y / worldPerMetre
     return Coordinate(latitude: origin.latitude - south / metresPerDegreeLatitude,
                       longitude: origin.longitude + east / metresPerDegreeLongitude)
   }
+
+  /// World units one real metre buys. The single place the ratio is applied, so
+  /// the two conversions above cannot drift apart.
+  public var worldPerMetre: Double { PX_PER_METRE / scale }
+
+  /// Real metres a world distance stands for -- what every readout owes its
+  /// user. `polylineMetres` and the import's "m across" both go through this,
+  /// so a 1:10 map still reports the distance somebody would really walk.
+  public func metres(_ worldDistance: Double) -> Double { worldDistance / worldPerMetre }
 
   /// The box a world rectangle stands for -- what a basemap snapshot is asked for.
   public func boundingBox(worldMinX: Double, worldMinY: Double,
@@ -99,8 +127,18 @@ public struct GeoAnchor: Equatable, Sendable {
   }
 
   /// A box of the given side length in metres, centred on the origin.
+  ///
+  /// Scale-free by construction: the world half-width is scaled going in and
+  /// unscaled coming back out through `coordinate`, so the same request fetches
+  /// the same piece of the earth at every ratio.
   public func boundingBox(sideMetres: Double) -> BoundingBox {
-    let half = sideMetres / 2 * PX_PER_METRE
+    let half = sideMetres / 2 * worldPerMetre
     return boundingBox(worldMinX: -half, worldMinY: -half, worldMaxX: half, worldMaxY: half)
+  }
+
+  /// The world rectangle a centred box of real metres occupies -- what the
+  /// basemap snapshot is cropped to.
+  public func worldHalfWidth(sideMetres: Double) -> Double {
+    sideMetres / 2 * worldPerMetre
   }
 }

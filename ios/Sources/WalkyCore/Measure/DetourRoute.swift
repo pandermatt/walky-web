@@ -18,18 +18,27 @@ public struct DetourMeasurement: Sendable {
   public var appleMetres: Double?
 
   public init(a: Point, b: Point, walky: [Point], walkyMetres: Double,
-              apple: [Point]? = nil, appleMetres: Double? = nil) {
+              apple: [Point]? = nil, appleMetres: Double? = nil, scale: Double = 1) {
     self.a = a
     self.b = b
     self.walky = walky
     self.walkyMetres = walkyMetres
     self.apple = apple
     self.appleMetres = appleMetres
+    self.scale = scale
   }
+
+  /// Real metres to one world metre, from the map's `GeoAnchor`. 1 on a drawn
+  /// map, which has no place on the earth and therefore no ratio to it.
+  ///
+  /// Carried on the measurement rather than looked up when the label is drawn:
+  /// a measurement taken on a 1:10 import and still on screen after a new
+  /// import must keep reporting the distance it actually measured.
+  public var scale: Double = 1
 
   /// How much further Walky's path is than a straight line -- the detour a
   /// pedestrian pays to the buildings alone.
-  public var straightMetres: Double { distance(a, b) / PX_PER_METRE }
+  public var straightMetres: Double { distance(a, b) / PX_PER_METRE * scale }
 
   /// Apple's route against Walky's. Above 1 means the mapped network asks for
   /// more walking than the geometry does, which is where a shortcut wants to be.
@@ -45,11 +54,14 @@ public struct DetourMeasurement: Sendable {
 /// the project. Summed in `Double` on purpose -- `DijkstraResult.dist` is `Float`
 /// storage, and reading the length off it would inherit a rounding the R1 note
 /// at `Dijkstra.swift` exists to keep out of the arithmetic.
-public func polylineMetres(_ path: [Point]) -> Double {
+/// `scale` is the map's ratio to the earth -- 10 on a 1:10 import, 1 on a drawn
+/// map. Without it a scaled map reports a tenth of the walk somebody would
+/// really take, and the ratio against Apple's real-metre route means nothing.
+public func polylineMetres(_ path: [Point], _ scale: Double = 1) -> Double {
   guard path.count > 1 else { return 0 }
   var total = 0.0
   for i in 0..<(path.count - 1) { total += distance(path[i], path[i + 1]) }
-  return total / PX_PER_METRE
+  return total / PX_PER_METRE * scale
 }
 
 /// Walky's own shortest walk between two arbitrary points.
@@ -160,10 +172,11 @@ public final class MeasuringGraph {
   }
 
   /// The whole measurement, Walky's half of it.
-  public func measure(from a: Point, to b: Point,
-                      walls: [Wall], radius: Double, revision: Int) -> DetourMeasurement? {
+  public func measure(from a: Point, to b: Point, walls: [Wall], radius: Double,
+                      revision: Int, scale: Double = 1) -> DetourMeasurement? {
     guard let path = route(from: a, to: b, walls: walls, radius: radius, revision: revision)
     else { return nil }
-    return DetourMeasurement(a: a, b: b, walky: path, walkyMetres: polylineMetres(path))
+    return DetourMeasurement(a: a, b: b, walky: path,
+                             walkyMetres: polylineMetres(path, scale), scale: scale)
   }
 }

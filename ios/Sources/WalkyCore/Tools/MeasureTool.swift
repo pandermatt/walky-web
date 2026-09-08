@@ -74,10 +74,17 @@ public final class MeasureTool: Tool {
   private func commit(_ a: Point, _ b: Point, _ ctx: ToolContext) {
     cancel()
     guard distance(a, b) > 1 else {
+      // A fat-fingered tap, not a measurement: stay in hand so it costs a
+      // second tap rather than a trip back to the menu.
       ctx.requestRender()
       return
     }
     ctx.measure(a, b)
+    // Two taps is the whole gesture, so step off the tool -- the same reason
+    // `GoalTool` does after a hit. The measurement itself lives on the world
+    // and stays drawn, which is what makes disarming safe: putting the tool
+    // away does not put the answer away with it.
+    ctx.deactivateTool()
     ctx.requestRender()
   }
 }

@@ -192,7 +192,8 @@ public final class WalkyWorld: PointerHost {
     rebuildNavIfNeeded()
     guard let taken = measuring.measure(from: a, to: b, walls: walls,
                                         radius: settings.pedestrianRadius,
-                                        revision: worldRevision) else {
+                                        revision: worldRevision,
+                                        scale: geoAnchor?.scale ?? 1) else {
       measurement = nil
       onNotify?("No way through from there.")
       requestRender()
@@ -464,8 +465,33 @@ public final class WalkyWorld: PointerHost {
   }
 
   public func resetZoom() {
-    viewport.reset(contentBounds())
+    let bounds = contentBounds()
+    raiseZoomCeiling(for: bounds)
+    viewport.reset(bounds)
     requestRender()
+  }
+
+  /// Let the camera out far enough to see what is actually on the map.
+  ///
+  /// `Viewport.zoomLevelMax` is 20 notches, which came from `ZoomMouseListener`
+  /// when the whole world was a few hundred pixels of freehand drawing. An
+  /// imported neighbourhood is not that world: 380m at 56px to the metre is
+  /// 21,280 units, which `fit` wants 45 notches for and used to be clamped to
+  /// 20 -- leaving the map about eight screens wide with no way to see the rest
+  /// of it. The ceiling was per-map by design and **nothing outside the tests
+  /// ever raised it**, so the app has never been able to frame an import.
+  ///
+  /// Raised from the content rather than from the import, so a hand-drawn map
+  /// that grew large gets the same courtesy. Never lowered below the original's
+  /// stop, so the 2016 camera is exactly itself on every map that fits.
+  private func raiseZoomCeiling(for bounds: Bounds?) {
+    guard let bounds else { return }
+    let across = jsMax(1, jsMax(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY))
+    let onScreen = jsMax(1, jsMin(viewport.width, viewport.height))
+    // The notches that would fit it, plus a few so it can be pushed out past a
+    // snug fit -- `fit` rounds to a whole stop and may land just inside.
+    let wanted = jsLog(across / onScreen) / jsLog(ZOOM_FACTOR) + 4
+    viewport.zoomLevelMax = jsMax(ZOOM_LEVEL_MAX, wanted)
   }
 
   /// What reset-zoom aims at: everything drawn, in world units.

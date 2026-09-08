@@ -165,6 +165,53 @@ func metres(_ walls: [Wall]) -> (w: Double, h: Double) {
   return ((maxX - minX) / PX_PER_METRE, (maxY - minY) / PX_PER_METRE)
 }
 
+/// What one tick costs on real geometry, which no bench has ever asked.
+///
+/// `StepCostBench` has a maze, but it is twelve rectangles and about fifty
+/// graph nodes; a 400m import is hundreds of wall groups and thousands of
+/// nodes, and three of the per-agent costs scale with those rather than with
+/// the crowd: `nextWaypoint`'s all-nodes scan, `hasArrived`'s pass over every
+/// obstacle (twice per agent per tick), and `insideAnyWall`'s pass behind an
+/// `inShell` broad phase that is itself a scan. This puts a number on the
+/// difference between fifty nodes and three thousand.
+func stepCost(_ source: [Wall], _ count: Int) -> (ms: Double, nodes: Int) {
+  // Raw `WalkySim`, not `WalkyWorld` -- the world is `@MainActor` and this is a
+  // script. Same shape as `Conformance.Runner`, which is the other caller that
+  // steps the model without an app around it.
+  var walls = source.map { Wall(id: $0.id, polygons: $0.polygons) }
+  guard let last = walls.last else { return (0, 0) }
+  last.isGoal = true
+
+  var minX = Double.infinity, minY = Double.infinity
+  var maxX = -Double.infinity, maxY = -Double.infinity
+  for w in walls { for ring in w.polygons { for p in ring {
+    minX = Swift.min(minX, p.x); maxX = Swift.max(maxX, p.x)
+    minY = Swift.min(minY, p.y); maxY = Swift.max(maxY, p.y)
+  } } }
+
+  let nav = Navigation()
+  nav.rebuild(walls, radius)
+  let agents = Agents()
+  let hash = SpatialHash()
+
+  // Spread across the map, so the routes are long and genuinely have to find
+  // their way round the buildings rather than see the goal from the start.
+  let cols = Int(Double(count).squareRoot().rounded(.up))
+  let pitch = 2.2 * radius
+  for k in 0..<count {
+    let at = Point(minX + Double(k % cols) * pitch, minY + Double(k / cols) * pitch)
+    let i = agents.add(at, last.color)
+    agents.setGoal(i, last.id, last.color)
+  }
+
+  let speed = pxPerTickFromMps(1.35)
+  for _ in 0..<5 { agents.step(nav, hash, speed, radius, 40) }
+  let ms = median((0..<repeats).map { _ in
+    milliseconds { for _ in 0..<20 { agents.step(nav, hash, speed, radius, 40) } } / 20
+  })
+  return (ms, nav.nodes.count)
+}
+
 /// What a ring-size distribution looks like, which is what `SIMPLIFY_ABOVE`
 /// is set from. Buildings are not uniform: most are near the median and a
 /// small tail of traced curves carries a disproportionate share of corners.
@@ -204,6 +251,19 @@ for path in maps {
   print("\(name):")
   histogram(base)
   print("")
+
+  if ProcessInfo.processInfo.environment["STEP"] != nil {
+    print("  tick cost on this map, ms per tick")
+    print("  agents   raw walls          merged walls")
+    for n in [250, 500, 1000] {
+      let r = stepCost(base, n)
+      let m = stepCost(merged(base, radius), n)
+      print(String(format: "  %6d   %7.2f ms (%5d nodes)   %7.2f ms (%5d nodes)",
+                   n, r.ms, r.nodes, m.ms, m.nodes))
+      fflush(stdout)
+    }
+    print("")
+  }
   for k in (ProcessInfo.processInfo.environment["TILES"].map { $0.split(separator: ",").compactMap { Int($0) } } ?? [1, 2, 3]) {
     for (label, walls) in [("raw", tiled(base, k)), ("merged", merged(tiled(base, k), radius))] {
       _ = label

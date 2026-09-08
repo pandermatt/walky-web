@@ -40,9 +40,11 @@ struct GeoImportTests {
     world.viewport.width = 402           // iPhone 17 Pro, in points
     world.viewport.height = 874
 
-    let side = 180.0
+    // A full-size import, and **nothing sets the ceiling by hand**. That line
+    // used to be here, which is why the app could not frame an import while
+    // this test was green: `resetZoom` is the thing under test, not the setup.
+    let side = 380.0
     world.geoAnchor = GeoAnchor(origin: Coordinate(latitude: 47.4963, longitude: 8.7297))
-    world.viewport.zoomLevelMax = log(side * PX_PER_METRE / 320) / log(ZOOM_FACTOR) + 6
     world.addWalls(footprints(side, 7))
     world.resetZoom()
 
@@ -50,6 +52,18 @@ struct GeoImportTests {
     let across = bounds.maxX - bounds.minX
     let onScreen = across * world.viewport.scale
     #expect(onScreen <= 402, "import is \(onScreen)pt wide on a 402pt screen")
+  }
+
+  /// The floor. A map that fits at the original's stops must still use them, or
+  /// the 2016 camera would quietly become a different camera on every map.
+  @Test("a drawn map keeps the original's zoom stops")
+  func drawnMapUnchanged() {
+    let world = WalkyWorld()
+    world.viewport.width = 402
+    world.viewport.height = 874
+    world.addWalls([[rectanglePolygon(Point(0, 0), Point(200, 200))]])
+    world.resetZoom()
+    #expect(world.viewport.zoomLevelMax == ZOOM_LEVEL_MAX)
   }
 
   @Test("clearing puts the original's stops back")
