@@ -60,6 +60,13 @@ public final class Navigation {
   public func rebuild(_ walls: [Wall], _ radius: Double) {
     self.radius = radius
     graph = buildVisibilityGraph(walls, radius)
+    // Built here rather than inside `Blockers`, which stays three fields wide
+    // for the sweep's sake -- see the note on that type.
+    blockerGroups = graph.blockers.groups
+    shellByWall = Dictionary(graph.blockers.shells.map { ($0.wallId, $0) },
+                             uniquingKeysWith: { a, _ in a })
+    blockerIndex = BlockerIndex()
+    blockerIndex.build(blockerGroups)
     baseWeights = graph.csr.weights
     edgeSlow = [Float](repeating: 1, count: graph.csr.targets.count)
     recostTurn = 0
@@ -123,6 +130,12 @@ public final class Navigation {
   /// Whole-wall convex hulls, expanded: the broad phase in front of the parts.
   public var shells: [WallShell] { graph.blockers.shells }
   public var blockers: Blockers { graph.blockers }
+  /// Stored, not read through `blockers`: the per-agent point queries run ten
+  /// times a substep, and reaching them through the struct copied a dictionary
+  /// and an object reference every time.
+  public private(set) var blockerIndex = BlockerIndex()
+  public private(set) var blockerGroups: [WallPartGroup] = []
+  public private(set) var shellByWall: [Int: WallShell] = [:]
   public var nodes: [Point] { graph.nodes }
   public var pedestrianRadius: Double { radius }
 
@@ -162,6 +175,19 @@ public final class Navigation {
     for i in 0..<graph.nodes.count {
       let cost = Double(result.dist[i])
       if !cost.isFinite { continue }
+      // `step` is skipped below `ON_NODE_EPSILON` just under here, so it is
+      // strictly positive and `total > cost`: a node whose cost-to-goal alone
+      // already reaches the best cannot improve on it. Cheap, exact, and it
+      // skips the `distance` call rather than merely the comparison.
+      //
+      // **Pruning, not reordering.** Sorting the nodes by cost and breaking on
+      // the same inequality was tried and is 3x *slower* on this map: ascending
+      // cost puts the nodes nearest the goal first, which are the ones furthest
+      // from the pedestrian, so the first candidate sets a poor `bestCost` and
+      // hundreds more `isVisible` calls run before it tightens. Index order
+      // finds a near node early and prunes hard. Measured: 251ms against 773ms
+      // per tick at 1,000 pedestrians on a 600m import.
+      if cost >= bestCost { continue }
       let node = graph.nodes[i]
       let step = distance(from, node)
       // Skip the node the agent is standing on. By the triangle inequality it

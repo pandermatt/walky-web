@@ -54,6 +54,11 @@ public struct WallPartGroup {
   public var parts: [Obstacle]
 }
 
+/// Kept to exactly these three fields, and that is measured rather than tidy.
+/// It is passed by value into `isVisible`, which the rebuild's pairwise sweep
+/// calls 5.75 million times on a 600m import. Adding a dictionary and an index
+/// object to it -- both of which `Navigation` now owns instead -- cost the
+/// rebuild 35%, from 2.1s to 2.9s, for fields that call never reads.
 public struct Blockers {
   public var obstacles: [Obstacle]
   public var shells: [WallShell]
@@ -108,6 +113,19 @@ private func segmentMissesBox(_ a: Point, _ b: Point, _ box: BBox) -> Bool {
 public func isVisible(_ a: Point, _ b: Point, _ blockers: Blockers) -> Bool {
   let mid = Point((a.x + b.x) / 2, (a.y + b.y) / 2)
 
+  // A linear pass with a bounding-box reject, deliberately, and measured:
+  // routing this through `BlockerIndex` made it **four times slower**. These
+  // segments run corner to corner across a whole map -- the rebuild's pairwise
+  // sweep is 5.75 million of them on a 600m import -- and a grid walk of
+  // seventy cells with a stamp write apiece costs more than 540 bbox
+  // comparisons over a contiguous array, which the CPU eats for nothing. The
+  // index earns its place on *point* queries, where one cell answers; see
+  // `Behaviour.insideAnyWall`.
+  // Written out rather than factored into a per-group predicate, and that is
+  // measured too: a helper taking `WallPartGroup` by value pays ARC traffic on
+  // its `parts` array for every group of every call, and the rebuild's sweep
+  // makes 5.75 million of them. Extracting it cost 242ms -> 607ms per tick and
+  // 2.1s -> 7.7s on the rebuild.
   for group in blockers.groups {
     if let shell = group.shell {
       if segmentMissesBox(a, b, shell.bbox) { continue }

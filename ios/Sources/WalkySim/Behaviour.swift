@@ -213,6 +213,9 @@ public final class Behaviour {
 
   /// Neighbours close enough that a step could overlap them.
   private var bodyIdx = [Int32](repeating: 0, count: 64)
+  /// Wall groups near this substep's candidate positions. See `primeNearby`.
+  private var nearby = [Int32](repeating: 0, count: 64)
+  private var nearbyCount = 0
   private var bodyCount = 0
   /// Total penetration where the pedestrian stands now; the "no worse" baseline.
   private var hereOverlap: Double = 0
@@ -462,6 +465,11 @@ public final class Behaviour {
     let distHere = jsHypot(target.x - x, target.y - y)
     // Land on the waypoint rather than orbit it.
     let step = jsMin(jsMax(len, 0), jsMax(distHere, 1e-3))
+    // Nine `isLegal` calls follow -- eight spokes and one refinement -- and
+    // every candidate lies within `step` of here, against a cell about a
+    // thousand units wide. One box query covers them all.
+    primeNearby(x, y, step)
+
     let hx = Double(a.headingX[i])
     let hy = Double(a.headingY[i])
     let facing = hx != 0 || hy != 0
@@ -609,33 +617,59 @@ public final class Behaviour {
   /// How far inside a wall's expanded hull this point sits: 0 when clear.
   private func penetration(_ p: Point) -> Double {
     var worst: Double = 0
-    for ob in nav.obstacles {
-      if !inShell(p, ob.wallId) { continue }
-      if p.x < ob.bbox.minX || p.x > ob.bbox.maxX
-        || p.y < ob.bbox.minY || p.y > ob.bbox.maxY { continue }
-      if !pointInPolygon(ob.hull, p) { continue }
-      worst = jsMax(worst, distanceOut(p, ob))
+    let index = nav.blockerIndex
+    let n = index.query(p)
+    for k in 0..<n {
+      for ob in nav.blockerGroups[Int(index.results[k])].parts {
+        if p.x < ob.bbox.minX || p.x > ob.bbox.maxX
+          || p.y < ob.bbox.minY || p.y > ob.bbox.maxY { continue }
+        if !inShell(p, ob.wallId) { continue }
+        if !pointInPolygon(ob.hull, p) { continue }
+        worst = jsMax(worst, distanceOut(p, ob))
+      }
     }
     return worst
   }
 
   /// Broad phase: a point outside a wall's hull cannot be inside any of its parts.
+  ///
+  /// Looked up rather than searched for. This used to scan every shell on the
+  /// map to find one wall's, and it was called once per obstacle inside
+  /// `insideAnyWall` -- 540 shells times 540 obstacles on an imported
+  /// neighbourhood, nine or ten times per substep per pedestrian.
   private func inShell(_ p: Point, _ wallId: Int) -> Bool {
-    for shell in nav.shells {
-      if shell.wallId != wallId { continue }
-      if p.x < shell.bbox.minX || p.x > shell.bbox.maxX
-        || p.y < shell.bbox.minY || p.y > shell.bbox.maxY { return false }
-      return pointInPolygon(shell.hull, p)
-    }
-    return true
+    guard let shell = nav.shellByWall[wallId] else { return true }
+    if p.x < shell.bbox.minX || p.x > shell.bbox.maxX
+      || p.y < shell.bbox.minY || p.y > shell.bbox.maxY { return false }
+    return pointInPolygon(shell.hull, p)
   }
 
+  /// The groups every candidate position of this substep could be inside.
+  ///
+  /// Rebuilt per substep and never held across one, because the pedestrian
+  /// moves. A *superset* of what a per-point query returns, which is what keeps
+  /// this exact: `insideAnyWall` still bbox-tests every obstacle it is handed,
+  /// so a group that happens to be near but not under the point costs one
+  /// rejected comparison and changes no answer.
+  private func primeNearby(_ x: Double, _ y: Double, _ step: Double) {
+    let index = nav.blockerIndex
+    let n = index.query(minX: x - step, minY: y - step, maxX: x + step, maxY: y + step)
+    if nearby.count < n { nearby = [Int32](repeating: 0, count: n * 2) }
+    for k in 0..<n { nearby[k] = index.results[k] }
+    nearbyCount = n
+  }
+
+  /// Reads the primed list, which is correct because every caller is inside a
+  /// substep that primed it: `isLegal` is reached from the spoke scan and the
+  /// parabola refinement, and from nowhere else.
   private func insideAnyWall(_ p: Point) -> Bool {
-    for ob in nav.obstacles {
-      if !inShell(p, ob.wallId) { continue }
-      if p.x < ob.bbox.minX || p.x > ob.bbox.maxX
-        || p.y < ob.bbox.minY || p.y > ob.bbox.maxY { continue }
-      if pointInPolygon(ob.hull, p) { return true }
+    for k in 0..<nearbyCount {
+      for ob in nav.blockerGroups[Int(nearby[k])].parts {
+        if p.x < ob.bbox.minX || p.x > ob.bbox.maxX
+          || p.y < ob.bbox.minY || p.y > ob.bbox.maxY { continue }
+        if !inShell(p, ob.wallId) { continue }
+        if pointInPolygon(ob.hull, p) { return true }
+      }
     }
     return false
   }
@@ -655,7 +689,10 @@ public final class Behaviour {
   private func outwardFrom(_ p: Point) -> Point? {
     var best: Point?
     var bestDist = Double.infinity
-    for ob in nav.obstacles {
+    let index = nav.blockerIndex
+    let candidates = index.query(p)
+    for k in 0..<candidates {
+    for ob in nav.blockerGroups[Int(index.results[k])].parts {
       if !pointInPolygon(ob.hull, p) { continue }
       let h = ob.hull
       let n = h.count
@@ -664,6 +701,7 @@ public final class Behaviour {
         let d = distance(p, q)
         if d < bestDist { bestDist = d; best = q }
       }
+    }
     }
     return best
   }
