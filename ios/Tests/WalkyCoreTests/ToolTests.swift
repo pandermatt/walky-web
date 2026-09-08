@@ -18,6 +18,7 @@ private final class Recorder {
   var lassos: [[Point]] = []
   var lassoCatches = 1
   var selected = 0
+  var measured: [(Point, Point)] = []
 
   lazy var ctx: ToolContext = ToolContext(
     addWall: { [unowned self] polygon, o in
@@ -37,7 +38,8 @@ private final class Recorder {
     notify: { [unowned self] m in self.notices.append(m) },
     requestRender: {},
     colorAt: { _ in nil },
-    worldPerPixel: { [unowned self] in self.perPixel })
+    worldPerPixel: { [unowned self] in self.perPixel },
+    measure: { [unowned self] a, b in self.measured.append((a, b)) })
 }
 
 private func down(_ p: Point) -> PointerInfo { .down(world: p, screen: p) }
@@ -358,5 +360,80 @@ struct WallToolTests {
     #expect(t.preview().pendingWallPoints.isEmpty)
     t.onDoubleTap(down(Point(0, 100)), r.ctx)
     #expect(r.walls.isEmpty)
+  }
+}
+
+@Suite("MeasureTool")
+@MainActor
+struct MeasureToolTests {
+  @Test("two taps measure between them")
+  func twoTaps() {
+    let host = Recorder()
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(10, 10)), host.ctx)
+    tool.onPointerUp(up(Point(10, 10)), host.ctx)
+    #expect(host.measured.isEmpty)          // one point is not a measurement
+
+    tool.onPointerDown(down(Point(200, 10)), host.ctx)
+    tool.onPointerUp(up(Point(200, 10)), host.ctx)
+    #expect(host.measured.count == 1)
+    #expect(host.measured[0].0 == Point(10, 10))
+    #expect(host.measured[0].1 == Point(200, 10))
+  }
+
+  @Test("a drag measures its own two ends")
+  func drag() {
+    let host = Recorder()
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(0, 0)), host.ctx)
+    tool.onPointerMove(move(Point(300, 40)), host.ctx)
+    tool.onPointerUp(up(Point(300, 40)), host.ctx)
+
+    #expect(host.measured.count == 1)
+    #expect(host.measured[0].0 == Point(0, 0))
+    #expect(host.measured[0].1 == Point(300, 40))
+  }
+
+  @Test("tapping the same spot twice measures nothing")
+  func degenerate() {
+    let host = Recorder()
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(50, 50)), host.ctx)
+    tool.onPointerUp(up(Point(50, 50)), host.ctx)
+    tool.onPointerDown(down(Point(50, 50)), host.ctx)
+    tool.onPointerUp(up(Point(50, 50)), host.ctx)
+
+    #expect(host.measured.isEmpty)
+  }
+
+  @Test("the first point is dropped when the tool is put away")
+  func cancelForgets() {
+    let host = Recorder()
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(10, 10)), host.ctx)
+    tool.onPointerUp(up(Point(10, 10)), host.ctx)
+    tool.cancel()
+
+    tool.onPointerDown(down(Point(200, 10)), host.ctx)
+    tool.onPointerUp(up(Point(200, 10)), host.ctx)
+    #expect(host.measured.isEmpty)          // that second tap is a new first tap
+  }
+
+  @Test("no ghost is left parked after the finger lifts")
+  func noHover() {
+    let host = Recorder()
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(10, 10)), host.ctx)
+    tool.onPointerMove(move(Point(12, 12)), host.ctx)
+    tool.onPointerUp(up(Point(10, 10)), host.ctx)
+
+    let p = tool.preview()
+    #expect(p.cursorGhost == nil)
+    #expect(p.pendingWallPoints == [Point(10, 10)])   // the placed point only
   }
 }

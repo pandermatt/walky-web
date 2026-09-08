@@ -129,6 +129,21 @@ struct ToolbarView: View {
         Label("Hide controls", systemImage: "eye.slash")
       }
       Divider()
+      // The one modal tool with no cell in the bar -- eight 44pt cells do not
+      // fit a 375pt phone. The armed state is carried by the icon swapping to a
+      // checkmark, because without it this would be the only mode you cannot
+      // see is armed. (A `Toggle` here draws nothing at all in a Menu on iOS 26,
+      // which is how this started as one.)
+      Button { onTool(.measure) } label: {
+        Label(state.selected == .measure ? "Measuring" : "Measure detour",
+              systemImage: state.selected == .measure ? "checkmark" : "ruler")
+      }
+      if state.hasMeasurement {
+        Button { onAction(.clearMeasurement) } label: {
+          Label("Clear measurement", systemImage: "ruler.fill")
+        }
+      }
+      Divider()
       // Above Settings, in the group that is about the app rather than about
       // the map, and well clear of the destructive item at the bottom.
       Button { onAction(.welcome) } label: {

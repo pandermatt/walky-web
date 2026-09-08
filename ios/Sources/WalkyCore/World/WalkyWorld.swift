@@ -1,4 +1,5 @@
 import Foundation
+import WalkyGeo
 
 /// The map as it stands, before the edit about to change it.
 ///
@@ -42,6 +43,20 @@ public final class WalkyWorld: PointerHost {
   public let settings = Settings()
   public var viewport = Viewport()
 
+  /// Where world `(0, 0)` sits on the earth, once a real place has been
+  /// imported. `nil` on a blank map, which is the default and the only state
+  /// the web app has.
+  public var geoAnchor: GeoAnchor?
+
+  /// The measurement drawn on the map, if one has been taken.
+  ///
+  /// It lives here rather than in `MeasureTool` because `preview()` is only
+  /// called for the *armed* tool: held in the tool, a measurement would vanish
+  /// the moment you disarmed it to draw a wall -- which is precisely the moment
+  /// it is needed.
+  public private(set) var measurement: DetourMeasurement?
+  private let measuring = MeasuringGraph()
+
   public var running = false
   public var mouseWorld: Point?
   /// Bumped whenever the map changes, and whenever the crowd does. Split
@@ -66,6 +81,9 @@ public final class WalkyWorld: PointerHost {
   /// gesture, exactly as it does for `pannedWithoutTool`.
   public var onIdleTap: (() -> Void)?
   public var onToolChanged: ((ToolId?) -> Void)?
+  /// Asks the host for Apple's walking route. Nil where MapKit is not available
+  /// -- and it never is inside this package, which carries no framework.
+  public var onDetourRequested: ((Point, Point) -> Void)?
 
   private var tools: [ToolId: any Tool] = [:]
   public private(set) var activeTool: ToolId?
@@ -78,6 +96,7 @@ public final class WalkyWorld: PointerHost {
     tools[.border] = BorderTool()
     tools[.pedestrian] = PedestrianTool()
     tools[.goal] = GoalTool()
+    tools[.measure] = MeasureTool()
   }
 
   public var canUndo: Bool { !undoStack.isEmpty }
@@ -119,7 +138,8 @@ public final class WalkyWorld: PointerHost {
     notify: { [unowned self] message in self.onNotify?(message) },
     requestRender: { [unowned self] in self.requestRender() },
     colorAt: { [unowned self] at in self.pickWall(at)?.color },
-    worldPerPixel: { [unowned self] in self.viewport.worldPerPixel })
+    worldPerPixel: { [unowned self] in self.viewport.worldPerPixel },
+    measure: { [unowned self] a, b in self.measure(a, b) })
 
   // MARK: - Edits
 
@@ -135,6 +155,68 @@ public final class WalkyWorld: PointerHost {
     navDirty = true
     touch()
     return true
+  }
+
+  /// Many walls as one edit.
+  ///
+  /// `addWallShape` takes a checkpoint per call and a checkpoint copies every
+  /// wall in the world, so importing 150 buildings through it is O(n^2) copies
+  /// and buries the 40-deep undo stack under a single gesture. An import is one
+  /// edit: one checkpoint, one revision bump, one navigation rebuild.
+  @discardableResult
+  public func addWalls(_ shapes: [[[Point]]], _ options: WallOptions? = nil) -> Int {
+    let usable = shapes.map { $0.filter { $0.count >= 3 } }.filter { !$0.isEmpty }
+    if usable.isEmpty { return 0 }
+
+    checkpoint()
+    for polygons in usable {
+      let wall = makeWall(polygons, options ?? WallOptions())
+      walls.append(wall)
+      // Skipped entirely on the empty map an import usually lands on; this is
+      // O(agents) per wall and there is no point paying it for nobody.
+      if agents.count > 0 { removeAgentsUnder(wall) }
+    }
+    navDirty = true
+    touch()
+    return usable.count
+  }
+
+  // MARK: - Measuring
+
+  /// Walky's own walk from `a` to `b`, and then a request for Apple's.
+  ///
+  /// `requestRender()` rather than `touch()`: a measurement moves no walls, and
+  /// `touch()` would bump `worldRevision` and throw away every cached wall and
+  /// hull path in the renderer for nothing.
+  public func measure(_ a: Point, _ b: Point) {
+    rebuildNavIfNeeded()
+    guard let taken = measuring.measure(from: a, to: b, walls: walls,
+                                        radius: settings.pedestrianRadius,
+                                        revision: worldRevision) else {
+      measurement = nil
+      onNotify?("No way through from there.")
+      requestRender()
+      return
+    }
+    measurement = taken
+    requestRender()
+    onDetourRequested?(a, b)
+  }
+
+  /// Apple's half, once it arrives. Dropped if the measurement has moved on --
+  /// a reply to a question nobody is asking any more.
+  public func setAppleRoute(_ a: Point, _ b: Point, _ path: [Point], _ metres: Double) {
+    guard var current = measurement, current.a == a, current.b == b else { return }
+    current.apple = path
+    current.appleMetres = metres
+    measurement = current
+    requestRender()
+  }
+
+  public func clearMeasurement() {
+    guard measurement != nil else { return }
+    measurement = nil
+    requestRender()
   }
 
   /// Pedestrians standing where a wall was just drawn are removed.
@@ -374,6 +456,11 @@ public final class WalkyWorld: PointerHost {
     metrics.reset()
     clock.reset()
     touch()
+    // A cleared map is a blank one again: no anchor, and the original's zoom
+    // stops back, so the camera cannot wander out into empty space.
+    geoAnchor = nil
+    viewport.zoomLevelMax = ZOOM_LEVEL_MAX
+    measurement = nil
   }
 
   public func resetZoom() {

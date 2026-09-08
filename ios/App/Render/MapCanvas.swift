@@ -11,11 +11,14 @@ import WalkyCore
 struct MapCanvas: View {
   let world: WalkyWorld
   let redraw: Redraw
+  let basemap: Basemap
   let stats: () -> DebugStats
   @State private var cache = RenderCache()
 
   var body: some View {
     let version = redraw.version
+    // Read here, not in the closure: a renderer closure is not a tracked scope.
+    let sheet = basemap.sheet
     Canvas(opaque: true, colorMode: .nonLinear, rendersAsynchronously: false) { ctx, size in
       _ = version
       // `Canvas` renders on the main actor -- `rendersAsynchronously: false`
@@ -24,7 +27,7 @@ struct MapCanvas: View {
       // `@unchecked Sendable`: if SwiftUI ever renders this off the main
       // thread, this traps loudly instead of racing the simulation quietly.
       MainActor.assumeIsolated {
-        MapRenderer.draw(world, cache, stats(), into: &ctx, size: size)
+        MapRenderer.draw(world, cache, stats(), basemap: sheet, into: &ctx, size: size)
       }
     }
     .ignoresSafeArea()

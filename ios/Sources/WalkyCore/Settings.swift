@@ -92,6 +92,8 @@ public final class Settings {
   public var showConvexParts = false
   public var showPersonalSpace = false
   public var showDebug = false
+  /// iOS only: Apple's basemap under the crowd. See `ios/README.md`.
+  public var showBasemap = true
 
   /// `AbstractPedestrian`'s default.
   public var pedestrianRadius: Double = 13

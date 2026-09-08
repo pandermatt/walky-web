@@ -27,6 +27,16 @@ public let ZOOM_LEVEL_MIN: Double = -50   // most zoomed in
 public let ZOOM_LEVEL_MAX: Double = 20    // most zoomed out
 
 public struct Viewport {
+  /// How far out this map may be zoomed.
+  ///
+  /// The stops come from `ZoomMouseListener`, where the whole world was a few
+  /// hundred pixels of freehand drawing and 20 notches out was further than
+  /// anyone needed. An imported neighbourhood is not that world: 260m at 56px
+  /// to the metre is 14,560px across, which needs about 40 notches before it
+  /// fits on a phone. So the ceiling is per-map rather than a constant, and
+  /// stays at the original's stop for every map that is drawn rather than
+  /// imported -- which is all of them on the web.
+  public var zoomLevelMax: Double = ZOOM_LEVEL_MAX
   public var targetX: Double = 0
   public var targetY: Double = 0
   /// Matches `ZoomMouseListener.startZoom`: higher means further out.
@@ -72,7 +82,7 @@ public struct Viewport {
   /// Move to a zoom level with one screen point left over the same world point.
   private mutating func zoomAbout(_ screen: Point, _ level: Double) {
     let before = screenToWorld(screen)
-    zoomLevel = jsMax(ZOOM_LEVEL_MIN, jsMin(ZOOM_LEVEL_MAX, level))
+    zoomLevel = jsMax(ZOOM_LEVEL_MIN, jsMin(zoomLevelMax, level))
     let after = screenToWorld(screen)
     targetX += before.x - after.x
     targetY += before.y - after.y
@@ -92,7 +102,7 @@ public struct Viewport {
                        jsMax(1, height - margin * 2) / h)
     // Snap to the nearest whole notch so the camera stays on the original's stops.
     let level = jsRound(-jsLog(wanted) / jsLog(ZOOM_FACTOR))
-    zoomLevel = jsMax(ZOOM_LEVEL_MIN, jsMin(ZOOM_LEVEL_MAX, level))
+    zoomLevel = jsMax(ZOOM_LEVEL_MIN, jsMin(zoomLevelMax, level))
     targetX = (bounds.minX + bounds.maxX) / 2
     targetY = (bounds.minY + bounds.maxY) / 2
   }

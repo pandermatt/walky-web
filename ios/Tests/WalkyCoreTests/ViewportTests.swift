@@ -192,3 +192,41 @@ struct PaletteTests {
     #expect(contrastRatio(shadowOf(ORANGE), WHITE) > 4.5)   // WCAG AA for body text
   }
 }
+
+
+/// The ceiling is per-map because an imported neighbourhood is not the world
+/// the original's stops were chosen for. See `Viewport.zoomLevelMax`.
+@Suite("Viewport.zoomLevelMax")
+struct ZoomCeilingTests {
+  @Test("defaults to the original's stop, so a drawn map is unchanged")
+  func defaultsToTheOriginal() {
+    #expect(Viewport().zoomLevelMax == ZOOM_LEVEL_MAX)
+  }
+
+  @Test("a raised ceiling is what a pinch is clamped to")
+  func pinchClampsToTheCeiling() {
+    var v = view()
+    v.zoomLevelMax = 40
+    v.zoomAt(Point(200, 150), 500)
+    #expect(v.zoomLevel == 40)
+  }
+
+  @Test("fit shows a whole imported neighbourhood, which the old stop could not")
+  func fitsAnImport() {
+    // 260m at 56px to the metre, on a 402pt-wide phone.
+    let across = 260.0 * 56
+    let bounds = Bounds(minX: 0, minY: 0, maxX: across, maxY: across)
+
+    var stuck = Viewport()
+    stuck.width = 402; stuck.height = 874
+    stuck.fit(bounds)
+    #expect(stuck.zoomLevel == ZOOM_LEVEL_MAX)          // clamped, and far too close
+    #expect(across * stuck.scale > 402 * 4)             // shows a quarter of it at best
+
+    var roomy = stuck
+    roomy.zoomLevelMax = 60
+    roomy.fit(bounds)
+    #expect(roomy.zoomLevel > ZOOM_LEVEL_MAX)
+    #expect(across * roomy.scale <= 402)                // the whole import is on screen
+  }
+}

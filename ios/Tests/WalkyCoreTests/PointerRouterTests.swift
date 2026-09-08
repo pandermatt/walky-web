@@ -52,7 +52,8 @@ private final class FakeHost: PointerHost {
     setGoalAt: { _ in true }, selectPedestriansIn: { _ in 0 }, selectionCount: { 0 },
     clearSelection: {}, deactivateTool: {},
     notify: { _ in }, requestRender: { [unowned self] in self.renders += 1 },
-    colorAt: { _ in nil }, worldPerPixel: { [unowned self] in self.viewport.worldPerPixel })
+    colorAt: { _ in nil }, worldPerPixel: { [unowned self] in self.viewport.worldPerPixel },
+    measure: { _, _ in })
 }
 
 private let A = TouchId(1)

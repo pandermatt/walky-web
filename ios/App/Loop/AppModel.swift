@@ -21,6 +21,8 @@ final class ToolbarState {
   var selected: ToolId?
   var running = false
   var canUndo = false
+  /// Whether there is a measurement to clear.
+  var hasMeasurement = false
 }
 
 /// The transient line above the map.
@@ -77,6 +79,9 @@ final class Chrome {
 final class AppModel {
   let world = WalkyWorld()
   let redraw = Redraw()
+  let basemap = Basemap()
+  let importer = MapImporter()
+  let detours = DetourRouter()
   let toolbar = ToolbarState()
   let notice = Notice()
   let crowd = Crowd()
@@ -112,7 +117,15 @@ final class AppModel {
   init() {
     world.onRequestRender = { [weak self] in self?.needsFrame() }
     world.onNotify = { [weak self] message in self?.show(message) }
-    world.onToolChanged = { [weak self] id in self?.toolbar.selected = id }
+    world.onToolChanged = { [weak self] id in
+      self?.toolbar.selected = id
+      // The measure tool has no toolbar cell to light up, so it says so instead.
+      if id == .measure { self?.show("Tap two points to measure.") }
+    }
+    world.onDetourRequested = { [weak self] a, b in
+      guard let self else { return }
+      self.detours.route(from: a, to: b, world: self.world)
+    }
     // The way back from a clean capture. Guarded rather than assigned, because
     // @Observable fires on every set and an idle tap is an ordinary thing to do
     // on a map with the controls already showing.
@@ -182,6 +195,8 @@ final class AppModel {
     // miss every second or third press.
     if toolbar.running != world.running { toolbar.running = world.running }
     if toolbar.canUndo != world.canUndo { toolbar.canUndo = world.canUndo }
+    let measured = world.measurement != nil
+    if toolbar.hasMeasurement != measured { toolbar.hasMeasurement = measured }
     // Mirrored here, and guarded for the same reason, because `agents.count`
     // never changes without either a `touch()` -- every edit: brush, wall, undo,
     // clear -- or a tick, and `touch()` un-pauses the link. So a tick always
@@ -217,10 +232,14 @@ final class AppModel {
     // the short way to it. Disarming is `RootView`'s, keyed on the flag, so
     // both routes get it.
     case .hideControls: chrome.hidden = true
+    case .clearMeasurement:
+      detours.cancel()
+      world.clearMeasurement()
     // Both raise a sheet, and the view owns the sheet.
     case .settings, .welcome: break
     }
     toolbar.canUndo = world.canUndo
+    toolbar.hasMeasurement = world.measurement != nil
     needsFrame()
   }
 
@@ -242,6 +261,7 @@ private final class DisplayLinkProxy: NSObject {
 }
 
 enum ToolbarAction {
-  case start, resetPedestrians, undo, clear, resetZoom, settings, welcome, hideControls
+  case start, resetPedestrians, undo, clear, resetZoom, settings, welcome
+  case hideControls, clearMeasurement
 }
 

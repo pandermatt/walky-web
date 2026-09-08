@@ -135,6 +135,7 @@ enum MapRenderer {
   }
 
   static func draw(_ world: WalkyWorld, _ cache: RenderCache, _ stats: DebugStats,
+                   basemap: Basemap.Sheet?,
                    into ctx: inout GraphicsContext, size: CGSize) {
     cache.refresh(world)
     if world.settings.showLineToTarget { cache.refreshGoalPaths(world) }
@@ -160,6 +161,14 @@ enum MapRenderer {
     ctx.translateBy(x: size.width / 2, y: size.height / 2)
     ctx.scaleBy(x: scale, y: scale)
     ctx.translateBy(x: -vp.targetX, y: -vp.targetY)
+
+    // Apple's map, if a real place has been imported. Drawn in world space
+    // like everything below it, so it pans and zooms with the crowd rather
+    // than being chased frame by frame; the ground fill above is the letterbox
+    // around it. See Basemap.
+    if let basemap, world.settings.showBasemap, world.geoAnchor != nil {
+      ctx.draw(Image(decorative: basemap.image, scale: 1), in: basemap.worldRect)
+    }
 
     // A line width in points becomes this in world units.
     let hairline = 1 / scale
@@ -192,8 +201,19 @@ enum MapRenderer {
                  style: StrokeStyle(lineWidth: 2 / scale, lineCap: .round, lineJoin: .round))
     }
 
+    // The measurement sits with the map rather than over the crowd, for the
+    // same reason the goal route does.
+    if let measurement = world.measurement {
+      drawMeasurement(measurement, into: &ctx, scale: scale, ink: ink)
+    }
+
     drawAgents(world, into: &ctx, hairline: hairline, ink: ink)
     drawPreview(world, into: &ctx, hairline: hairline, scale: scale, ink: ink)
+
+    // Screen space: a label drawn in world units would grow with the zoom.
+    if let measurement = world.measurement {
+      drawMeasurementLabel(measurement, world: world, into: &screen, size: size, ink: ink)
+    }
 
     if world.settings.showDebug {
       drawDebug(debugLines(world, stats), into: &screen, size: size, ink: ink)
@@ -377,6 +397,96 @@ extension MapRenderer {
         + "\(String(format: "%.1f", walking.maxDensity)) max /m2",
       "Throughput: \(String(format: "%.1f", walking.throughputPerSecond)) /s",
     ]
+  }
+
+  // MARK: - The measurement
+
+  /// Walky's own walk, and Apple's beside it.
+  ///
+  /// Walky's is `ORANGE` at 2pt with round caps, which is not a choice so much
+  /// as a recognition: it is the same object the goal route already is, and it
+  /// should not arrive wearing a different coat. Apple's is `Accents.sky` --
+  /// deliberately a fixed colour and *not* `settings.accent`, which the user can
+  /// set to orange, at which point the two routes would become one line.
+  static func drawMeasurement(_ m: DetourMeasurement, into ctx: inout GraphicsContext,
+                              scale: Double, ink: RGB) {
+    let sky = Accents.sky.color
+
+    if let apple = m.apple, apple.count > 1 {
+      ctx.stroke(path(apple), with: .color(color(sky)),
+                 style: StrokeStyle(lineWidth: 2 / scale, lineCap: .round, lineJoin: .round))
+      // The stubs from the taps to where Apple's route really begins and ends.
+      // Dashed, because they are not walking -- they are the snap.
+      if let first = apple.first, let last = apple.last {
+        let stubs = StrokeStyle(lineWidth: 1.5 / scale, dash: [6 / scale, 6 / scale])
+        ctx.stroke(path([m.a, first]), with: .color(color(sky, 0.7)), style: stubs)
+        ctx.stroke(path([m.b, last]), with: .color(color(sky, 0.7)), style: stubs)
+      }
+    }
+
+    ctx.stroke(path(m.walky), with: .color(color(ORANGE)),
+               style: StrokeStyle(lineWidth: 2 / scale, lineCap: .round, lineJoin: .round))
+
+    let dot = 5 / scale
+    for end in [m.a, m.b] {
+      let box = CGRect(x: end.x - dot, y: end.y - dot, width: dot * 2, height: dot * 2)
+      ctx.fill(Path(ellipseIn: box), with: .color(color(ink)))
+      ctx.stroke(Path(ellipseIn: box), with: .color(color(ORANGE)), lineWidth: 2 / scale)
+    }
+  }
+
+  private static func path(_ points: [Point]) -> Path {
+    var p = Path()
+    guard let first = points.first else { return p }
+    p.move(to: CGPoint(x: first.x, y: first.y))
+    for q in points.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
+    return p
+  }
+
+  /// Two short lines beside the measurement, in the app's own voice rather than
+  /// the debug readout's monospace: this is a result, not a diagnostic.
+  static func drawMeasurementLabel(_ m: DetourMeasurement, world: WalkyWorld,
+                                   into ctx: inout GraphicsContext,
+                                   size: CGSize, ink: RGB) {
+    let mid = Point((m.a.x + m.b.x) / 2, (m.a.y + m.b.y) / 2)
+    let at = world.viewport.worldToScreen(mid)
+
+    var lines = [walkyLine(m, world.settings.speed)]
+    if let appleMetres = m.appleMetres, let ratio = m.ratio {
+      lines.append("Apple \(metres(appleMetres)) · \(String(format: "%.2f", ratio))×")
+    }
+
+    // Clamped inside the canvas, and clear of the toolbar the readout already
+    // documents a 110pt reserve for.
+    let x = Swift.min(Swift.max(12, at.x), size.width - 12)
+    let y = Swift.min(Swift.max(28, at.y - 22), size.height - 110)
+
+    var offset = 0.0
+    for line in lines {
+      var text = ctx.resolve(Text(line).font(.system(size: 13, weight: .medium)))
+      text.shading = .color(color(ink))
+      let measured = text.measure(in: size)
+      let box = CGRect(x: x - measured.width / 2 - 6, y: y + offset - measured.height / 2 - 3,
+                       width: measured.width + 12, height: measured.height + 6)
+      ctx.fill(Path(roundedRect: box, cornerRadius: 6),
+               with: .color(color(world.settings.ground.background, 0.85)))
+      ctx.draw(text, at: CGPoint(x: x, y: y + offset), anchor: .center)
+      offset += measured.height + 5
+    }
+  }
+
+  private static func walkyLine(_ m: DetourMeasurement, _ speedMps: Double) -> String {
+    let seconds = speedMps > 0 ? m.walkyMetres / speedMps : 0
+    return "\(metres(m.walkyMetres)) on foot · \(duration(seconds))"
+  }
+
+  private static func metres(_ m: Double) -> String {
+    m < 1000 ? "\(Int(m.rounded())) m" : String(format: "%.2f km", m / 1000)
+  }
+
+  private static func duration(_ seconds: Double) -> String {
+    let whole = Int(seconds.rounded())
+    return whole < 60 ? "\(whole) s" : "\(whole / 60) min \(whole % 60) s"
   }
 
   /// Drawn in *screen* space, from a copy of the context taken before the world

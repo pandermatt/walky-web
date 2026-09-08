@@ -3,7 +3,7 @@ import Foundation
 /// The tool vocabulary, ported from `src/tools/types.ts`.
 
 public enum ToolId: String, CaseIterable, Sendable {
-  case wall, rectangle, border, pedestrian, goal
+  case wall, rectangle, border, pedestrian, goal, measure
   // Present in the web app, not in v1: select, shift, erase, text, generator.
 }
 
@@ -132,6 +132,8 @@ public struct ToolContext {
   public var colorAt: (Point) -> RGB?
   /// World units per screen point, so tolerances can be expressed in points.
   public var worldPerPixel: () -> Double
+  /// Walky's walk from a to b, stored on the world and drawn until replaced.
+  public var measure: (Point, Point) -> Void
 
   public init(
     addWall: @escaping ([Point], WallOptions?) -> Bool,
@@ -147,7 +149,8 @@ public struct ToolContext {
     notify: @escaping (String) -> Void,
     requestRender: @escaping () -> Void,
     colorAt: @escaping (Point) -> RGB?,
-    worldPerPixel: @escaping () -> Double
+    worldPerPixel: @escaping () -> Double,
+    measure: @escaping (Point, Point) -> Void
   ) {
     self.addWall = addWall
     self.addWallShape = addWallShape
@@ -163,6 +166,7 @@ public struct ToolContext {
     self.requestRender = requestRender
     self.colorAt = colorAt
     self.worldPerPixel = worldPerPixel
+    self.measure = measure
   }
 }
 
