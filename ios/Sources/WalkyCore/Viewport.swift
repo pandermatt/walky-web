@@ -26,6 +26,20 @@ public let ZOOM_FACTOR: Double = 1.1
 public let ZOOM_LEVEL_MIN: Double = -50   // most zoomed in
 public let ZOOM_LEVEL_MAX: Double = 20    // most zoomed out
 
+/// How near straight counts as straight when the fingers lift, in radians --
+/// about six degrees. Wide enough that nobody has to land on zero by hand,
+/// narrow enough that a deliberate small tilt survives.
+public let NORTH_SNAP: Double = 0.105
+
+/// An angle folded back into (-pi, pi], so the rotation cannot wind up.
+public func wrapAngle(_ radians: Double) -> Double {
+  let twoPi = 2 * Double.pi
+  var a = radians.truncatingRemainder(dividingBy: twoPi)
+  if a > Double.pi { a -= twoPi }
+  if a <= -Double.pi { a += twoPi }
+  return a
+}
+
 public struct Viewport {
   /// How far out this map may be zoomed.
   ///
@@ -53,6 +67,17 @@ public struct Viewport {
   public var targetY: Double = 0
   /// Matches `ZoomMouseListener.startZoom`: higher means further out.
   public var zoomLevel: Double = 0
+  /// The map's spin on screen, in radians, clockwise, wrapped to (-pi, pi].
+  ///
+  /// New here: the web has no rotation, which is why it is the one camera field
+  /// with no counterpart in `viewport.ts`. Zero is how every map has been drawn
+  /// until now and where `fit` puts it back, so a viewport nobody has turned
+  /// behaves exactly as it did -- that is what keeps the ported tests honest.
+  ///
+  /// A plain angle rather than a transform matrix: `zoomLevel` is still the
+  /// source of truth for the zoom and `targetX`/`targetY` for the centre, and a
+  /// matrix would bury all three in six numbers that nothing else reads.
+  public var rotation: Double = 0
   public var width: Double = 1
   public var height: Double = 1
 
@@ -62,14 +87,27 @@ public struct Viewport {
 
   public func worldToScreen(_ p: Point) -> Point {
     let s = scale
-    return Point(width / 2 + (p.x - targetX) * s,
-                 height / 2 + (p.y - targetY) * s)
+    let (dx, dy) = ((p.x - targetX) * s, (p.y - targetY) * s)
+    let (c, sn) = (jsCos(rotation), jsSin(rotation))
+    return Point(width / 2 + dx * c - dy * sn,
+                 height / 2 + dx * sn + dy * c)
   }
 
   public func screenToWorld(_ p: Point) -> Point {
     let s = scale
-    return Point((p.x - width / 2) / s + targetX,
-                 (p.y - height / 2) / s + targetY)
+    let (dx, dy) = (p.x - width / 2, p.y - height / 2)
+    let (c, sn) = (jsCos(rotation), jsSin(rotation))
+    return Point((dx * c + dy * sn) / s + targetX,
+                 (dy * c - dx * sn) / s + targetY)
+  }
+
+  /// A screen-space delta as a world-space one: the rotation undone and the
+  /// zoom divided out. Shared by `screenToWorld` and `panBy`, which is the
+  /// point -- a pan that forgot the rotation would send the map off sideways.
+  private func screenDeltaToWorld(_ dx: Double, _ dy: Double) -> (Double, Double) {
+    let s = scale
+    let (c, sn) = (jsCos(rotation), jsSin(rotation))
+    return ((dx * c + dy * sn) / s, (dy * c - dx * sn) / s)
   }
 
   /// World units per screen point -- how a tolerance in points becomes one in
@@ -102,9 +140,37 @@ public struct Viewport {
 
   /// Drag the view by a screen-space delta.
   public mutating func panBy(_ dxScreen: Double, _ dyScreen: Double) {
-    let s = scale
-    targetX -= dxScreen / s
-    targetY -= dyScreen / s
+    let (dx, dy) = screenDeltaToWorld(dxScreen, dyScreen)
+    targetX -= dx
+    targetY -= dy
+  }
+
+  /// Turn the map about a screen point -- what a two-finger twist measures.
+  ///
+  /// Built like `zoomAbout` and for the same reason: the world point under the
+  /// fingers has to stay under them, or the map slides away from the gesture
+  /// that is turning it.
+  public mutating func rotateBy(_ screen: Point, _ radians: Double) {
+    guard radians.isFinite, radians != 0 else { return }
+    let before = screenToWorld(screen)
+    rotation = wrapAngle(rotation + radians)
+    let after = screenToWorld(screen)
+    targetX += before.x - after.x
+    targetY += before.y - after.y
+  }
+
+  /// Settle a nearly-straight map back to straight. True when it moved.
+  ///
+  /// Fingers cannot land on zero, so without this a twist leaves a degree or
+  /// two behind for good: invisible on a drawn map, and glaring on an imported
+  /// one where the streets stop lining up with the screen. The pivot is the
+  /// screen centre, which `screenToWorld` maps to `target` whatever the
+  /// rotation, so the centre of the view is fixed and nothing has to move.
+  @discardableResult
+  public mutating func snapNorth() -> Bool {
+    guard rotation != 0, abs(rotation) <= NORTH_SNAP else { return false }
+    rotation = 0
+    return true
   }
 
   public mutating func fit(_ bounds: Bounds, _ margin: Double = 60) {
@@ -117,6 +183,11 @@ public struct Viewport {
     zoomLevel = jsMax(ZOOM_LEVEL_MIN, jsMin(zoomLevelMax, level))
     targetX = (bounds.minX + bounds.maxX) / 2
     targetY = (bounds.minY + bounds.maxY) / 2
+    // Straightened, because the margin above is measured on an axis-aligned
+    // box: a tilted map fitted to it would still hang off the corners. It also
+    // makes "reset zoom" the way back from a twist, which is the only way back
+    // there is.
+    rotation = 0
   }
 
   /// Back to the map: the starting zoom, with what has been drawn on screen.
@@ -128,7 +199,7 @@ public struct Viewport {
   /// `homeLevel`.
   public mutating func reset(_ bounds: Bounds?) {
     guard let bounds else {
-      zoomLevel = homeLevel; targetX = 0; targetY = 0
+      zoomLevel = homeLevel; targetX = 0; targetY = 0; rotation = 0
       return
     }
     fit(bounds)

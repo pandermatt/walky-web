@@ -378,3 +378,139 @@ private final class SelfDeactivating: Tool {
   func onPointerUp(_: PointerInfo, _: ToolContext) { host.tool = nil }
   func preview() -> ToolPreview { .empty }
 }
+
+/// The twist, which is the pinch wearing a third hat: the same two fingers
+/// already pan by their midpoint and zoom by their gap.
+@Suite("Two-finger rotation")
+@MainActor
+struct PointerRotationTests {
+
+  /// Puts two fingers on a horizontal line about the view centre and turns them
+  /// by `degrees`, in one move each so the router sees a single step.
+  private func twist(_ r: PointerRouter, _ degrees: Double, radius: Double = 100) {
+    let c = Point(200, 150)
+    r.began(A, at: Point(c.x - radius, c.y))
+    r.began(B, at: Point(c.x + radius, c.y))
+    let t = degrees * Double.pi / 180
+    r.moved(A, to: Point(c.x - radius * cos(t), c.y - radius * sin(t)))
+    r.moved(B, to: Point(c.x + radius * cos(t), c.y + radius * sin(t)))
+  }
+
+  @Test("a small twist is a pinch that wobbled, and the map stays straight")
+  func belowTheSlop() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+    host.tool = nil
+
+    twist(r, 5)
+    #expect(host.viewport.rotation == 0)
+  }
+
+  @Test("past the slop the map turns with the fingers")
+  func aboveTheSlop() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+    host.tool = nil
+
+    twist(r, 40)
+    // Everything past the slop, and the slop subtracted rather than forgiven --
+    // so the map is exactly the slop shy of the fingers, at every angle.
+    #expect(host.viewport.rotation > 0)
+    #expect(abs(host.viewport.rotation
+                - (40 * Double.pi / 180 - PointerRouter.ROTATE_SLOP)) < 0.001)
+  }
+
+  @Test("the world point between the fingers stays between them")
+  func anchoredToTheFingers() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+    host.tool = nil
+    host.viewport.targetX = 55
+    host.viewport.targetY = -12
+
+    let mid = Point(200, 150)
+    let before = host.viewport.screenToWorld(mid)
+    twist(r, 60)
+    let after = host.viewport.screenToWorld(mid)
+    #expect(abs(after.x - before.x) < 0.001)
+    #expect(abs(after.y - before.y) < 0.001)
+  }
+
+  @Test("untwisting undoes the twist, all the way back to straight")
+  func reversible() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+    host.tool = nil
+
+    // Out past the slop and back to exactly where the fingers started. The map
+    // has to come back with them: it is the same hand putting it back.
+    twist(r, 30)
+    #expect(host.viewport.rotation != 0)
+    let c = Point(200, 150)
+    r.moved(A, to: Point(c.x - 100, c.y))
+    r.moved(B, to: Point(c.x + 100, c.y))
+    #expect(abs(host.viewport.rotation) < 1e-9)
+  }
+
+  @Test("a map left a degree off straight is straightened when the fingers lift")
+  func snapsOnLift() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+    host.tool = nil
+
+    // Past the slop, then most of the way back: the fingers end a couple of
+    // degrees off where they started, which is what hands actually do.
+    twist(r, 30)
+    let c = Point(200, 150)
+    let t = 12 * Double.pi / 180
+    r.moved(A, to: Point(c.x - 100 * cos(t), c.y - 100 * sin(t)))
+    r.moved(B, to: Point(c.x + 100 * cos(t), c.y + 100 * sin(t)))
+    #expect(host.viewport.rotation != 0)
+    #expect(abs(host.viewport.rotation) < NORTH_SNAP)
+
+    r.ended(A, at: Point(c.x - 100 * cos(t), c.y - 100 * sin(t)))
+    #expect(host.viewport.rotation == 0)
+  }
+
+  @Test("a deliberate angle survives the lift")
+  func keepsARealTilt() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+    host.tool = nil
+
+    twist(r, 45)
+    r.ended(A, at: Point(100, 150))
+    #expect(abs(host.viewport.rotation
+                - (45 * Double.pi / 180 - PointerRouter.ROTATE_SLOP)) < 0.001)
+  }
+
+  @Test("the slop is measured per gesture, not once per app")
+  func slopResets() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+    host.tool = nil
+
+    twist(r, 40)
+    r.ended(A, at: Point(100, 150))
+    r.ended(B, at: Point(300, 150))
+    let after = host.viewport.rotation
+
+    // A second pinch that only wobbles must not inherit the first one's
+    // permission to turn.
+    twist(r, 4)
+    #expect(abs(host.viewport.rotation - after) < 0.001)
+  }
+
+  @Test("a twist never reaches a tool")
+  func toolsSeeNothing() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+
+    twist(r, 40)
+    // The wall tool would otherwise draw an arc across the map while the
+    // fingers turned. `gestureTaken` is what keeps it out; this is the twist's
+    // version of the assertion the pinch already makes.
+    #expect(!host.recorder.events.contains { if case .move = $0 { return true }; return false })
+    #expect(host.viewport.rotation != 0)
+  }
+}

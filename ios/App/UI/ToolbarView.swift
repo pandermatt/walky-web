@@ -165,6 +165,14 @@ struct ToolbarView: View {
     } label: {
       icon("ellipsis")
     }
+    // The same style the other six cells carry, and here for a reason that is
+    // easy to miss: `icon` asks for `.foregroundStyle(.primary)`, but `.primary`
+    // is a *hierarchical* level rather than a colour -- it resolves against
+    // whatever base style is in effect. A `Menu` with the automatic button
+    // style installs the accent as that base, so the ellipsis resolved to blue
+    // while every other glyph in the bar stayed white. `.plain` leaves the base
+    // as the ordinary label colour, which is what `.primary` was asking for.
+    .buttonStyle(.plain)
     .accessibilityLabel("More")
   }
 

@@ -159,6 +159,11 @@ enum MapRenderer {
     // World space from here down: one transform rather than converting every
     // point, which is what makes the cached wall paths reusable.
     ctx.translateBy(x: size.width / 2, y: size.height / 2)
+    // The same order `Viewport.worldToScreen` composes: centre, turn, zoom,
+    // then the target to the origin. Swap the turn and the zoom and nothing
+    // changes -- the zoom is uniform -- but the two would stop reading alike,
+    // and every hit test in the app goes through the other one.
+    ctx.rotate(by: .radians(vp.rotation))
     ctx.scaleBy(x: scale, y: scale)
     ctx.translateBy(x: -vp.targetX, y: -vp.targetY)
 
@@ -418,6 +423,7 @@ extension MapRenderer {
       "Selected: \(world.agents.selectionCount)",
       "Walls: \(world.walls.count)",
       "Zoom level: \(world.viewport.zoomLevel) (scale \(String(format: "%.3f", world.viewport.scale)))",
+      "Rotation: \(String(format: "%.1f", world.viewport.rotation * 180 / Double.pi))°",
       m.map { "X: \(Int(jsRound($0.x))) / Y: \(Int(jsRound($0.y)))" } ?? "X: - / Y: -",
       "FPS: \(stats.fps)",
       "TPS: \(world.running ? stats.tps : 0)",

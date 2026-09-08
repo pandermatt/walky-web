@@ -60,7 +60,10 @@ public final class PointerRouter {
 
   /// Every finger currently down, in view points, oldest first.
   private var pointers: [(id: TouchId, at: Point)] = []
-  private var pinch: (gap: Double, mid: Point)?
+  private var pinch: (gap: Double, mid: Point, angle: Double)?
+  /// How far the fingers have turned since this pinch began, in radians. What
+  /// the map does with it is `pastSlop`.
+  private var spun: Double = 0
   /// A press held back from the tool until it is certainly a stroke.
   private var pendingTouch: (id: TouchId, info: PointerInfo)?
   /// The pinch has claimed this gesture.
@@ -76,6 +79,28 @@ public final class PointerRouter {
   /// How far a finger may travel and still count as a tap, in screen points.
   /// The system's own figure for the same question.
   private static let TAP_SLOP: Double = 10
+
+  /// How far the fingers must turn before the map follows, in radians -- about
+  /// ten degrees. Two fingers pinching are never quite parallel to where they
+  /// started, and without this every zoom would leave the map a little crooked.
+  /// Internal rather than private so the tests can say what they mean.
+  static let ROTATE_SLOP: Double = 0.175
+
+  /// How far the map has turned, given how far the fingers have: everything
+  /// past the slop, and nothing at all inside it.
+  ///
+  /// The slop is *subtracted* rather than forgiven, which is the whole design.
+  /// Forgive it -- start turning from wherever the fingers were when they broke
+  /// through -- and the map jumps by ten degrees at that instant, and worse, a
+  /// twist out to fifteen degrees and back to zero leaves it ten degrees
+  /// crooked with the fingers exactly where they started and nothing on screen
+  /// to explain it. Subtracting keeps the map a continuous function of the
+  /// fingers: no jump when it engages, and every twist undoable by untwisting.
+  static func pastSlop(_ spun: Double) -> Double {
+    if spun > ROTATE_SLOP { return spun - ROTATE_SLOP }
+    if spun < -ROTATE_SLOP { return spun + ROTATE_SLOP }
+    return 0
+  }
 
   public init(host: PointerHost) { self.host = host }
 
@@ -124,6 +149,16 @@ public final class PointerRouter {
       // under them would feel like the map had come loose.
       host.viewport.panBy(now.mid.x - was.mid.x, now.mid.y - was.mid.y)
       host.viewport.zoomByRatio(now.mid, now.gap / was.gap)
+
+      // Rotation is withheld the way a press is, and for a cousin of the same
+      // reason: a gesture that has not declared itself should not move the map
+      // in a way that cannot be taken back. The map turns by the change in what
+      // the fingers have *earned*, not by the change in where they are -- see
+      // `pastSlop`.
+      let earned = Self.pastSlop(spun)
+      spun += wrapAngle(now.angle - was.angle)
+      host.viewport.rotateBy(now.mid, Self.pastSlop(spun) - earned)
+
       pinch = now
       host.requestRender()
       return
@@ -181,6 +216,7 @@ public final class PointerRouter {
   public func cancelled(_ id: TouchId) {
     _ = releasePointer(id)
     pendingTouch = nil
+    spun = 0
     pressScreen = nil
     host.tool?.cancel()
     lastScreen = nil
@@ -194,10 +230,14 @@ public final class PointerRouter {
     host.requestRender()
   }
 
-  private func measurePinch() -> (gap: Double, mid: Point)? {
+  private func measurePinch() -> (gap: Double, mid: Point, angle: Double)? {
     guard pointers.count >= 2 else { return nil }
     let a = pointers[0].at, b = pointers[1].at
-    return (jsHypot(b.x - a.x, b.y - a.y), Point((a.x + b.x) / 2, (a.y + b.y) / 2))
+    // The angle is of the line between the fingers, which is why the pair has
+    // to keep its insertion order: swap the two and it jumps by pi.
+    return (jsHypot(b.x - a.x, b.y - a.y),
+            Point((a.x + b.x) / 2, (a.y + b.y) / 2),
+            jsAtan2(b.y - a.y, b.x - a.x))
   }
 
   private func flushPendingTouch() {
@@ -216,7 +256,13 @@ public final class PointerRouter {
   private func releasePointer(_ id: TouchId) -> Bool {
     pointers.removeAll { $0.id == id }
     let wasGesture = gestureTaken
-    if pinch != nil && pointers.count < 2 { pinch = nil }
+    if pinch != nil && pointers.count < 2 {
+      pinch = nil
+      // The end of the twist, so this is where a map left a degree off straight
+      // is put straight. Doing it per-move instead would fight the fingers.
+      if host.viewport.snapNorth() { host.requestRender() }
+      spun = 0
+    }
     else if pinch != nil { pinch = measurePinch() }
     if pointers.isEmpty { gestureTaken = false }
     if wasGesture { lastScreen = nil }
