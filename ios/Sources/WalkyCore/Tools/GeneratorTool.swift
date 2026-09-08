@@ -73,7 +73,7 @@ public final class GeneratorTool: Tool {
   public func preview() -> ToolPreview {
     guard let mouse else { return .empty }
     var p = ToolPreview()
-    p.pendingPolygons = [generatorRoundedSquare(mouse, radius)]
+    p.pendingPolygons = [generatorSquare(mouse, radius)]
     p.pendingPolygonsInvalid = blocked
     return p
   }

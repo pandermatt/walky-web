@@ -29,6 +29,11 @@ public let BACKGROUND: RGB = shadowOf((64, 64, 64))
 public let WHITE: RGB = (255, 255, 255)
 public let BLUE: RGB = (0, 0, 255)
 public let YELLOW: RGB = (255, 255, 0)
+/// An unaimed door, which is not white for a reason: white is what an ordinary
+/// wall is nearly, and a door with nowhere to send anybody should read as
+/// unfinished rather than as a fresh wall. It takes its goal's colour the
+/// moment it is aimed, as the people coming out of it do.
+public let DOOR_GREY: RGB = (150, 150, 160)
 public let ORANGE: RGB = (255, 200, 0)
 public let RED: RGB = (255, 0, 0)
 

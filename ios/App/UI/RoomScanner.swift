@@ -237,22 +237,18 @@ final class RoomScanner {
         }
       }
       for (i, doorway) in plan.doorways.enumerated() where roles[i] == .entrance {
-        // **The gap is filled.** A doorway that people arrive through does not
-        // also need to be a hole -- the Walky door is the hole's whole
-        // function -- and leaving it open makes the room leak: the first thing
-        // the crowd did on the sample room was walk back out of the doorway it
-        // had just come in by, because the route round the outside to the exit
-        // was shorter than the one past the table. A sealed room is what makes
-        // "In" mean something different from "Open".
-        world.addWallShape([doorway.slab], WallOptions(color: (90, 90, 100)))
-
-        // Not in the gap: `GENERATOR_CELLS` wants a 1.4m block and a doorway is
-        // 0.9m, so the door stands on the floor just inside, along the inward
-        // normal the conversion worked out.
-        let inward = doorway.inward ?? Point(0, 0)
-        let inside = Point(doorway.at.x + inward.x * DOOR_STAND_BACK,
-                           doorway.at.y + inward.y * DOOR_STAND_BACK)
-        world.addGenerator(world.standable(inside))
+        // **The doorway is the door.** One object where there used to be two: a
+        // slab filling the gap plus a block of floor beside it. A door is a
+        // wall now, so the slab itself can be the thing people come out of, and
+        // which side they come out of is answered by where the goal is -- see
+        // `WalkyWorld.doorMouth`. For a room that is indoors, which is where
+        // the exit is.
+        //
+        // Filling the gap is not only tidier, it is necessary: left open, the
+        // first thing the crowd did on the sample room was walk back out of the
+        // doorway it had just come in by, because the way round the outside to
+        // the exit was shorter than the way past the table.
+        world.addDoor([doorway.slab])
       }
       if let exit { world.setGoalAt(exit) }
 
@@ -266,13 +262,6 @@ final class RoomScanner {
       onNotice?(line)
     }
   }
-
-  /// How far inside the room a Walky door stands, in world units.
-  ///
-  /// One pedestrian block deep, so the block it needs is on the floor rather
-  /// than in the doorframe, and the people it lets out are already in the room
-  /// and walking rather than wedged in the gap.
-  private let DOOR_STAND_BACK: Double = 13 * 3
 
   private func summary(_ plan: RoomImport, hasExit: Bool) -> String {
     var parts = ["\(plan.walls.count) walls"]

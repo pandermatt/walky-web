@@ -82,12 +82,30 @@ public struct ScannedRoom: Codable, Sendable, Equatable {
 
 /// How thick to make a wall, in metres.
 ///
-/// RoomPlan reports a wall as a plane: `dimensions` carries width and height
-/// and nothing across. Any positive thickness would block a crowd, since
-/// navigation inflates every obstacle by a pedestrian radius anyway, but a wall
-/// thinner than the rounding would collapse to a line and a wall much thicker
-/// than a real one would eat the room. 10cm is a plasterboard partition.
-public let WALL_THICKNESS: Double = 0.10
+/// RoomPlan reports a wall as a plane: `dimensions` carries width and height and
+/// nothing across, so the thickness is ours to choose. It is chosen to be
+/// **seen**: a real wall at 25cm is visibly a wall beside a doorway's
+/// `DOOR_THICKNESS` slab, which is what tells the two apart without asking
+/// anybody to read a colour or a dash. 25cm is also about right for a plastered
+/// interior wall, so the cue costs no honesty.
+///
+/// Any positive number would block a crowd -- navigation inflates every
+/// obstacle by a pedestrian radius regardless -- so this is a drawing decision
+/// with a geometric side effect, and the side effect is 7cm of room lost on
+/// each wall.
+public let WALL_THICKNESS: Double = 0.25
+
+/// How thick a doorway is, in metres.
+///
+/// Thin, and that is the whole point: a door is a slab in a thick wall, so
+/// shape alone says which is which at a glance and in monochrome. It also
+/// leaves the doorway looking like what it is -- a thin panel set in a recess
+/// -- rather than like another block of wall.
+///
+/// Thin does not mean leaky. A doorway slab is inflated by a pedestrian radius
+/// on every side, which is 0.46m of cover across an 8cm panel, so it seals the
+/// 25cm-deep gap it sits in several times over.
+public let DOOR_THICKNESS: Double = 0.08
 
 /// How much of a doorway to keep clear of its own frame, in metres.
 ///
@@ -231,12 +249,30 @@ public func roomWalls(_ room: ScannedRoom, _ options: RoomOptions = RoomOptions(
       cuts.append((along - reach, along + reach, gap))
 
       let across = Point(-axis.y, axis.x)
+      let facing = inward(from: here, towards: centre, across: across)
+      // A doorway's own thickness, not its wall's -- thin in a thick wall is
+      // the cue, see `DOOR_THICKNESS` -- and sat on the wall's **room-side
+      // face** rather than buried in the middle of it.
+      //
+      // That last part is not decoration, it is what makes a doorway usable as
+      // a goal at all. The visibility graph puts its nodes on the corners of
+      // each obstacle expanded by `radius + NODE_MARGIN`, and drops any that
+      // land inside another obstacle. A thin slab centred in a 25cm wall has
+      // all four of its expanded corners inside the wall on either side of the
+      // gap, so it gets no nodes, so its Dijkstra field has no sources, so
+      // every cost to it is infinite -- the crowd stands still and the map
+      // looks broken. Moved out to the face, its inner corners clear the
+      // flanking walls by `NODE_MARGIN` and the field seeds normally.
+      let panel = facing.map {
+        Point(here.x + $0.x * thickness / 2, here.y + $0.y * thickness / 2)
+      } ?? here
       doorways.append(Doorway(
         kind: gap.kind,
-        at: rounded(here),
+        at: rounded(panel),
         metres: gap.width,
-        inward: inward(from: here, towards: centre, across: across),
-        slab: bar(mid: here, axis: axis, half: reach, thickness: thickness)))
+        inward: facing,
+        slab: bar(mid: panel, axis: axis,
+                  half: reach, thickness: jsMax(1, DOOR_THICKNESS * perMetre))))
     }
     cuts.sort { $0.from < $1.from }
 
@@ -387,6 +423,7 @@ public extension ScannedRoom {
   static var sample: ScannedRoom {
     let w = 4.0, d = 5.0
     let t = WALL_THICKNESS
+    let dt = DOOR_THICKNESS
     return ScannedRoom(rects: [
       // North and south walls run along x; east and west along z.
       ScanRect(kind: .wall, centreX: 0, centreZ: -d / 2, width: w, depth: t, yaw: 0),
@@ -394,13 +431,13 @@ public extension ScannedRoom {
       ScanRect(kind: .wall, centreX: -w / 2, centreZ: 0, width: d, depth: t, yaw: .pi / 2),
       ScanRect(kind: .wall, centreX: w / 2, centreZ: 0, width: d, depth: t, yaw: .pi / 2),
       // A door in the north wall, a metre east of its middle.
-      ScanRect(kind: .door, centreX: 1, centreZ: -d / 2, width: 0.9, depth: t, yaw: 0,
+      ScanRect(kind: .door, centreX: 1, centreZ: -d / 2, width: 0.9, depth: dt, yaw: 0,
                label: "Door"),
       // A wide opening in the west wall.
-      ScanRect(kind: .opening, centreX: -w / 2, centreZ: 0.5, width: 1.4, depth: t,
+      ScanRect(kind: .opening, centreX: -w / 2, centreZ: 0.5, width: 1.4, depth: dt,
                yaw: .pi / 2, label: "Opening"),
       // A window, which stays solid.
-      ScanRect(kind: .window, centreX: 0, centreZ: d / 2, width: 1.2, depth: t, yaw: 0,
+      ScanRect(kind: .window, centreX: 0, centreZ: d / 2, width: 1.2, depth: dt, yaw: 0,
                label: "Window"),
       // A dining set in the middle, turned off the axis so the rotation is
       // exercised by the thing the app actually shows.

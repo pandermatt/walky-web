@@ -162,10 +162,12 @@ struct RoomScanTests {
     // 5m deep plus the walls' own thickness, so a little over.
     #expect(abs(result.metresAcross - 5) < 0.4)
 
-    // Life size, which for a room is the only ratio worth having: 4m of wall is
-    // 4 * PX_PER_METRE of world, and a pedestrian's 26 units fit across it
-    // eight times. A scaled-down room would be narrower than the people in it.
-    #expect(abs(span(result) - 4 * PX_PER_METRE) < 8)
+    // Life size, which for a room is the only ratio worth having: a
+    // pedestrian's 26 units fit eight times across 4m of room, and a
+    // scaled-down room would be narrower than the people in it. Measured
+    // across the outer faces, so it is the 4m room plus one wall thickness.
+    let outer = (4 + WALL_THICKNESS) * PX_PER_METRE
+    #expect(abs(span(result) - outer) < 4)
   }
 
   @Test("a scan survives a round trip through JSON")

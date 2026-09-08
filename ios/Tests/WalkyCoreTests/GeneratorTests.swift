@@ -7,8 +7,13 @@ import Foundation
 ///
 /// The arithmetic behind them was ported with the rest of the simulation and
 /// sat unused: `Arrivals.swift` turns a door's position and its beat into a
-/// clump size and a gap, hashed so the same door replays the same demand. What
-/// is new is the thing that owns a schedule, a queue, and a place to stand.
+/// clump size and a gap, hashed so the same door replays the same demand.
+///
+/// A door **is a wall** here, unlike in the web app: it blocks the crowd, and
+/// people come out of it on the side its goal is on rather than standing in it.
+/// So most of what these tests ask about is a wall with a `Door` on it, and the
+/// one genuinely new question -- which side do people appear on -- is
+/// `emitsOnTheGoalSide` below.
 @MainActor
 @Suite("Generators")
 struct GeneratorTests {
@@ -39,8 +44,9 @@ struct GeneratorTests {
     for _ in 0..<600 { world.stepOnce() }
     #expect(world.agents.count > 0, "the door never opened")
     // And they are going somewhere: everybody it made wears the goal.
+    let goalId = try! #require(world.walls.first { $0.isGoal }).id
     for i in 0..<world.agents.count {
-      #expect(Int(world.agents.goal[i]) == world.walls[0].id)
+      #expect(Int(world.agents.goal[i]) == goalId)
     }
   }
 
@@ -50,10 +56,10 @@ struct GeneratorTests {
   func goalAimsDoors() {
     let world = fresh()
     #expect(world.addGenerator(Point(0, 0)))
-    #expect(world.generators[0].goal == -1)
+    #expect(world.doors[0].door!.goal == -1)
     #expect(world.setGoalAt(Point(650, 0)))
-    #expect(world.generators[0].goal == world.walls[0].id)
-    #expect(world.generators[0].color == world.walls[0].color)
+    #expect(world.doors[0].door!.goal == world.walls[0].id)  // the goal wall was placed first
+    #expect(world.doors[0].color == world.walls[0].color)
   }
 
   /// A goal wall is kept marked only while somebody is heading there. A door
@@ -82,9 +88,52 @@ struct GeneratorTests {
   @Test("a door needs room to let anybody out")
   func refusedInsideAWall() {
     let world = fresh()
-    // Squarely inside the goal wall.
+    // Squarely inside the goal wall. A door could be built there -- it is only
+    // a wall -- and would never let anybody out of it, which is the point of
+    // asking before placing rather than after.
     #expect(!world.addGenerator(Point(650, 0)))
-    #expect(world.generators.isEmpty)
+    #expect(world.doors.isEmpty)
+  }
+
+  /// The one thing a door being a wall makes somebody decide: nobody can stand
+  /// *in* a door, so which side do they come out of?
+  @Test("people come out on the side the goal is on")
+  func emitsOnTheGoalSide() async {
+    let world = fresh()                       // the goal wall is east, at x 600
+    #expect(world.addGenerator(Point(0, 0)))
+    #expect(world.setGoalAt(Point(650, 0)))
+    await world.navReady()
+
+    for _ in 0..<120 { world.stepOnce() }
+    #expect(world.agents.count > 0, "the door never opened")
+    // Every one of them appeared east of the door's own middle, which is the
+    // way its goal lies -- and none inside it.
+    let door = world.doors[0]
+    for i in 0..<world.agents.count {
+      #expect(Double(world.agents.x[i]) > 0, "somebody came out of the far side")
+      #expect(!wallContains(door, Point(Double(world.agents.x[i]),
+                                        Double(world.agents.y[i]))),
+              "somebody is standing inside the door")
+    }
+  }
+
+  @Test("a door blocks the crowd, because it is a wall")
+  func doorsBlock() async {
+    // The whole reason for the rewrite: a door is part of the map rather than a
+    // decal on it. Asked directly -- can anybody be in it, and does navigation
+    // know about it -- rather than by walking somebody past it, which would be
+    // a test about congestion wearing a test about geometry.
+    let world = fresh()
+    #expect(world.addGenerator(Point(0, 0)))
+    await world.navReady()
+    let door = world.doors[0]
+
+    // The brush cannot put anybody inside it, at any size.
+    #expect(world.pedestrianBlock(Point(0, 0), 1).isEmpty)
+    #expect(world.pedestrianBlock(Point(0, 0), 3).isEmpty)
+    // And the visibility graph carries it, so the crowd routes around it and
+    // `Behaviour.insideAnyWall` refuses to step into it.
+    #expect(world.nav.obstacles.contains { $0.wallId == door.id })
   }
 
   /// Reset means the same demand again, not merely an empty queue: `Arrivals`
@@ -96,12 +145,12 @@ struct GeneratorTests {
     #expect(world.setGoalAt(Point(650, 0)))
     await world.navReady()
     for _ in 0..<300 { world.stepOnce() }
-    #expect(world.generators[0].beat > 0)
+    #expect(world.doors[0].door!.beat > 0)
 
     world.resetPedestrians()
-    #expect(world.generators[0].beat == 0)
-    #expect(world.generators[0].owed == 0)
-    #expect(world.generators[0].wait == 0)
+    #expect(world.doors[0].door!.beat == 0)
+    #expect(world.doors[0].door!.owed == 0)
+    #expect(world.doors[0].door!.wait == 0)
   }
 
   @Test("the same door replays the same demand")
@@ -127,21 +176,21 @@ struct GeneratorTests {
     #expect(world.addGenerator(Point(300, 0)))
 
     #expect(world.selectPedestriansIn(rectanglePolygon(Point(-100, -100), Point(100, 100))) == 1)
-    #expect(world.generators[0].selected)
-    #expect(!world.generators[1].selected)
+    #expect(world.doors[0].selected)
+    #expect(!world.doors[1].selected)
 
     #expect(world.setGoalAt(Point(650, 0)))
-    #expect(world.generators[0].goal == world.walls[0].id)
-    #expect(world.generators[1].goal == -1, "the goal reached a door nobody picked")
+    #expect(world.doors[0].door!.goal == world.walls[0].id)
+    #expect(world.doors[1].door!.goal == -1, "the goal reached a door nobody picked")
   }
 
   @Test("undo takes a door back with it")
   func undoRemovesDoors() {
     let world = fresh()
     #expect(world.addGenerator(Point(0, 0)))
-    #expect(world.generators.count == 1)
+    #expect(world.doors.count == 1)
     world.undo()
-    #expect(world.generators.isEmpty)
+    #expect(world.doors.isEmpty)
   }
 
   /// The queue is what makes a burst look like a burst: a clump lands whole and
@@ -155,6 +204,6 @@ struct GeneratorTests {
     #expect(world.setGoalAt(Point(650, 0)))
     await world.navReady()
     for _ in 0..<600 { world.stepOnce() }
-    #expect(world.generators[0].owed <= QUEUE_MAX)
+    #expect(world.doors[0].door!.owed <= QUEUE_MAX)
   }
 }

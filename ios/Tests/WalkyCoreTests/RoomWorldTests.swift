@@ -100,19 +100,15 @@ struct RoomWorldTests {
     let exit = plan.doorways.max { $0.metres < $1.metres }!
     let entrance = plan.doorways.min { $0.metres < $1.metres }!
     world.addWallShape([exit.slab], WallOptions(color: (0, 200, 120)))
-    // The entrance gap is filled, as `RoomScanner.place` fills it: the Walky
-    // door is the doorway's function, and an open gap lets the crowd walk
+    // The doorway *is* the door: one wall, filling the gap, that people come
+    // out of on the side its goal is on. An open gap would let the crowd walk
     // straight back out of the room it just entered.
-    world.addWallShape([entrance.slab], WallOptions(color: (90, 90, 100)))
-
-    let inward = entrance.inward!
-    let inside = Point(entrance.at.x + inward.x * 39, entrance.at.y + inward.y * 39)
-    #expect(world.addGenerator(world.standable(inside)))
+    #expect(world.addDoor([entrance.slab]))
 
     // Last, so it aims the door as well as the crowd.
     world.setGoalAt(exit.at)
     await world.navReady()
-    #expect((world.generators.first?.goal ?? -1) >= 0, "the door should be aimed at the exit")
+    #expect((world.doors.first?.door?.goal ?? -1) >= 0, "the door should be aimed at the exit")
 
     world.running = true
     for _ in 0..<(60 * 30) { world.stepOnce() }

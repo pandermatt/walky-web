@@ -20,7 +20,7 @@ import WalkyCore
 final class RenderCache {
   private var wallsRevision = -1
   private var hullRadius = -1.0
-  private(set) var wallPaths: [(path: Path, color: RGB, isGoal: Bool)] = []
+  private(set) var wallPaths: [(path: Path, color: RGB, isGoal: Bool, isDoor: Bool)] = []
   private(set) var hullPaths: [(path: Path, color: RGB)] = []
   private(set) var partPaths: [(path: Path, color: RGB)] = []
   private var goalPathKey = ""
@@ -41,7 +41,7 @@ final class RenderCache {
         for q in polygon.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
         p.closeSubpath()
       }
-      return (p, wall.color, wall.isGoal)
+      return (p, wall.color, wall.isGoal, wall.door != nil)
     }
 
     // One dashed outline per connected group of touching shapes, not per wall.
@@ -173,7 +173,19 @@ enum MapRenderer {
     // A line width in points becomes this in world units.
     let hairline = 1 / scale
 
+    // Doors are walls, and are drawn as walls with the fill taken out: a dashed
+    // outline over a faded interior. That is two cues apart from colour --
+    // where a wall is solid a door is hollow, and where a wall's edge is a line
+    // a door's is a dashed one -- which is what makes them tellable apart
+    // without relying on colour at all. On a scanned map there is a third: a
+    // real wall is `WALL_THICKNESS` thick where a doorway is a thin slab.
+    let doorDash = StrokeStyle(lineWidth: 2 / scale, dash: [7 / scale, 5 / scale])
     for w in cache.wallPaths {
+      if w.isDoor {
+        ctx.fill(w.path, with: .color(color(w.color, 0.22)))
+        ctx.stroke(w.path, with: .color(color(w.color)), style: doorDash)
+        continue
+      }
       ctx.fill(w.path, with: .color(color(w.color)))
       // The shadow every wall casts, as java.awt.Color.darker() twice.
       ctx.stroke(w.path, with: .color(color(shadowOf(w.color))), lineWidth: hairline)
@@ -207,7 +219,17 @@ enum MapRenderer {
       drawMeasurement(measurement, into: &ctx, scale: scale, ink: ink)
     }
 
-    drawGenerators(world, into: &ctx, hairline: hairline, ink: ink)
+    // A lassoed door, marked as the selected pedestrians are.
+    for door in world.doors where door.selected {
+      var p = Path()
+      for polygon in door.polygons where polygon.count >= 3 {
+        p.move(to: CGPoint(x: polygon[0].x, y: polygon[0].y))
+        for q in polygon.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
+        p.closeSubpath()
+      }
+      ctx.stroke(p, with: .color(color(YELLOW)), lineWidth: 2 / scale)
+    }
+
     drawAgents(world, into: &ctx, hairline: hairline, ink: ink)
     drawPreview(world, into: &ctx, hairline: hairline, scale: scale, ink: ink)
 
@@ -218,31 +240,6 @@ enum MapRenderer {
 
     if world.settings.showDebug {
       drawDebug(debugLines(world, stats), into: &screen, size: size, ink: ink)
-    }
-  }
-
-  /// The doors, under the crowd they let out.
-  ///
-  /// Filled in the goal's colour, as the pedestrians it emits are, so a glance
-  /// says where its people are going. Rounded, because a map of walls is a map
-  /// of hard rectangles and one more of those is a block you work out rather
-  /// than recognise -- see `generatorRoundedSquare`.
-  private static func drawGenerators(_ world: WalkyWorld, into ctx: inout GraphicsContext,
-                                     hairline: Double, ink: RGB) {
-    guard !world.generators.isEmpty else { return }
-    let r = world.settings.pedestrianRadius
-    for door in world.generators {
-      var p = Path()
-      let ring = generatorRoundedSquare(door.at, r)
-      p.move(to: CGPoint(x: ring[0].x, y: ring[0].y))
-      for q in ring.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
-      p.closeSubpath()
-      // Unpinned doors are white, which is what `Generator` starts them at, and
-      // white on a pale ground is nothing at all -- so the fill is faded and the
-      // outline carries the shape.
-      ctx.fill(p, with: .color(color(door.goal >= 0 ? door.color : ink, 0.35)))
-      ctx.stroke(p, with: .color(color(door.selected ? YELLOW : ink)),
-                 lineWidth: hairline * (door.selected ? 2 : 1))
     }
   }
 
