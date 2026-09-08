@@ -21,6 +21,8 @@ struct RootView: View {
   /// walked to by then rather than what was on screen when Save was tapped.
   @State private var outgoing: WalkyMapDocument?
   @State private var outgoingName = "Walky map"
+  /// The map written to a throwaway file, while the share sheet is up.
+  @State private var shared: SharedMap?
   @Environment(\.scenePhase) private var scenePhase
   /// Only the system's own scheme while `followsSystem` -- otherwise it is the
   /// scheme this view itself stated, arriving back down the environment.
@@ -118,6 +120,9 @@ struct RootView: View {
       case .failure(let error): model.show(error.localizedDescription)
       }
     }
+    .sheet(item: $shared) { map in
+      MapShareSheet(url: map.url)
+    }
     // A `.walky` tapped in Files, Mail or AirDrop. The same path as the
     // importer, so a map arrives the same way however it got here.
     .onOpenURL { open($0) }
@@ -133,6 +138,9 @@ struct RootView: View {
     }
     .onChange(of: saving) { _, up in model.isCovered = up || opening || sheet != nil }
     .onChange(of: opening) { _, up in model.isCovered = up || saving || sheet != nil }
+    .onChange(of: shared?.id) { _, _ in
+      model.isCovered = shared != nil || saving || opening || sheet != nil
+    }
     .onChange(of: sheet) { was, now in
       // One handler, because the map does not care which sheet is over it.
       model.isCovered = now != nil || saving || opening
@@ -162,7 +170,13 @@ struct RootView: View {
       // The port of the web's visibilitychange handler: time spent in the
       // background is not owed, and resuming must not open on a burst of
       // catch-up steps.
-      if phase == .active { model.start() } else { model.stop() }
+      if phase == .active {
+        model.start()
+      } else {
+        model.stop()
+        // Nothing shared should outlive the app being put away.
+        SharedMap.sweep()
+      }
     }
   }
 
@@ -190,7 +204,8 @@ struct RootView: View {
                         // sheet opens on nothing.
                         fileSection: AnyView(
                           MapFileSection(onOpen: { sheet = nil; opening = true },
-                                         onSave: { sheet = nil; startSave() })))
+                                         onSave: { sheet = nil; startSave() },
+                                         onShare: { sheet = nil; startShare() })))
     case .roomScan:
       RoomCaptureContainer(scanner: model.scanner)
     }
@@ -208,6 +223,25 @@ struct RootView: View {
     outgoingName = MapFile.suggestedName(walls: model.world.walls.count,
                                          pedestrians: model.world.agents.count)
     saving = true
+  }
+
+  /// The map as a file somebody can be sent.
+  ///
+  /// Snapshotted at the tap, as saving is, and written to disk here rather than
+  /// in the sheet: the share sheet wants a URL, and a name on that URL is what
+  /// makes the map arrive as `4 walls.walky` at the other end instead of as an
+  /// untitled blob.
+  private func startShare() {
+    // Whatever the last share left behind, before this one adds to it.
+    SharedMap.sweep()
+    let core = model.world.captureScenario()
+    let name = MapFile.suggestedName(walls: model.world.walls.count,
+                                     pedestrians: model.world.agents.count)
+    guard let map = SharedMap(core, named: name) else {
+      model.show("Could not write the map to share.")
+      return
+    }
+    shared = map
   }
 
   /// A file, from either sheet or from Files itself.

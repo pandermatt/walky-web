@@ -9,16 +9,21 @@ import WalkyCore
 /// splitting them across two surfaces would mean remembering which lives where.
 /// The menu keeps what acts on the map you are already looking at.
 ///
-/// Both buttons only raise a sheet; `RootView` owns them, because the system
-/// exporter and importer are presentation and this is a `Section`.
+/// All three only raise a sheet; `RootView` owns them, because the exporter,
+/// the importer and the share sheet are presentation and this is a `Section`.
 struct MapFileSection: View {
   let onOpen: () -> Void
   let onSave: () -> Void
+  let onShare: () -> Void
 
   var body: some View {
     Section {
       Button("Open…", systemImage: "folder", action: onOpen)
       Button("Save to Files…", systemImage: "square.and.arrow.down", action: onSave)
+      // Same file, different destination: Save picks a folder, Share picks a
+      // person. Both hand over a `.walky`, so a map sent by AirDrop or Messages
+      // opens on the other phone rather than arriving as something to look at.
+      Button("Share…", systemImage: "square.and.arrow.up", action: onShare)
     } header: {
       Text("Map file")
     } footer: {
