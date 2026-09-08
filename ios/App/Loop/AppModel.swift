@@ -269,7 +269,7 @@ final class AppModel {
     }
   }
 
-  private func show(_ message: String) {
+  func show(_ message: String) {
     notice.message = message
     Task { [weak self] in
       try? await Task.sleep(for: .seconds(3))

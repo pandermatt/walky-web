@@ -130,6 +130,28 @@ public final class Agents {
     return i
   }
 
+  /// A pedestrian out of a saved map: where it stands, where it started, and
+  /// what it was doing. Ports `RestoredAgent` (`src/state/scenario.ts:285`).
+  ///
+  /// The traits come from the **origin**, exactly as `restore` recomputes them
+  /// after an undo: that is what makes a saved crowd keep the personality it
+  /// had rather than acquire a new one from wherever it happened to be standing
+  /// when the map was written.
+  @discardableResult
+  public func addRestored(_ at: Point, origin: Point, goalId: Int, rgb: RGB,
+                          arrived hasArrived: Bool, spawned wasSpawned: Bool) -> Int {
+    let i = add(at, rgb)
+    originX[i] = Float(origin.x)
+    originY[i] = Float(origin.y)
+    trait[i] = Float(traitOf(origin.x, origin.y, SPACE_SEED))
+    assertiveness[i] = Float(traitOf(origin.x, origin.y, NERVE_SEED))
+    party[i] = Int32(partyOf(origin.x, origin.y))
+    goal[i] = Int32(goalId)
+    arrived[i] = hasArrived ? 1 : 0
+    spawned[i] = wasSpawned ? 1 : 0
+    return i
+  }
+
   public func setGoal(_ i: Int, _ wallId: Int, _ rgb: RGB) {
     goal[i] = Int32(wallId)
     // A pedestrian takes the colour of the goal it is heading for.

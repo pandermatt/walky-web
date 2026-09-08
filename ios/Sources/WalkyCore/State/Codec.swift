@@ -25,6 +25,22 @@ public enum Codec {
   /// be skipped. Additive changes go in the flags byte instead.
   public static let VERSION: UInt8 = 3
 
+  /// What this build writes when a map has a generator on a wall, and the only
+  /// thing in the format that is the iOS port's rather than the web's.
+  ///
+  /// A generator is a wall here and a loose point there, so a map with one
+  /// cannot be said in version 3 without losing which wall it was. Rather than
+  /// change what version 3 means -- every link ever shared is version 3 -- a
+  /// map like that is written as version 4, and version 4 differs by exactly
+  /// one trailing section (`FLAG_WALL_GENERATORS`).
+  ///
+  /// **A map with no generator on a wall is still written as version 3**, byte
+  /// for byte what the web writes, and opens there today. One with a generator
+  /// will not open on the web until the web learns version 4; it says so
+  /// plainly rather than opening wrong, which is what `readHeader` already does
+  /// for every other version it does not know.
+  public static let VERSION_WALL_GENERATORS: UInt8 = 4
+
   public static let FLAG_DEFLATED = 1
   public static let FLAG_LABELS = 2
   public static let FLAG_GENERATORS = 4
@@ -32,8 +48,13 @@ public enum Codec {
   /// whole number of px/tick that says 1.35 m/s. Without it the payload is an
   /// old one and its whole number is px/tick, converted on the way in.
   public static let FLAG_SPEED_MPS = 8
+  /// Which walls the generators are. Version 4 only -- see
+  /// `VERSION_WALL_GENERATORS`, which is what stops a version 3 reader ever
+  /// seeing this bit and mis-reading the tail it does not know how to skip.
+  public static let FLAG_WALL_GENERATORS = 16
 
-  static let KNOWN_FLAGS = FLAG_DEFLATED | FLAG_LABELS | FLAG_GENERATORS | FLAG_SPEED_MPS
+  static let KNOWN_FLAGS = FLAG_DEFLATED | FLAG_LABELS | FLAG_GENERATORS
+    | FLAG_SPEED_MPS | FLAG_WALL_GENERATORS
 
   /// Sub-unit precision for the one thing in a map that is not a whole number.
   static let VIEW_QUANTUM: Double = 16   // at the deepest zoom, under 4px

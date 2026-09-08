@@ -32,7 +32,7 @@ public enum ShareLink {
   /// output, so the codec's caps on counts have to be matched by a cap on the
   /// bytes those counts are read from -- otherwise a kilobyte of crafted zeroes
   /// becomes hundreds of megabytes before the first count is ever checked.
-  static let maxBodyBytes = 1 << 20
+  public static let maxBodyBytes = 1 << 20
 
   // MARK: - writing
 
@@ -42,15 +42,9 @@ public enum ShareLink {
   /// deltas have already taken most of the redundancy out, so on a small map
   /// deflate's own header can cost more than it saves.
   public static func encode(_ core: ScenarioCore) -> String {
-    let raw = Codec.encode(core)
-    let body = Codec.encodeBody(core)
-    guard let deflated = deflate(body), deflated.count + 3 < raw.count else {
-      // Compression is an optimisation. Failing at it is not a reason to fail at
-      // sharing.
-      return prefix + Base64Url.encode(raw)
-    }
-    let out = Codec.header(flags: Codec.FLAG_DEFLATED | Codec.bodyFlags(core)) + deflated
-    return prefix + Base64Url.encode(out)
+    // The same bytes a `.walky` file holds, base64'd. A link and a file differ
+    // by that and nothing else -- see `MapFile`.
+    prefix + Base64Url.encode(MapFile.bytes(core))
   }
 
   /// The whole shareable URL for a map: this page, with the map in its fragment.
@@ -68,18 +62,7 @@ public enum ShareLink {
       : payload.trimmingCharacters(in: .whitespacesAndNewlines)
     if text.isEmpty { throw ScenarioLinkError.notWalky }
 
-    let bytes = try Base64Url.decode(text)
-    let (flags, body) = try Codec.readHeader(bytes)
-    if flags & Codec.FLAG_DEFLATED == 0 {
-      guard body.count <= maxBodyBytes else {
-        throw ScenarioLinkError("that link is larger than Walky can hold")
-      }
-      return try Codec.decodeBody(body, flags: flags)
-    }
-    guard let inflated = inflate(body, limit: maxBodyBytes) else {
-      throw ScenarioLinkError.truncated
-    }
-    return try Codec.decodeBody(inflated, flags: flags)
+    return try MapFile.read(try Base64Url.decode(text))
   }
 
   /// The map's payload out of a fragment, or nil when there is none.

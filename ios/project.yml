@@ -276,6 +276,36 @@ targets:
         NSCameraUsageDescription: >-
           Walky scans a room with the camera to turn its walls and doorways into
           a map you can run a crowd through.
+        # `.walky`: a map as a file.
+        #
+        # Exported rather than imported, because this app is where the type
+        # comes from, and conforming to `public.data` rather than
+        # `public.content` because the payload is the codec's bytes -- the same
+        # bytes a share link carries, which is what will let the web app open
+        # one. See `MapFile`.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: ch.pandermatt.walky.map
+            UTTypeDescription: Walky Map
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - walky
+        # And the other direction: what makes a `.walky` in Files, Mail or
+        # AirDrop offer to open in Walky. `Owner` because the type is ours;
+        # `LSItemContentTypes` rather than an extension list so a file that
+        # arrives without its extension still matches.
+        # False, and stated rather than left to be guessed: opening a map copies
+        # it onto the canvas, it does not edit the file where it sits. Saving is
+        # a separate, explicit trip through the export sheet -- see
+        # `WalkyMapDocument` for why this is not a document-based app.
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Walky Map
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - ch.pandermatt.walky.map
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

@@ -125,7 +125,7 @@ public final class WalkyWorld: PointerHost {
   }
 
   /// Bumps both revisions and asks for a frame. Called by every mutation.
-  private func touch() {
+  func touch() {
     worldRevision &+= 1
     agentRevision &+= 1
     requestRender()
@@ -438,7 +438,7 @@ public final class WalkyWorld: PointerHost {
   /// plus the block's half-width, so the block it hands to `pedestrianBlock`
   /// starts where the door stops. `pedestrianBlock` then throws away whatever
   /// is still illegal, exactly as the brush does.
-  private func generatorMouth(_ source: Wall) -> Point {
+  func generatorMouth(_ source: Wall) -> Point {
     let here = middle(source)
     guard let goalId = source.generator?.goal, goalId >= 0,
           let goal = walls.first(where: { $0.id == goalId }) else { return here }
@@ -690,7 +690,7 @@ public final class WalkyWorld: PointerHost {
   /// that is already on screen. Bounded by one rebuild, and partly covered
   /// already because `addWalls` clears the agents under a new wall.
   /// The graph no longer describes the map. Always both, never one.
-  private func markNavDirty() {
+  func markNavDirty() {
     navDirty = true
     navGeneration &+= 1
   }
@@ -870,7 +870,7 @@ public final class WalkyWorld: PointerHost {
   /// Raised from the content rather than from the import, so a hand-drawn map
   /// that grew large gets the same courtesy. Never lowered below the original's
   /// stop, so the 2016 camera is exactly itself on every map that fits.
-  private func raiseZoomCeiling(for bounds: Bounds?) {
+  func raiseZoomCeiling(for bounds: Bounds?) {
     guard let bounds else { return }
     let across = jsMax(1, jsMax(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY))
     let onScreen = jsMax(1, jsMin(viewport.width, viewport.height))

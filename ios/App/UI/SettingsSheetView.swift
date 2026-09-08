@@ -21,6 +21,10 @@ struct SettingsSheetView: View {
   /// Type-erased like the one above, which also keeps this `Form` inside the
   /// type checker's budget -- see `groundSection`.
   var roomSection: AnyView?
+  /// Saving and opening a `.walky`. Type-erased for the same two reasons, and
+  /// first of the three: opening a map you already have is the shortest way to
+  /// get one.
+  var fileSection: AnyView?
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -36,6 +40,7 @@ struct SettingsSheetView: View {
           slider(.borderThickness)
         }
 
+        if let fileSection { fileSection }
         if let mapSection { mapSection }
         if let roomSection { roomSection }
         Section("Appearance") {

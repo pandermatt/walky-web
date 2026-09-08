@@ -128,6 +128,23 @@ public struct SerializedWall: Sendable, Equatable {
   }
 }
 
+/// A generator that is a wall, by the wall's index in the same payload.
+///
+/// The iOS port's own addition to the format, and the reason a map with a
+/// generator on it is written as codec version 4. Indices rather than ids for
+/// the reason goals use them: an index is a small number, and remapping onto
+/// fresh ids is the importer's job.
+public struct WallGeneratorRef: Sendable, Equatable {
+  public var wallIndex: Int
+  public var rate: Double
+  /// Goal wall id, or -1 while it is not pinned anywhere.
+  public var goal: Int
+
+  public init(wallIndex: Int, rate: Double, goal: Int) {
+    self.wallIndex = wallIndex; self.rate = rate; self.goal = goal
+  }
+}
+
 /// Where the camera was pointing.
 public struct ScenarioView: Sendable, Equatable {
   public var targetX: Double
@@ -155,13 +172,19 @@ public struct ScenarioCore {
   /// generators.
   public var labels: [SerializedLabel]
   public var generators: [SerializedGenerator]
+  /// The same generators again, named by the wall they are. Empty in anything
+  /// the web wrote, and empty in anything this app wrote before generators
+  /// became walls -- which is exactly when a file can stay at version 3.
+  public var wallGenerators: [WallGeneratorRef]
 
   public init(version: Int = SCENARIO_VERSION, settings: Settings, view: ScenarioView,
               walls: [SerializedWall], agents: [SerializedAgent],
-              labels: [SerializedLabel] = [], generators: [SerializedGenerator] = []) {
+              labels: [SerializedLabel] = [], generators: [SerializedGenerator] = [],
+              wallGenerators: [WallGeneratorRef] = []) {
     self.version = version; self.settings = settings; self.view = view
     self.walls = walls; self.agents = agents
     self.labels = labels; self.generators = generators
+    self.wallGenerators = wallGenerators
   }
 }
 

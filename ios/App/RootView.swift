@@ -11,6 +11,16 @@ struct RootView: View {
   @State private var model = AppModel()
   @State private var router: PointerRouter?
   @State private var sheet: Sheet?
+  /// The two file sheets are the system's, not ours, so they are `Bool`s beside
+  /// `sheet` rather than cases in it -- and `isCovered` is set from them too,
+  /// because a map behind a save sheet is as covered as one behind Settings.
+  @State private var saving = false
+  @State private var opening = false
+  /// Held while the exporter is up: it asks for the document, and asking the
+  /// world for it again mid-presentation would save whatever the crowd had
+  /// walked to by then rather than what was on screen when Save was tapped.
+  @State private var outgoing: WalkyMapDocument?
+  @State private var outgoingName = "Walky map"
   @Environment(\.scenePhase) private var scenePhase
   /// Only the system's own scheme while `followsSystem` -- otherwise it is the
   /// scheme this view itself stated, arriving back down the environment.
@@ -94,6 +104,23 @@ struct RootView: View {
       // once per sheet, which is the second dividend of `.sheet(item:)`.
       content(of: which).preferredColorScheme(chromeScheme)
     }
+    .fileExporter(isPresented: $saving,
+                  document: outgoing,
+                  contentType: .walkyMap,
+                  defaultFilename: outgoingName) { result in
+      if case .failure(let error) = result { model.show(error.localizedDescription) }
+      outgoing = nil
+    }
+    .fileImporter(isPresented: $opening,
+                  allowedContentTypes: [.walkyMap]) { result in
+      switch result {
+      case .success(let url): open(url)
+      case .failure(let error): model.show(error.localizedDescription)
+      }
+    }
+    // A `.walky` tapped in Files, Mail or AirDrop. The same path as the
+    // importer, so a map arrives the same way however it got here.
+    .onOpenURL { open($0) }
     // Hiding the chrome puts the app in a viewing mode, and disarming is what
     // makes that true rather than merely tidy. It is also the only thing
     // guaranteeing a way back: the tap that restores the controls is delivered
@@ -104,9 +131,11 @@ struct RootView: View {
     .onChange(of: model.chrome.hidden) { _, hidden in
       if hidden { model.world.setTool(nil) }
     }
+    .onChange(of: saving) { _, up in model.isCovered = up || opening || sheet != nil }
+    .onChange(of: opening) { _, up in model.isCovered = up || saving || sheet != nil }
     .onChange(of: sheet) { was, now in
       // One handler, because the map does not care which sheet is over it.
-      model.isCovered = now != nil
+      model.isCovered = now != nil || saving || opening
       // Dismissed by any route -- Continue, a swipe, anything later -- counts as
       // having seen it. Recording it when the sheet *opens* would mark a thing
       // that had not happened yet; recording it only on Continue would bring it
@@ -154,9 +183,52 @@ struct RootView: View {
                                           // Swapping the item on the one sheet
                                           // rather than presenting from inside
                                           // it: `isCovered` stays one fact.
-                                          onScan: { sheet = .roomScan })))
+                                          onScan: { sheet = .roomScan })),
+                        // Dismissing Settings first, because the exporter and
+                        // the importer are sheets too and iOS will not stack a
+                        // second one over the first: without this the file
+                        // sheet opens on nothing.
+                        fileSection: AnyView(
+                          MapFileSection(onOpen: { sheet = nil; opening = true },
+                                         onSave: { sheet = nil; startSave() })))
     case .roomScan:
       RoomCaptureContainer(scanner: model.scanner)
+    }
+  }
+
+  /// The map as it stands, handed to the exporter.
+  ///
+  /// Taken here rather than in the `document:` argument because that is
+  /// evaluated while the sheet is up: with the simulation running, the file
+  /// would hold wherever the crowd had walked to by the time somebody picked a
+  /// folder, rather than the map they chose to save.
+  private func startSave() {
+    let core = model.world.captureScenario()
+    outgoing = WalkyMapDocument(bytes: MapFile.data(core))
+    outgoingName = MapFile.suggestedName(walls: model.world.walls.count,
+                                         pedestrians: model.world.agents.count)
+    saving = true
+  }
+
+  /// A file, from either sheet or from Files itself.
+  ///
+  /// The security-scoped dance is not optional: a URL out of the importer or
+  /// `onOpenURL` is somebody else's file, and reading it without the access
+  /// call works in the Simulator and fails on a device, which is the worst
+  /// possible way for it to fail.
+  private func open(_ url: URL) {
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let core = try MapFile.read(try Data(contentsOf: url))
+      model.world.apply(core)
+      model.show("Opened \(url.deletingPathExtension().lastPathComponent).")
+    } catch let error as ScenarioLinkError {
+      // The codec's own sentence, which is written to be shown: "not a Walky
+      // map", "saved by a newer Walky", "larger than Walky can hold".
+      model.show(error.message)
+    } catch {
+      model.show(error.localizedDescription)
     }
   }
 

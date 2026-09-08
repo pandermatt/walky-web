@@ -5,7 +5,11 @@ import WalkySim
 
 extension Codec {
   public static func header(flags: Int) -> [UInt8] {
-    [MAGIC, VERSION, UInt8(truncatingIfNeeded: flags)]
+    // Version 4 exactly when the tail this build added is present, so a map
+    // that could have been written by the web still is. See
+    // `Codec.VERSION_WALL_GENERATORS`.
+    let version = flags & FLAG_WALL_GENERATORS != 0 ? VERSION_WALL_GENERATORS : VERSION
+    return [MAGIC, version, UInt8(truncatingIfNeeded: flags)]
   }
 
   /// Splits a payload into its flags and its body, checking the header is one
@@ -14,9 +18,17 @@ extension Codec {
   public static func readHeader(_ bytes: [UInt8]) throws -> (flags: Int, body: [UInt8]) {
     guard bytes.count >= 3 else { throw ScenarioLinkError.truncated }
     guard bytes[0] == MAGIC else { throw ScenarioLinkError.notWalky }
-    guard bytes[1] == VERSION else { throw ScenarioLinkError.wrongVersion }
+    guard bytes[1] == VERSION || bytes[1] == VERSION_WALL_GENERATORS else {
+      throw ScenarioLinkError.wrongVersion
+    }
     let flags = Int(bytes[2])
     guard flags & ~KNOWN_FLAGS == 0 else { throw ScenarioLinkError.wrongVersion }
+    // The version and the flag have to agree: a version 3 payload claiming the
+    // version 4 section, or the reverse, is a payload nobody wrote.
+    let saysWallGenerators = flags & FLAG_WALL_GENERATORS != 0
+    guard saysWallGenerators == (bytes[1] == VERSION_WALL_GENERATORS) else {
+      throw ScenarioLinkError.wrongVersion
+    }
     return (flags, Array(bytes.dropFirst(3)))
   }
 
@@ -29,6 +41,7 @@ extension Codec {
     FLAG_SPEED_MPS
       | (core.labels.isEmpty ? 0 : FLAG_LABELS)
       | (core.generators.isEmpty ? 0 : FLAG_GENERATORS)
+      | (core.wallGenerators.isEmpty ? 0 : FLAG_WALL_GENERATORS)
   }
 }
 
@@ -164,6 +177,19 @@ extension Codec {
       }
     }
 
+    // The version 4 tail, and the last thing in the body so that everything
+    // before it is byte-identical to what a version 3 writer produces: the same
+    // generators again, named by the wall each one *is*. See
+    // `Codec.VERSION_WALL_GENERATORS`.
+    if !core.wallGenerators.isEmpty {
+      w.varint(core.wallGenerators.count)
+      for ref in core.wallGenerators {
+        w.varint(Double(ref.wallIndex))
+        w.varint(ref.rate)
+        w.varint((indexOfId[ref.goal].map { $0 + 1 }) ?? 0)
+      }
+    }
+
     return w.bytes
   }
 }
@@ -295,12 +321,32 @@ extension Codec {
       }
     }
 
+    var wallGenerators: [WallGeneratorRef] = []
+    if flags & FLAG_WALL_GENERATORS != 0 {
+      let count = try r.count(CodecLimits.maxGenerators, "generators")
+      for _ in 0..<count {
+        let index = Int(try r.varint())
+        // A wall index out of range is a payload naming a wall it does not
+        // carry. Refused rather than skipped: unlike a goal, which has a
+        // meaning for "nowhere", this one would silently drop a generator the
+        // file says is there.
+        guard index >= 0, index < walls.count else {
+          throw ScenarioLinkError("that map names a wall it does not carry")
+        }
+        let rate = try r.varint()
+        let goalIndex = Int(try r.varint())
+        let goal = goalIndex > 0 && goalIndex <= walls.count ? walls[goalIndex - 1].id : -1
+        wallGenerators.append(WallGeneratorRef(wallIndex: index, rate: rate, goal: goal))
+      }
+    }
+
     // Everything decoded and bytes still to go: the payload is not what it says
     // it is. Better an error than a map quietly missing its tail.
     guard r.done else { throw ScenarioLinkError.truncated }
 
     return ScenarioCore(version: SCENARIO_VERSION, settings: clampSettings(loaded),
                         view: view, walls: walls, agents: agents,
-                        labels: labels, generators: generators)
+                        labels: labels, generators: generators,
+                        wallGenerators: wallGenerators)
   }
 }
