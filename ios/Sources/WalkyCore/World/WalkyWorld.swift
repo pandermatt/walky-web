@@ -13,7 +13,13 @@ public struct MapSnapshot {
 /// the recent past rather than a limit on how long you may keep drawing.
 public let UNDO_DEPTH = 40
 
-/// The crowd size worth mentioning. See `WalkyWorld.warnIfCrowded`.
+/// The crowd size worth mentioning, past which `CrowdBanner` appears.
+///
+/// Measured rather than guessed: on a fast Mac in a release build a walking
+/// crowd costs about 2.8 ms/tick at 1,000 and 5.7 ms at 2,000, against a 16.7 ms
+/// frame. Two thousand is where a third of the budget has gone, which on a phone
+/// -- slower, and thermally limited -- is where it stops being free. See
+/// `StepCostBench`.
 public let CROWD_WARN_AT = 2_000
 
 /// The port of `App`, minus everything that needs a screen.
@@ -46,8 +52,6 @@ public final class WalkyWorld: PointerHost {
 
   private var undoStack: [MapSnapshot] = []
   private var navDirty = true
-  /// So the crowd warning fires on the crossing rather than on every brush point.
-  private var warnedAboutCrowd = false
   /// Ticks stepped since launch, so a frame can report how many it just ran.
   public private(set) var simTicks = 0
   private var renderPending = false
@@ -141,32 +145,7 @@ public final class WalkyWorld: PointerHost {
     if spots.isEmpty { return }
     checkpoint()
     for p in spots { agents.add(p, randomBrightColor()) }
-    warnIfCrowded()
     touch()
-  }
-
-  /// Says so, once, when the crowd passes the size where the tick starts to
-  /// cost real time.
-  ///
-  /// Measured rather than guessed: on a fast Mac in a release build a walking
-  /// crowd costs about 2.8 ms/tick at 1,000 and 5.7 ms at 2,000, against a
-  /// 16.7 ms frame. Two thousand is where a third of the budget has gone, which
-  /// on a phone -- slower, and thermally limited -- is where it stops being
-  /// free. See `StepCostBench`.
-  ///
-  /// Fires on the crossing and re-arms when the crowd falls back below, so
-  /// clearing the map and painting again warns again. Without that it would fire
-  /// on every brush point of the drag that crossed it, which is dozens of
-  /// notices a second.
-  private func warnIfCrowded() {
-    if agents.count >= CROWD_WARN_AT {
-      if !warnedAboutCrowd {
-        warnedAboutCrowd = true
-        onNotify?("\(agents.count) pedestrians — the simulation will start to slow down.")
-      }
-    } else {
-      warnedAboutCrowd = false
-    }
   }
 
   /// Marks the wall under a point as a goal; false when there is no wall there.

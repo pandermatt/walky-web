@@ -38,6 +38,16 @@ final class Notice {
   var message: String?
 }
 
+/// How many pedestrians there are, for the banner that counts them.
+///
+/// Its own shell rather than a field on `ToolbarState`, which would invalidate
+/// `ToolbarView` on every brush point -- the bug in `tick` below, wearing a
+/// different hat.
+@Observable
+final class Crowd {
+  var count = 0
+}
+
 /// Owns the world, the loop and the observable shells around them.
 @MainActor
 final class AppModel {
@@ -45,6 +55,7 @@ final class AppModel {
   let redraw = Redraw()
   let toolbar = ToolbarState()
   let notice = Notice()
+  let crowd = Crowd()
 
   /// A sheet is over the map.
   ///
@@ -138,6 +149,12 @@ final class AppModel {
     // miss every second or third press.
     if toolbar.running != world.running { toolbar.running = world.running }
     if toolbar.canUndo != world.canUndo { toolbar.canUndo = world.canUndo }
+    // Mirrored here, and guarded for the same reason, because `agents.count`
+    // never changes without either a `touch()` -- every edit: brush, wall, undo,
+    // clear -- or a tick, and `touch()` un-pauses the link. So a tick always
+    // follows a change within a frame, including the ones that make the crowd
+    // *smaller*: a wall drawn over people, an undo, a clear.
+    if crowd.count != world.agents.count { crowd.count = world.agents.count }
   }
 
   private func needsFrame() {

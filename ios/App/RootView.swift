@@ -56,6 +56,9 @@ struct RootView: View {
             .background(.ultraThinMaterial, in: Capsule())
             .transition(.move(edge: .top).combined(with: .opacity))
         }
+        // A child view on purpose -- see CrowdBanner. The count must not be read
+        // in this body, which also builds the toolbar.
+        CrowdBanner(crowd: model.crowd, toolbar: model.toolbar)
         Spacer()
         ToolbarView(state: model.toolbar,
                     tint: model.world.settings.accent,
