@@ -22,12 +22,18 @@ struct RealMapSection: View {
           .autocorrectionDisabled()
           .submitLabel(.go)
           .onSubmit(run)
-        if importer.isBusy {
-          ProgressView()
-        } else {
+        if !importer.isBusy {
           Button("Import", action: run)
             .disabled(importer.query.trimmingCharacters(in: .whitespaces).isEmpty)
         }
+      }
+
+      if importer.isBusy {
+        // Determinate where the work can be counted, indeterminate where it
+        // cannot -- `MapImporter.fraction` says which is which, and the nil it
+        // returns for the rebuild is this initialiser's own indeterminate form.
+        ProgressView(value: importer.progress, total: 1)
+          .progressViewStyle(.linear)
       }
 
       LabeledContent("Area") {
@@ -35,6 +41,9 @@ struct RealMapSection: View {
           .foregroundStyle(.secondary)
       }
       Slider(value: $importer.sideMetres, in: 120...600, step: 20)
+        // Dragging it mid-import changed the basemap's crop without changing
+        // the buildings under it.
+        .disabled(importer.isBusy)
 
       switch importer.phase {
       case .idle:
@@ -44,10 +53,25 @@ struct RealMapSection: View {
       case .fetching:
         Text("Asking OpenStreetMap for its buildings…")
           .font(.footnote).foregroundStyle(.secondary)
+      case .merging:
+        Text("Merging what overlaps…").font(.footnote).foregroundStyle(.secondary)
+      case .placing:
+        Text("Placing the buildings…").font(.footnote).foregroundStyle(.secondary)
+      case .routing:
+        Text("Building the navigation graph…").font(.footnote).foregroundStyle(.secondary)
       case .done(let what):
         Text(what).font(.footnote).foregroundStyle(.secondary)
       case .failed(let why):
         Text(why).font(.footnote).foregroundStyle(.red)
+      case .refused(let why, let ready):
+        // Not `.failed`: the buildings are already here. Overpass is a free
+        // service on a fair-use policy, so the one thing this must not do is
+        // ask it again for an answer it has already given.
+        Text(why).font(.footnote).foregroundStyle(.red)
+        Button("Import \(ready.corners) corners anyway") {
+          importer.importAnyway(ready, into: world, basemap: basemap, dark: dark)
+        }
+        .font(.footnote)
       }
     } header: {
       Text("Real map")

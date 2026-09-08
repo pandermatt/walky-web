@@ -64,20 +64,6 @@ public func wallContains(_ wall: Wall, _ p: Point) -> Bool {
   wall.polygons.contains { pointInPolygon($0, p) }
 }
 
-/// Ports `Wall.intersectsWall`: shared area or crossing edges.
-public func polygonsOverlap(_ a: [Point], _ b: [Point]) -> Bool {
-  if a.contains(where: { pointInPolygon(b, $0) }) { return true }
-  if b.contains(where: { pointInPolygon(a, $0) }) { return true }
-  for i in 0..<a.count {
-    let a1 = a[i]
-    let a2 = a[(i + 1) % a.count]
-    for j in 0..<b.count where segmentsCross(a1, a2, b[j], b[(j + 1) % b.count]) {
-      return true
-    }
-  }
-  return false
-}
-
 public func wallOverlapsPolygon(_ wall: Wall, _ poly: [Point]) -> Bool {
   wall.polygons.contains { polygonsOverlap($0, poly) }
 }
