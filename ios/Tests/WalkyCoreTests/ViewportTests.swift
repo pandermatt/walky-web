@@ -229,4 +229,36 @@ struct ZoomCeilingTests {
     #expect(roomy.zoomLevel > ZOOM_LEVEL_MAX)
     #expect(across * roomy.scale <= 402)                // the whole import is on screen
   }
+
+  @Test("reset never zooms in on a drawn map")
+  func resetKeepsTheOpeningStop() {
+    // The floor: a small drawn map opens where it was authored, and pressing
+    // reset-zoom on one wall must not fill the screen with it.
+    var v = Viewport()
+    v.width = 402; v.height = 874
+    let small = Bounds(minX: 0, minY: 0, maxX: 200, maxY: 200)
+    v.fit(small)
+    #expect(v.zoomLevel < 0)                            // fit alone would zoom in
+    v.reset(small)
+    #expect(v.zoomLevel == 0)
+    #expect(v.homeLevel == 0)
+  }
+
+  @Test("an import that is smaller than the screen resets to its own framing")
+  func homeLevelHoldsAnImportsFraming() {
+    // A scanned room: 4m at 56px to the metre is 224 units, which fits two
+    // notches in on a phone. Without `homeLevel` the reset would put it back in
+    // a box in the middle of the display.
+    var v = Viewport()
+    v.width = 402; v.height = 874
+    let room = Bounds(minX: 0, minY: 0, maxX: 4 * 56, maxY: 5 * 56)
+    v.fit(room)
+    v.homeLevel = v.zoomLevel
+    let framed = v.zoomLevel
+    #expect(framed < 0)
+
+    v.zoomAt(Point(200, 150), 6)                        // wander out
+    v.reset(room)
+    #expect(v.zoomLevel == framed)
+  }
 }

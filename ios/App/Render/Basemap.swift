@@ -94,7 +94,7 @@ final class Basemap {
           height: size.height * scaleY))
         onDone(nil)
       } catch {
-        if !Task.isCancelled { onDone("Apple's map declined: \(error.localizedDescription)") }
+        if !Task.isCancelled { onDone("The map service declined: \(error.localizedDescription)") }
       }
     }
   }

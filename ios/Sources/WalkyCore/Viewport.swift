@@ -37,6 +37,18 @@ public struct Viewport {
   /// stays at the original's stop for every map that is drawn rather than
   /// imported -- which is all of them on the web.
   public var zoomLevelMax: Double = ZOOM_LEVEL_MAX
+  /// How far *in* `reset` may go, which is a different question from how far a
+  /// pinch may.
+  ///
+  /// Zero for a drawn map: the app opens at the original's stop, that is where
+  /// the drawing was authored, and a reset that zoomed in on one small wall
+  /// would be a surprise rather than a reset. An imported map has a true size
+  /// instead of an authored one, and a scanned room is *smaller* than the
+  /// screen -- a 4m room at life size fits at two notches in, and clamping it
+  /// back to zero would leave the crowd in a box in the middle of the display.
+  /// So an import that frames itself says where home is, and everything else
+  /// leaves this at zero and behaves exactly as it did.
+  public var homeLevel: Double = 0
   public var targetX: Double = 0
   public var targetY: Double = 0
   /// Matches `ZoomMouseListener.startZoom`: higher means further out.
@@ -112,14 +124,14 @@ public struct Viewport {
   /// Resetting the zoom alone left the camera wherever it had been panned to,
   /// so after wandering off the drawing the button gave a blank screen.
   /// Recentring is what makes it a reset. A map too big to fit at the starting
-  /// zoom keeps the level `fit` picks; the reset never zooms *in* past the stop
-  /// the app opens at.
+  /// zoom keeps the level `fit` picks; the reset never zooms *in* past
+  /// `homeLevel`.
   public mutating func reset(_ bounds: Bounds?) {
     guard let bounds else {
-      zoomLevel = 0; targetX = 0; targetY = 0
+      zoomLevel = homeLevel; targetX = 0; targetY = 0
       return
     }
     fit(bounds)
-    zoomLevel = jsMax(0, zoomLevel)
+    zoomLevel = jsMax(homeLevel, zoomLevel)
   }
 }

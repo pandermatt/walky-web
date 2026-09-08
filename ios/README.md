@@ -260,12 +260,60 @@ curl -o zurich.osm    "$base?bbox=8.5390,47.3720,8.5440,47.3754"
 TILES=1 swift run -c release walky-geobench *.osm   # omit TILES for the 1x/2x/3x sweep
 ```
 
+## Scanning a room
+
+RoomPlan is the other way to get walls, and the easy one: it returns a finished
+floor plan rather than a mesh, so every wall, door, window, opening and piece of
+furniture arrives as a transform and a size in metres and projects onto the floor
+as a rotated rectangle. `Sources/WalkyGeo/RoomScan.swift` does that projection
+and cuts the doorways out of their walls; `App/UI/RoomScanner.swift` is the only
+code that touches the framework.
+
+**A room is the one map worth having at 1:1.** The scale slider exists because a
+380m city at life size draws a pedestrian half a pixel wide. A 4 x 5m room is
+224 x 280 world units against a pedestrian's 26 -- eight people abreast -- so a
+scan sets no `GeoAnchor` at all, which is also what makes `measure` report real
+metres.
+
+Whether a door works is one number. `Behaviour.insideAnyWall` tests an agent's
+**centre** against hulls already inflated by one radius, so a gap admits
+somebody above `2 * radius`:
+
+| doorway | world units | free centre band | verdict |
+|---|---|---|---|
+| 0.90m, a front door | 50 | 0.44m | comfortable single file |
+| 0.80m, an interior door | 45 | 0.34m | fine |
+| 0.60m, a narrow one | 34 | 0.14m | passable, and it will queue |
+| 0.47m or less | 26 | none | sealed, and the section says so |
+
+Note this is *half* what `MapImporter.sealsBelowMetres` reports: that figure is
+`4 * radius`, the width at which two people pass, which is the right question
+for a street and the wrong one for a doorway.
+
+A doorway is offered three roles before the room is placed. **In** fills the gap
+and stands a Walky door just inside it -- the door is the doorway's function, and
+an open gap lets the crowd walk straight back out of the room it just entered,
+which is what the sample room did first time. **Out** fills the gap with a slab
+and marks it the goal, because a goal is a wall and in one room reaching the
+doorway *is* leaving. **Open** leaves the hole. The widest doorway defaults to
+Out and the rest to In, so a three-door room runs the moment it is placed.
+
+**None of this runs in the Simulator** -- RoomPlan needs LiDAR, so it needs an
+iPhone Pro, and the section is absent rather than disabled on anything else. So
+`ScannedRoom.sample` is a written-down room that everything except the capture
+view can be driven from: `RoomScanTests` checks the geometry (including that the
+room is not mirrored, which is the one bug a fixture is the only defence
+against), `RoomWorldTests` walks a crowd across it, and **Use the sample room**
+in Settings does the same on any device. Scanning on a phone needs a camera
+usage string (in `project.yml`) and a signing team (see the comment beside
+`CODE_SIGN_STYLE`).
+
 ## Layout
 
 ```
 Sources/CWalkyMath    fdlibm, as V8 carries it
 Sources/WalkySim      the simulation: no UIKit, no Metal
-Sources/WalkyGeo      OpenStreetMap footprints as walls, and the projection
+Sources/WalkyGeo      OpenStreetMap footprints and RoomPlan scans, as walls
 Sources/WalkyConform  replays fixtures, reports the first divergence
 Sources/WalkyIcons    renders the alternate app icons, from the theme's colours
 Sources/WalkyGeoBench what a real neighbourhood costs the rebuild

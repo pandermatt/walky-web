@@ -81,6 +81,7 @@ final class AppModel {
   let redraw = Redraw()
   let basemap = Basemap()
   let importer = MapImporter()
+  let scanner = RoomScanner()
   let detours = DetourRouter()
   let toolbar = ToolbarState()
   let notice = Notice()

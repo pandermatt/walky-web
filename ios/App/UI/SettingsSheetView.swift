@@ -16,6 +16,11 @@ struct SettingsSheetView: View {
   /// iOS only, and nil is a legitimate state: the map section is absent rather
   /// than disabled where there is nothing to import into.
   var mapSection: AnyView?
+  /// Likewise, and for a sharper reason: scanning needs a LiDAR camera, so on
+  /// a device without one the section decides for itself what is left to offer.
+  /// Type-erased like the one above, which also keeps this `Form` inside the
+  /// type checker's budget -- see `groundSection`.
+  var roomSection: AnyView?
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -32,6 +37,7 @@ struct SettingsSheetView: View {
         }
 
         if let mapSection { mapSection }
+        if let roomSection { roomSection }
         Section("Appearance") {
           Picker("Appearance", selection: $settings.appearance) {
             ForEach(Appearance.allCases) { Text($0.label).tag($0) }

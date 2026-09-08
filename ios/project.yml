@@ -219,6 +219,23 @@ targets:
           - Walker-Sky
           - Walker-Teal
         CODE_SIGN_STYLE: Automatic
+        # No team, and there does not need to be one for the Simulator, which
+        # is what everything except the room scan is verified on.
+        #
+        # RoomPlan is the exception: it needs LiDAR, so it runs on a real
+        # iPhone Pro and nowhere else. Signing for that without committing an
+        # Apple ID is one line on the command line --
+        #
+        #   xcodebuild ... -destination 'generic/platform=iOS' \
+        #     DEVELOPMENT_TEAM=XXXXXXXXXX -allowProvisioningUpdates
+        #
+        # -- or setting the team once in Xcode's Signing & Capabilities, which
+        # `xcodegen generate` then wipes, so the flag is the durable form. A
+        # free personal team is enough; the profile lasts seven days.
+        #
+        # Deliberately no `DEVELOPMENT_TEAM` key here: an empty one behaves
+        # exactly like an absent one, so a placeholder would buy nothing and
+        # commit somebody's Apple ID to the repo the first time it was filled in.
         # One Mach-O, not three.
         #
         # Xcode 16 defaults Debug builds to a 40 KB stub executable plus a
@@ -249,6 +266,16 @@ targets:
         # The status bar follows the same statement: it sits over the map, and
         # a fixed light style would put a white clock on the Paper ground.
         ITSAppUsesNonExemptEncryption: false
+        # The app's first privacy key, and the only one it needs: MapKit's
+        # search and snapshotter want no permission at all, but RoomPlan is the
+        # camera, and iOS kills an app that opens one without a reason string.
+        #
+        # Worded as what the scan is *for* rather than as what it uses, which is
+        # what the prompt is asking on the user's behalf. Kept to one sentence:
+        # the alert gives it one line.
+        NSCameraUsageDescription: >-
+          Walky scans a room with the camera to turn its walls and doorways into
+          a map you can run a crowd through.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

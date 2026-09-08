@@ -148,7 +148,15 @@ struct RootView: View {
                         mapSection: AnyView(
                           RealMapSection(world: model.world, basemap: model.basemap,
                                          importer: model.importer,
-                                         dark: (windowScheme ?? scheme) == .dark)))
+                                         dark: (windowScheme ?? scheme) == .dark)),
+                        roomSection: AnyView(
+                          RoomScanSection(world: model.world, scanner: model.scanner,
+                                          // Swapping the item on the one sheet
+                                          // rather than presenting from inside
+                                          // it: `isCovered` stays one fact.
+                                          onScan: { sheet = .roomScan })))
+    case .roomScan:
+      RoomCaptureContainer(scanner: model.scanner)
     }
   }
 
@@ -174,6 +182,6 @@ struct RootView: View {
 /// to be maintained by two handlers that must never disagree. With one optional
 /// it is `now != nil`, once.
 private enum Sheet: String, Identifiable {
-  case welcome, settings
+  case welcome, settings, roomScan
   var id: String { rawValue }
 }

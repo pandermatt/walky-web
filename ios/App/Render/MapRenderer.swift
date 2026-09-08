@@ -485,35 +485,52 @@ extension MapRenderer {
     return p
   }
 
-  /// Two short lines beside the measurement, in the app's own voice rather than
-  /// the debug readout's monospace: this is a result, not a diagnostic.
+  /// The measurement's two numbers, in the top-left corner.
+  ///
+  /// In the app's own voice rather than the debug readout's monospace: this is a
+  /// result, not a diagnostic. It used to hang off the midpoint of the two taps,
+  /// which sounds anchored and is not -- at any real zoom the midpoint leaves the
+  /// canvas and the clamp drags the label back inside, so it ended up detached
+  /// from its measurement *and* somewhere different every time. A fixed corner
+  /// admits that, keeps the routes unobscured, and puts the numbers where the eye
+  /// already knows to look.
   static func drawMeasurementLabel(_ m: DetourMeasurement, world: WalkyWorld,
                                    into ctx: inout GraphicsContext,
                                    size: CGSize, ink: RGB) {
-    let mid = Point((m.a.x + m.b.x) / 2, (m.a.y + m.b.y) / 2)
-    let at = world.viewport.worldToScreen(mid)
-
     var lines = [walkyLine(m, world.settings.speed)]
     if let appleMetres = m.appleMetres, let ratio = m.ratio {
-      lines.append("Apple \(metres(appleMetres)) · \(String(format: "%.2f", ratio))×")
+      // Named for what the route follows, not for whose API drew it: "pavements"
+      // is the difference the ratio is about -- the mapped pedestrian network
+      // against Walky's open geometry.
+      lines.append("Pavements: \(metres(appleMetres)) · \(String(format: "%.2f", ratio))×")
     }
 
-    // Clamped inside the canvas, and clear of the toolbar the readout already
-    // documents a 110pt reserve for.
-    let x = Swift.min(Swift.max(12, at.x), size.width - 12)
-    let y = Swift.min(Swift.max(28, at.y - 22), size.height - 110)
+    let margin: CGFloat = 12
+    // `MapCanvas` ignores the safe area, so `size` includes the status bar: this
+    // is the top's mirror of the 110pt `drawDebug` reserves for the toolbar.
+    let top: CGFloat = 60
+    let padH: CGFloat = 8, padV: CGFloat = 6, gap: CGFloat = 3
 
-    var offset = 0.0
-    for line in lines {
+    // One card around both lines, so resolve first and measure before drawing --
+    // a per-line box would leave two ragged right edges in the corner.
+    let resolved = lines.map { line -> GraphicsContext.ResolvedText in
       var text = ctx.resolve(Text(line).font(.system(size: 13, weight: .medium)))
       text.shading = .color(color(ink))
-      let measured = text.measure(in: size)
-      let box = CGRect(x: x - measured.width / 2 - 6, y: y + offset - measured.height / 2 - 3,
-                       width: measured.width + 12, height: measured.height + 6)
-      ctx.fill(Path(roundedRect: box, cornerRadius: 6),
-               with: .color(color(world.settings.ground.background, 0.85)))
-      ctx.draw(text, at: CGPoint(x: x, y: y + offset), anchor: .center)
-      offset += measured.height + 5
+      return text
+    }
+    let measured = resolved.map { $0.measure(in: size) }
+    let width = measured.map(\.width).max() ?? 0
+    let height = measured.reduce(0) { $0 + $1.height }
+      + gap * CGFloat(Swift.max(measured.count - 1, 0))
+
+    let card = CGRect(x: margin, y: top, width: width + padH * 2, height: height + padV * 2)
+    ctx.fill(Path(roundedRect: card, cornerRadius: 8),
+             with: .color(color(world.settings.ground.background, 0.85)))
+
+    var y = card.minY + padV
+    for (text, box) in zip(resolved, measured) {
+      ctx.draw(text, at: CGPoint(x: card.minX + padH, y: y), anchor: .topLeading)
+      y += box.height + gap
     }
   }
 

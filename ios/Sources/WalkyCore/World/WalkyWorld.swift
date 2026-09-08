@@ -715,6 +715,7 @@ public final class WalkyWorld: PointerHost {
     // stops back, so the camera cannot wander out into empty space.
     geoAnchor = nil
     viewport.zoomLevelMax = ZOOM_LEVEL_MAX
+    viewport.homeLevel = 0
     measurement = nil
   }
 
@@ -722,6 +723,32 @@ public final class WalkyWorld: PointerHost {
     let bounds = contentBounds()
     raiseZoomCeiling(for: bounds)
     viewport.reset(bounds)
+    requestRender()
+  }
+
+  /// Frame an imported map, and make that framing home.
+  ///
+  /// `resetZoom` is for a map somebody drew: it never zooms in past the stop
+  /// the app opens at, because that is where the drawing was authored. An
+  /// import has a real size instead of an authored one, and a scanned room is
+  /// smaller than the screen -- 4m at life size wants two notches *in*, and
+  /// opening at zero would leave the room in a box in the middle of the display
+  /// with the crowd too small to watch.
+  ///
+  /// So this frames the content at whatever notch fits, in or out, and tells
+  /// the viewport that is where "reset zoom" should come back to. A drawn map
+  /// never calls it and is untouched.
+  public func frameImport() {
+    let bounds = contentBounds()
+    raiseZoomCeiling(for: bounds)
+    guard let bounds else {
+      viewport.reset(nil)
+      requestRender()
+      return
+    }
+    viewport.homeLevel = 0
+    viewport.fit(bounds)
+    viewport.homeLevel = viewport.zoomLevel
     requestRender()
   }
 
