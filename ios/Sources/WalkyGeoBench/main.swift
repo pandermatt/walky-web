@@ -7,6 +7,7 @@
 import Foundation
 import WalkySim
 import WalkyCore
+import WalkyGeo
 
 // MARK: - The .osm extracts the Java original shipped
 
@@ -164,9 +165,34 @@ func metres(_ walls: [Wall]) -> (w: Double, h: Double) {
   return ((maxX - minX) / PX_PER_METRE, (maxY - minY) / PX_PER_METRE)
 }
 
+/// What a ring-size distribution looks like, which is what `SIMPLIFY_ABOVE`
+/// is set from. Buildings are not uniform: most are near the median and a
+/// small tail of traced curves carries a disproportionate share of corners.
+func histogram(_ walls: [Wall]) {
+  let sizes = walls.flatMap { $0.polygons.map(\.count) }.sorted()
+  guard !sizes.isEmpty else { return }
+  let total = sizes.reduce(0, +)
+  func pct(_ p: Int) -> Int { sizes[min(sizes.count - 1, sizes.count * p / 100)] }
+  let tail = sizes.filter { $0 > SIMPLIFY_ABOVE }
+  print(String(format: "  rings %d, corners %d, mean %.1f, median %d, p90 %d, p99 %d, max %d",
+               sizes.count, total, Double(total) / Double(sizes.count),
+               pct(50), pct(90), pct(99), sizes.last!))
+  print(String(format: "  over SIMPLIFY_ABOVE=%d: %d rings (%.1f%%) holding %d corners (%.1f%%)",
+               SIMPLIFY_ABOVE, tail.count, 100 * Double(tail.count) / Double(sizes.count),
+               tail.reduce(0, +), 100 * Double(tail.reduce(0, +)) / Double(total)))
+}
+
+/// The same walls with `mergeFootprints` applied, so the two can be timed
+/// against each other rather than argued about.
+func merged(_ walls: [Wall], _ radius: Double) -> [Wall] {
+  let rings = mergeFootprints(walls.flatMap { $0.polygons },
+                              simplifyTolerance: radius / 2)
+  return rings.enumerated().map { Wall(id: $0.offset, polygons: [$0.element]) }
+}
+
 print("radius \(radius)px, \(repeats) runs each, median ms")
-print("Simplification is not the lever: OSM footprints are already minimal.")
-print("This asks what area is, by tiling a real extract.\n")
+print("Simplification alone is not the lever: an ordinary building is already")
+print("minimal. Merging is, and this asks by how much -- raw against merged.\n")
 print("map            tiling   extent m    walls  verts  nodes    rebuild  groupWalls")
 print(String(repeating: "-", count: 78))
 
@@ -175,8 +201,12 @@ for path in maps {
   guard let (base, _) = wallsFrom(path, tolerance: 0) else {
     print("\(name): could not read"); continue
   }
-  for k in [1, 2, 3] {
-    let walls = tiled(base, k)
+  print("\(name):")
+  histogram(base)
+  print("")
+  for k in (ProcessInfo.processInfo.environment["TILES"].map { $0.split(separator: ",").compactMap { Int($0) } } ?? [1, 2, 3]) {
+    for (label, walls) in [("raw", tiled(base, k)), ("merged", merged(tiled(base, k), radius))] {
+      _ = label
     let vertices = walls.reduce(0) { $0 + $1.polygons.reduce(0) { $0 + $1.count } }
     let size = metres(walls)
     var nodeCount = 0
@@ -186,9 +216,10 @@ for path in maps {
     })
     let grouping = median((0..<repeats).map { _ in milliseconds { _ = groupWalls(walls) } })
     print(String(format: "%-14s %dx%d   %4.0fx%-4.0f %6d %6d %6d %9.1f %11.1f",
-                 (name as NSString).utf8String!, k, k, size.w, size.h,
+                 ("\(name) \(label)" as NSString).utf8String!, k, k, size.w, size.h,
                  walls.count, vertices, nodeCount, rebuild, grouping))
     fflush(stdout)
+    }
   }
   print("")
 }

@@ -115,6 +115,24 @@ public func pointInPolygon(_ poly: [Point], _ p: Point) -> Bool {
 /// sharpens: a 1.8-degree needle offset by a radius of 13 puts the corner over
 /// 800 units away. Those spikes are not merely ugly -- the same hulls are what
 /// `isVisible` treats as solid, so each is a phantom wall blocking open ground.
+/// Ports `Wall.intersectsWall`: shared area or crossing edges.
+///
+/// Lives here rather than beside the `Wall` helpers that call it because it is
+/// pure geometry, and because `WalkyGeo` sits below `WalkyCore` and needs it to
+/// decide which imported footprints are the same building drawn twice.
+public func polygonsOverlap(_ a: [Point], _ b: [Point]) -> Bool {
+  if a.contains(where: { pointInPolygon(b, $0) }) { return true }
+  if b.contains(where: { pointInPolygon(a, $0) }) { return true }
+  for i in 0..<a.count {
+    let a1 = a[i]
+    let a2 = a[(i + 1) % a.count]
+    for j in 0..<b.count where segmentsCross(a1, a2, b[j], b[(j + 1) % b.count]) {
+      return true
+    }
+  }
+  return false
+}
+
 public let MITER_LIMIT: Double = 2
 
 /// Offsets a convex polygon outward by `amount`.
