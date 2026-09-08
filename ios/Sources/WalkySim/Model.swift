@@ -4,6 +4,40 @@ import Foundation
 /// `src/state/model.ts`; the settings, labels and generators follow later.
 public typealias RGB = (r: Int, g: Int, b: Int)
 
+/// A wall flattened into something that can cross a thread.
+///
+/// `Wall` is a class, so an array of them cannot be handed to a background
+/// build. This carries exactly what `buildVisibilityGraph` reads and nothing
+/// else -- notably it carries the **hull**, so the build reconstructs walls
+/// through `Wall.init(id:polygons:hull:...)` rather than recomputing
+/// `monotoneChainHull` per wall. That saves the work twice over: the hull is
+/// already known, and reusing it guarantees the background build sees byte
+/// identical input to what the main actor holds, so the graph cannot differ.
+public struct WallSnapshot: Sendable {
+  public var id: Int
+  public var polygons: [[Point]]
+  public var hull: [Point]
+  public var color: RGB
+  public var isGoal: Bool
+  public var isBorder: Bool
+
+  public init(_ wall: Wall) {
+    id = wall.id
+    polygons = wall.polygons
+    hull = wall.hull
+    color = wall.color
+    isGoal = wall.isGoal
+    isBorder = wall.isBorder
+  }
+
+  /// `selected` is not carried: it is a pointer-tool state that no part of the
+  /// graph reads, and shipping it would invite somebody to trust it.
+  public var wall: Wall {
+    Wall(id: id, polygons: polygons, hull: hull, color: color,
+         isGoal: isGoal, isBorder: isBorder, selected: false)
+  }
+}
+
 public final class Wall {
   public var id: Int
   /// One shape may be several polygons: a border frame is four bars.

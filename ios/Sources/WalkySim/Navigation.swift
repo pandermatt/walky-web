@@ -55,11 +55,54 @@ public final class Navigation {
   /// Which goal the next recost refreshes; they take turns.
   private var recostTurn = 0
 
+  /// How many nearest candidates `nextWaypoint` tests before giving up and
+  /// scanning everything. Eight, because the nodes closest to a pedestrian are
+  /// the corners of the buildings around it and one of those is almost always
+  /// in sight; the fallback is there for when it is not, not as the usual path.
+  private static let CANDIDATES = 8
+  /// Reused across calls rather than allocated per pedestrian per tick, the
+  /// same reason `SpatialHash` hands back a shared buffer.
+  private var candidateTotal = [Double](repeating: .infinity, count: CANDIDATES)
+  private var candidateNode = [Int32](repeating: -1, count: CANDIDATES)
+
   public init() {}
 
-  public func rebuild(_ walls: [Wall], _ radius: Double) {
-    self.radius = radius
-    graph = buildVisibilityGraph(walls, radius)
+  /// Everything a rebuild produces, and nothing that cannot cross a thread.
+  ///
+  /// `BlockerIndex` is deliberately absent: it is a class with a mutable query
+  /// buffer, and its counting sort over a few hundred groups costs microseconds,
+  /// so `install` rebuilds it rather than the type being made `Sendable` on the
+  /// strength of a promise.
+  public struct Build: Sendable {
+    public var graph: VisibilityGraph
+    public var fieldOrder: [Int]
+    public var fieldByWall: [Int: DijkstraResult]
+    public var radius: Double
+  }
+
+  /// The whole cost of a rebuild, as a pure function.
+  ///
+  /// Free of `self` on purpose: it is what runs off the main actor while the
+  /// crowd keeps walking on the graph it already has. Measured at 2.1s on a
+  /// forced 600m import, which is the freeze this exists to move.
+  public static func build(_ walls: [WallSnapshot], _ radius: Double) -> Build {
+    let objects = walls.map(\.wall)
+    let graph = buildVisibilityGraph(objects, radius)
+    var order: [Int] = []
+    var fields: [Int: DijkstraResult] = [:]
+    for wall in objects {
+      if !wall.isGoal { continue }
+      order.append(wall.id)
+      fields[wall.id] = dijkstra(graph.csr, nodesOfWall(graph, wall.id))
+    }
+    return Build(graph: graph, fieldOrder: order, fieldByWall: fields, radius: radius)
+  }
+
+  /// Swaps a built graph in. Cheap, and the only part that must be on the actor
+  /// that owns this object.
+  public func install(_ build: Build) {
+    radius = build.radius
+    graph = build.graph
     // Built here rather than inside `Blockers`, which stays three fields wide
     // for the sweep's sake -- see the note on that type.
     blockerGroups = graph.blockers.groups
@@ -70,14 +113,15 @@ public final class Navigation {
     baseWeights = graph.csr.weights
     edgeSlow = [Float](repeating: 1, count: graph.csr.targets.count)
     recostTurn = 0
-    fieldOrder.removeAll()
-    fieldByWall.removeAll()
-    for wall in walls {
-      if !wall.isGoal { continue }
-      let sources = nodesOfWall(graph, wall.id)
-      fieldOrder.append(wall.id)
-      fieldByWall[wall.id] = dijkstra(graph.csr, sources)
-    }
+    fieldOrder = build.fieldOrder
+    fieldByWall = build.fieldByWall
+  }
+
+  /// Build and install in one breath, on whatever thread asks. What every
+  /// caller did before there was a background path, and still what the
+  /// conformance runner and the tests use.
+  public func rebuild(_ walls: [Wall], _ radius: Double) {
+    install(Self.build(walls.map(WallSnapshot.init), radius))
   }
 
   /// Reads the crowd and re-prices the routes, so a jam is a thing the field
@@ -170,31 +214,58 @@ public final class Navigation {
 
     guard let result = fieldByWall[goalWallId] else { return nil }
 
+    // A bound first, then the scan.
+    //
+    // A sampling profile put the `isVisible` call below at 504 of 513 samples:
+    // nearly the whole tick on a 600m import was visibility tests from here.
+    // The scan tests every node that beats the running best, and since the best
+    // starts at infinity, whichever node index order happens to hand over first
+    // sets a poor bound and lets dozens more through.
+    //
+    // So: find the *nearest* node by squared distance -- no `jsHypot`, no
+    // visibility -- and if it can be seen, its total is an upper bound on the
+    // answer. The scan then prunes against that from its very first node.
+    //
+    // Ranking every node by `step + cost` up front was tried instead and is
+    // slightly *slower* (265ms against 240ms): it needs a real `jsHypot` per
+    // node, where the cost prune below skips most of them before any distance
+    // is computed at all.
+    var nearest = -1
+    var nearestD2 = Double.infinity
+    let floorD2 = ON_NODE_EPSILON * ON_NODE_EPSILON
+    for i in 0..<graph.nodes.count {
+      if !result.dist[i].isFinite { continue }
+      let node = graph.nodes[i]
+      let dx = node.x - from.x, dy = node.y - from.y
+      let d2 = dx * dx + dy * dy
+      // Skip the node the agent is standing on. By the triangle inequality it
+      // always minimises step + cost, so without this an agent that reaches a
+      // corner re-selects it forever and parks there.
+      if d2 < floorD2 { continue }
+      if d2 < nearestD2 { nearestD2 = d2; nearest = i }
+    }
+    var bound = Double.infinity
+    if nearest >= 0, isVisible(from, graph.nodes[nearest], graph.blockers) {
+      bound = distance(from, graph.nodes[nearest]) + Double(result.dist[nearest])
+    }
+
     var best = -1
     var bestCost = Double.infinity
     for i in 0..<graph.nodes.count {
       let cost = Double(result.dist[i])
       if !cost.isFinite { continue }
-      // `step` is skipped below `ON_NODE_EPSILON` just under here, so it is
-      // strictly positive and `total > cost`: a node whose cost-to-goal alone
-      // already reaches the best cannot improve on it. Cheap, exact, and it
-      // skips the `distance` call rather than merely the comparison.
-      //
-      // **Pruning, not reordering.** Sorting the nodes by cost and breaking on
-      // the same inequality was tried and is 3x *slower* on this map: ascending
-      // cost puts the nodes nearest the goal first, which are the ones furthest
-      // from the pedestrian, so the first candidate sets a poor `bestCost` and
-      // hundreds more `isVisible` calls run before it tightens. Index order
-      // finds a near node early and prunes hard. Measured: 251ms against 773ms
-      // per tick at 1,000 pedestrians on a 600m import.
+      // `step` is strictly positive below, so `total > cost`: a node whose
+      // cost-to-goal alone already exceeds a bound cannot beat it. Strict, so a
+      // node tying the bound is still considered -- the scan keeps the
+      // *earliest* index among equal minima, and the bound's own node may not
+      // be the earliest.
+      if cost > bound { continue }
       if cost >= bestCost { continue }
       let node = graph.nodes[i]
       let step = distance(from, node)
-      // Skip the node the agent is standing on. By the triangle inequality it
-      // always minimises step + cost, so without this an agent that reaches a
-      // corner re-selects it forever and parks there.
       if step < ON_NODE_EPSILON { continue }
       let total = step + cost
+      if total > bound { continue }
       if total >= bestCost { continue }
       if !isVisible(from, node, graph.blockers) { continue }
       bestCost = total

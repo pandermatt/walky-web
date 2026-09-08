@@ -28,11 +28,11 @@ public let NODE_MARGIN: Double = 2
 /// than derived twice.
 private let SHELL_SLACK: Double = 2.23606797749978969   // hypot(2, 1) = sqrt(5)
 
-public struct BBox {
+public struct BBox: Sendable {
   public var minX: Double, minY: Double, maxX: Double, maxY: Double
 }
 
-public struct Obstacle {
+public struct Obstacle: Sendable {
   public var wallId: Int
   /// Index of this convex part among all obstacles, used for ring adjacency.
   public var partId: Int
@@ -42,14 +42,14 @@ public struct Obstacle {
 }
 
 /// A whole wall's convex hull, expanded: the broad phase for that wall.
-public struct WallShell {
+public struct WallShell: Sendable {
   public var wallId: Int
   public var hull: [Point]
   public var bbox: BBox
 }
 
 /// A wall's shell together with its parts, so the broad phase needs no lookup.
-public struct WallPartGroup {
+public struct WallPartGroup: Sendable {
   public var shell: WallShell?
   public var parts: [Obstacle]
 }
@@ -59,13 +59,13 @@ public struct WallPartGroup {
 /// calls 5.75 million times on a 600m import. Adding a dictionary and an index
 /// object to it -- both of which `Navigation` now owns instead -- cost the
 /// rebuild 35%, from 2.1s to 2.9s, for fields that call never reads.
-public struct Blockers {
+public struct Blockers: Sendable {
   public var obstacles: [Obstacle]
   public var shells: [WallShell]
   public var groups: [WallPartGroup]
 }
 
-public struct VisibilityGraph {
+public struct VisibilityGraph: Sendable {
   public var nodes: [Point]
   /// Which wall each node's part belongs to; goals are seeded by this.
   public var nodeWall: [Int32]

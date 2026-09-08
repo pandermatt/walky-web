@@ -9,7 +9,7 @@ import Foundation
 /// sum rounds at every step, which flips comparisons at ties, which picks a
 /// different predecessor, which routes the whole crowd somewhere else. Storage
 /// is `Float`; arithmetic is `Double`. Always.
-public struct CsrGraph {
+public struct CsrGraph: Sendable {
   public var nodeCount: Int
   public var offsets: [Int32]
   public var targets: [Int32]
@@ -92,7 +92,7 @@ private struct QuadHeap {
   }
 }
 
-public struct DijkstraResult {
+public struct DijkstraResult: Sendable {
   /// Cost from the nearest source; infinity where unreachable.
   public var dist: [Float]
   /// Predecessor on the best path, or -1 at a source / unreachable node.

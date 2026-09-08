@@ -67,6 +67,20 @@ public final class WalkyWorld: PointerHost {
 
   private var undoStack: [MapSnapshot] = []
   private var navDirty = true
+  /// Whether any graph has ever landed. Until one has there is nothing to walk
+  /// on, so the first build is taken synchronously however slow it is; every
+  /// one after that is deferred, because the crowd has a graph already.
+  private var navBuilt = false
+  /// The rebuild in flight, if any. One at a time: a second would be answering
+  /// the same walls.
+  private var navBuild: Task<Void, Never>?
+  /// Bumped by every wall edit, so a build that finishes late can tell it is
+  /// stale. `Basemap` owns its task the same way, for the same reason.
+  ///
+  /// Its own counter rather than `worldRevision`, which also moves when only
+  /// the crowd changes: a brush drag would then cancel the in-flight rebuild on
+  /// every point of the stroke and it would never land.
+  private var navGeneration = 0
   /// So the "pick a tool" nudge is a nudge and not a drumbeat.
   private var suggestedATool = false
   /// Ticks stepped since launch, so a frame can report how many it just ran.
@@ -152,7 +166,7 @@ public final class WalkyWorld: PointerHost {
     let wall = makeWall(usable, options ?? WallOptions())
     walls.append(wall)
     removeAgentsUnder(wall)
-    navDirty = true
+    markNavDirty()
     touch()
     return true
   }
@@ -176,7 +190,7 @@ public final class WalkyWorld: PointerHost {
       // O(agents) per wall and there is no point paying it for nobody.
       if agents.count > 0 { removeAgentsUnder(wall) }
     }
-    navDirty = true
+    markNavDirty()
     touch()
     return usable.count
   }
@@ -189,7 +203,9 @@ public final class WalkyWorld: PointerHost {
   /// `touch()` would bump `worldRevision` and throw away every cached wall and
   /// hull path in the renderer for nothing.
   public func measure(_ a: Point, _ b: Point) {
-    rebuildNavIfNeeded()
+    // Now, not later: a measurement against a stale map is a wrong answer
+    // rather than a late one.
+    rebuildNavNow()
     guard let taken = measuring.measure(from: a, to: b, walls: walls,
                                         radius: settings.pedestrianRadius,
                                         revision: worldRevision,
@@ -311,10 +327,11 @@ public final class WalkyWorld: PointerHost {
       agents.setGoal(i, hit.id, hit.color)
     }
     pruneGoals(hit.id)
-    navDirty = true
-    // Before the render: it draws the route of every agent to its own goal,
-    // which reads the field this rebuild produces.
-    rebuildNavIfNeeded()
+    markNavDirty()
+    // The goal's routing field comes from this. Deferred once a graph exists,
+    // so the route lines appear a beat after the tap on a big map rather than
+    // the tap freezing for two seconds.
+    ensureNav()
     touch()
     return true
   }
@@ -366,7 +383,8 @@ public final class WalkyWorld: PointerHost {
   /// Two rebuilds a frame for one answer, and the two would have been on
   /// different threads the moment the tick moved off the main one.
   public func pedestrianBlock(_ at: Point, _ cells: Int?) -> [Point] {
-    rebuildNavIfNeeded()
+    // `isBlocked` reads the graph's obstacles, so there has to be one.
+    ensureNav()
     let r = settings.pedestrianRadius
     let n = Swift.max(1, cells ?? Int(settings.brushSize))
     // Shoulder to shoulder, and left to sort themselves out: a crowd opens out
@@ -394,10 +412,83 @@ public final class WalkyWorld: PointerHost {
     return chosen
   }
 
+  /// Start a rebuild if one is due, and carry on.
+  ///
+  /// The rebuild is `n^2.5` in wall corners -- 2.1 seconds on a forced 600m
+  /// import -- and it used to run right here, on the main actor, on every wall
+  /// edit. So the app froze for two seconds whenever anybody drew a line.
+  ///
+  /// Now it is a pure function (`Navigation.build`) run off the actor while the
+  /// crowd keeps walking on the graph it already has. Two consequences worth
+  /// knowing:
+  ///
+  /// **Edits coalesce.** Drawing ten walls used to be ten synchronous rebuilds
+  /// in a row; it is now one, because `navDirty` is still set when the build
+  /// starts and only cleared by the build that answers the *current* walls.
+  ///
+  /// **The geometry is briefly stale.** For up to one rebuild, `insideAnyWall`
+  /// reads the old graph's obstacles, so a pedestrian can walk through a wall
+  /// that is already on screen. Bounded by one rebuild, and partly covered
+  /// already because `addWalls` clears the agents under a new wall.
+  /// The graph no longer describes the map. Always both, never one.
+  private func markNavDirty() {
+    navDirty = true
+    navGeneration &+= 1
+  }
+
+  /// A graph to walk on, whatever it takes.
+  ///
+  /// The first one is built here and now: there is no old graph to carry on
+  /// with, and a crowd standing still until a background task lands is not
+  /// "keeping the routes it has". After that, edits are deferred.
+  private func ensureNav() {
+    if navBuilt { rebuildNavIfNeeded() } else { rebuildNavNow() }
+  }
+
   private func rebuildNavIfNeeded() {
-    if !navDirty { return }
+    guard navDirty, navBuild == nil else { return }
+    let generation = navGeneration
+    let snapshot = walls.map(WallSnapshot.init)
+    let radius = settings.pedestrianRadius
+    navBuild = Task { [weak self] in
+      let built = await Task.detached(priority: .userInitiated) {
+        Navigation.build(snapshot, radius)
+      }.value
+      guard let self, !Task.isCancelled else { return }
+      self.navBuild = nil
+      // Walls moved on while this was in flight: it answers a question nobody
+      // is asking, and `navDirty` is still set, so the next call starts again.
+      guard generation == self.navGeneration else {
+        self.rebuildNavIfNeeded()
+        return
+      }
+      self.nav.install(built)
+      self.navDirty = false
+      self.navBuilt = true
+      self.requestRender()
+    }
+  }
+
+  /// Build and install now, blocking whoever asked.
+  ///
+  /// For the callers that cannot take a late answer: a measurement against a
+  /// stale map is wrong rather than merely behind, and the tests construct a
+  /// world and assert on it in the same breath. Everything else schedules.
+  public func rebuildNavNow() {
+    guard navDirty else { return }
+    navBuild?.cancel()
+    navBuild = nil
     nav.rebuild(walls, settings.pedestrianRadius)
     navDirty = false
+    navBuilt = true
+  }
+
+  /// Schedule a rebuild and wait for it. What the importer uses, so its
+  /// "Building the navigation graph..." label covers a build that is genuinely
+  /// off this actor rather than a blocking call under a caption.
+  public func navReady() async {
+    rebuildNavIfNeeded()
+    await navBuild?.value
   }
 
   // MARK: - Undo
@@ -425,7 +516,7 @@ public final class WalkyWorld: PointerHost {
     guard let previous = undoStack.popLast() else { return }
     walls = previous.walls
     agents.restore(previous.agents)
-    navDirty = true
+    markNavDirty()
     // Whatever is half-drawn was drawn on a map that no longer exists.
     tool?.cancel()
     touch()
@@ -452,7 +543,7 @@ public final class WalkyWorld: PointerHost {
     walls = []
     agents.clear()
     undoStack = []
-    navDirty = true
+    markNavDirty()
     running = false
     metrics.reset()
     clock.reset()
@@ -518,7 +609,7 @@ public final class WalkyWorld: PointerHost {
   /// which must see `justArrived` before anything shuffles slots, and the
   /// recost, which reads the hash `agents.step` just built.
   public func stepOnce() {
-    rebuildNavIfNeeded()
+    ensureNav()
     agents.step(nav, hash, pxPerTickFromMps(settings.speed),
                 settings.pedestrianRadius, settings.personalSpace)
     metrics.sample(agents, settings.pedestrianRadius)

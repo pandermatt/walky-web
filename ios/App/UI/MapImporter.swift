@@ -186,19 +186,14 @@ final class MapImporter {
     // sets `navDirty`, so the visibility rebuild -- the superquadratic step the
     // budget exists for -- used to land a moment *after* the sheet said "done",
     // as an unexplained freeze. Paying it here puts it under a label.
+    // Awaited rather than blocked on. The rebuild is the superquadratic step
+    // the import budget exists for -- 2.1s on a forced 600m map -- and it now
+    // runs off this actor, so the sheet stays alive through it and the spinner
+    // actually turns. This used to be a 50ms sleep to get the label painted
+    // before the main thread stopped answering, which was the best that could
+    // be done while the rebuild was synchronous.
     step(.routing)
-    // The rebuild is synchronous on the main actor, so this pause is what puts
-    // the label on screen before the thread stops answering. `Task.yield()` is
-    // not enough and was tried: it reschedules this task but does not make the
-    // run loop *draw*, so on device the label stayed on "Placing the
-    // buildings..." right through the rebuild. A frame is what is needed, and
-    // one frame is what this waits for.
-    //
-    // The spinner still will not animate through the rebuild -- making it do so
-    // is the deferred work of moving the tick off the main actor -- but a
-    // stationary, correct label beats a frozen app with nothing to explain it.
-    try? await Task.sleep(for: .milliseconds(50))
-    world.prepareForRender()
+    await world.navReady()
 
     let b = world.contentBounds()
     // Real metres, not world ones: the map is a model, and what somebody wants
