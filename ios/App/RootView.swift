@@ -48,36 +48,45 @@ struct RootView: View {
         TouchCanvas(router: router).ignoresSafeArea()
       }
 
-      VStack {
-        if let notice = model.notice.message {
-          Text(notice)
-            .font(.footnote)
-            .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: Capsule())
-            .transition(.move(edge: .top).combined(with: .opacity))
+      // Everything the app draws over the map, gone in one place for a clean
+      // capture -- the notice and both banners as well as the bar, since a
+      // screenshot with a capsule floating in it is not a clean screenshot.
+      // Pinch and pan keep working while it is hidden, so the shot can still be
+      // framed; a tap on the map brings it all back.
+      if !model.chrome.hidden {
+        VStack {
+          if let notice = model.notice.message {
+            Text(notice)
+              .font(.footnote)
+              .padding(.horizontal, 14).padding(.vertical, 8)
+              .background(.ultraThinMaterial, in: Capsule())
+              .transition(.move(edge: .top).combined(with: .opacity))
+          }
+          // Child views on purpose -- see CrowdBanner. Neither count may be read
+          // in this body, which also builds the toolbar.
+          SelectionBanner(selection: model.selection) { model.world.clearSelection() }
+          CrowdBanner(crowd: model.crowd, toolbar: model.toolbar)
+          Spacer()
+          ToolbarView(state: model.toolbar,
+                      tint: model.world.settings.accent,
+                      onTool: { model.world.setTool(model.toolbar.selected == $0 ? nil : $0) },
+                      onAction: { action in
+                        switch action {
+                        // The two that raise a sheet, which the view owns.
+                        case .settings: sheet = .settings
+                        case .welcome: sheet = .welcome
+                        default: model.act(action)
+                        }
+                      })
         }
-        // Child views on purpose -- see CrowdBanner. Neither count may be read
-        // in this body, which also builds the toolbar.
-        SelectionBanner(selection: model.selection) { model.world.clearSelection() }
-        CrowdBanner(crowd: model.crowd, toolbar: model.toolbar)
-        Spacer()
-        ToolbarView(state: model.toolbar,
-                    tint: model.world.settings.accent,
-                    onTool: { model.world.setTool(model.toolbar.selected == $0 ? nil : $0) },
-                    onAction: { action in
-                      switch action {
-                      // The two that raise a sheet, which the view owns.
-                      case .settings: sheet = .settings
-                      case .welcome: sheet = .welcome
-                      default: model.act(action)
-                      }
-                    })
+        .animation(.snappy(duration: 0.2), value: model.notice.message)
+        .transition(.opacity)
       }
-      .animation(.snappy(duration: 0.2), value: model.notice.message)
     }
+    .animation(.snappy(duration: 0.25), value: model.chrome.hidden)
     .background(MapRenderer.color(model.world.settings.ground.background))
     .preferredColorScheme(windowScheme)
-    .statusBarHidden(false)
+    .statusBarHidden(model.chrome.hidden)
     .sheet(item: $sheet) { which in
       // The chrome's own lighting, declared rather than inherited -- on a Mac
       // the window chrome follows this, which is why an undeclared style gave
@@ -123,7 +132,8 @@ struct RootView: View {
     case .welcome:
       WelcomeSheetView(accent: model.world.settings.accent)
     case .settings:
-      SettingsSheetView(settings: model.world.settings) { model.world.requestRender() }
+      SettingsSheetView(settings: model.world.settings,
+                        chrome: model.chrome) { model.world.requestRender() }
     }
   }
 

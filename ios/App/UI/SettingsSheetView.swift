@@ -7,6 +7,11 @@ import WalkyCore
 /// place the port gets smaller.
 struct SettingsSheetView: View {
   @Bindable var settings: Settings
+  /// Not a `Settings` property, and so not persisted -- see `Chrome`. It sits in
+  /// this sheet anyway because that is where somebody setting up a capture is
+  /// already looking, and because the section around it is doing the real work:
+  /// explaining that the recorder is the system's, not Walky's.
+  @Bindable var chrome: Chrome
   let onChange: () -> Void
   @Environment(\.dismiss) private var dismiss
 
@@ -40,6 +45,10 @@ struct SettingsSheetView: View {
           Toggle("Personal space", isOn: $settings.showPersonalSpace)
           Toggle("Debug info", isOn: $settings.showDebug)
         }
+        Section {
+          Toggle("Hide controls", isOn: $chrome.hidden)
+        } header: { Text("Recording") } footer: { Text(Self.recordingFooter) }
+
         Section {
           Text(Self.about)
             .font(.footnote).foregroundStyle(.secondary)
@@ -225,6 +234,18 @@ struct SettingsSheetView: View {
     + "colour from the map behind it. Orange is the 2016 original's own accent, "
     + "and still what a route to a goal is drawn in when you switch that on "
     + "below."
+
+  // Says what the switch does *and* how to undo it, because the switch hides
+  // the very bar you would look for to undo it with. It also states plainly
+  // that Walky has no recorder: iOS already has one that captures the whole
+  // screen and saves to Photos, and a button here would do the same job with
+  // less of the system's polish.
+  private static let recordingFooter: String =
+    "Hides the toolbar and the status bar so a capture shows nothing but the "
+    + "map. Pinch and drag still work, so you can frame the shot -- tap the map "
+    + "to bring the controls back.\n\nWalky has no recorder of its own. Swipe "
+    + "down from the top-right corner and use Screen Recording in Control "
+    + "Centre, which captures the screen and saves straight to Photos."
 
   private static let about: String =
     "A pedestrian simulator. Draw walls, mark a goal, paint a crowd, and "

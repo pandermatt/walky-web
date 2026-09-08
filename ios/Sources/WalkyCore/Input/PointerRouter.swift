@@ -27,6 +27,12 @@ public protocol PointerHost: AnyObject {
   /// anything about is the host's business, not the router's -- the router
   /// knows the gesture happened; only the world knows whether the map is empty.
   func pannedWithoutTool()
+  /// A one-finger tap that went nowhere, with no tool armed. The gesture that
+  /// was free: with nothing armed a tap has never done anything at all, where a
+  /// drag pans and a second finger pinches. That is what makes it safe to hang
+  /// "bring the controls back" on, and the router stays ignorant of what the
+  /// host does with it.
+  func tappedWithoutTool()
 }
 
 /// The pointer and gesture state machine, ported from `app.ts:457–720`.
@@ -61,6 +67,15 @@ public final class PointerRouter {
   private var gestureTaken = false
   /// Previous screen point: the only source of dxScreen/dyScreen.
   private var lastScreen: Point?
+  /// Where the current one-finger gesture landed, for telling a tap from a drag
+  /// at the lift. Not `pendingTouch`: that clears on the first `moved`, and a
+  /// finger resting on glass reports movement of a point or two, so a tap
+  /// measured that way would almost never register.
+  private var pressScreen: Point?
+
+  /// How far a finger may travel and still count as a tap, in screen points.
+  /// The system's own figure for the same question.
+  private static let TAP_SLOP: Double = 10
 
   public init(host: PointerHost) { self.host = host }
 
@@ -94,6 +109,7 @@ public final class PointerRouter {
     if pointers.count > 2 || gestureTaken { return }
 
     lastScreen = screen
+    pressScreen = screen
     // Held rather than delivered -- see the note on the type.
     pendingTouch = (id, info(screen, buttons: 1))
   }
@@ -139,10 +155,21 @@ public final class PointerRouter {
   }
 
   public func ended(_ id: TouchId, at screen: Point) {
+    let press = pressScreen
+    pressScreen = nil
     if releasePointer(id) { return }
     if pendingTouch?.id == id { flushPendingTouch() }
+    // Read *before* the lift is delivered. A tool that steps off itself on a
+    // successful commit -- as the goal tool does -- would otherwise leave
+    // `host.tool` nil by the time this ran, and its own assignment would be
+    // indistinguishable from an idle tap on bare ground.
+    let idle = host.tool == nil
     let e = info(screen, buttons: 0)
     host.tool?.onPointerUp(e, host.toolContext)
+    if idle, let press,
+       jsHypot(screen.x - press.x, screen.y - press.y) <= Self.TAP_SLOP {
+      host.tappedWithoutTool()
+    }
     lastScreen = nil
     // There is no hover on iOS: once the finger is gone the ghost should be too.
     host.mouseWorld = nil
@@ -154,6 +181,7 @@ public final class PointerRouter {
   public func cancelled(_ id: TouchId) {
     _ = releasePointer(id)
     pendingTouch = nil
+    pressScreen = nil
     host.tool?.cancel()
     lastScreen = nil
     host.mouseWorld = nil

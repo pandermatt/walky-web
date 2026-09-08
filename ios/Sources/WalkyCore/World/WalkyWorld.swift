@@ -61,6 +61,10 @@ public final class WalkyWorld: PointerHost {
   /// Anything the host wants to know: a render is wanted, or a message shown.
   public var onRequestRender: (() -> Void)?
   public var onNotify: ((String) -> Void)?
+  /// A tap on the map with nothing armed. Set by the app layer, which is the
+  /// only part that knows the controls are hidden; the world just reports the
+  /// gesture, exactly as it does for `pannedWithoutTool`.
+  public var onIdleTap: (() -> Void)?
   public var onToolChanged: ((ToolId?) -> Void)?
 
   private var tools: [ToolId: any Tool] = [:]
@@ -164,6 +168,16 @@ public final class WalkyWorld: PointerHost {
     guard isEmpty, !suggestedATool else { return }
     suggestedATool = true
     onNotify?("Nothing here yet — pick a tool below to start drawing.")
+  }
+
+  /// A tap that went nowhere, with no tool armed.
+  ///
+  /// No policy here at all -- unlike `pannedWithoutTool` above, which owns the
+  /// "only on an empty map, only once" rule because only the world can answer
+  /// it. Whether an idle tap means anything depends on whether the controls are
+  /// hidden, and that is the app layer's business.
+  public func tappedWithoutTool() {
+    onIdleTap?()
   }
 
   /// Selects every pedestrian inside a lasso outline, and answers how many.

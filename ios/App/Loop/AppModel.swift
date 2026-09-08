@@ -56,6 +56,22 @@ final class Selection {
   var count = 0
 }
 
+/// Whether the app's own chrome is out of the way, for a clean capture.
+///
+/// The one shell `RootView.body` is *allowed* to read, and the exception proves
+/// the rule the others follow: it changes only when somebody flips a switch or
+/// taps an empty map, so at most a couple of times a session. `crowd.count` and
+/// `selection.count` change while a finger is down, which is why they are read
+/// in child views instead.
+///
+/// Not on `Settings`, and so not persisted: an app that relaunched with no
+/// toolbar would read as broken rather than as tidy. One tap brings it back,
+/// but only if you know that, and a fresh launch is exactly when you do not.
+@Observable
+final class Chrome {
+  var hidden = false
+}
+
 /// Owns the world, the loop and the observable shells around them.
 @MainActor
 final class AppModel {
@@ -65,6 +81,7 @@ final class AppModel {
   let notice = Notice()
   let crowd = Crowd()
   let selection = Selection()
+  let chrome = Chrome()
 
   /// A sheet is over the map.
   ///
@@ -96,6 +113,13 @@ final class AppModel {
     world.onRequestRender = { [weak self] in self?.needsFrame() }
     world.onNotify = { [weak self] message in self?.show(message) }
     world.onToolChanged = { [weak self] id in self?.toolbar.selected = id }
+    // The way back from a clean capture. Guarded rather than assigned, because
+    // @Observable fires on every set and an idle tap is an ordinary thing to do
+    // on a map with the controls already showing.
+    world.onIdleTap = { [weak self] in
+      guard let self, self.chrome.hidden else { return }
+      self.chrome.hidden = false
+    }
   }
 
   // MARK: - The loop
@@ -214,3 +238,4 @@ private final class DisplayLinkProxy: NSObject {
 }
 
 enum ToolbarAction { case start, resetPedestrians, undo, clear, resetZoom, settings, welcome }
+

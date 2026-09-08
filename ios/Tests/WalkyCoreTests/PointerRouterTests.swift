@@ -31,6 +31,7 @@ private final class FakeHost: PointerHost {
   var mouseWorld: Point?
   var renders = 0
   var freePans = 0
+  var idleTaps = 0
   let recorder = RecordingTool()
 
   init() {
@@ -41,6 +42,7 @@ private final class FakeHost: PointerHost {
 
   func requestRender() { renders += 1 }
   func pannedWithoutTool() { freePans += 1 }
+  func tappedWithoutTool() { idleTaps += 1 }
 
   lazy var toolContext: ToolContext = ToolContext(
     addWall: { _, _ in true }, addWallShape: { _, _ in true },
@@ -280,4 +282,97 @@ struct PointerRouterTests {
     // The pinch branch returns before the free-pan branch is reached.
     #expect(host.freePans == 0)
   }
+
+  // MARK: - The idle tap, which brings hidden controls back
+
+  @Test("a tap with nothing armed reaches the host")
+  func idleTap() {
+    let host = FakeHost()
+    host.tool = nil
+    let r = PointerRouter(host: host)
+
+    r.began(A, at: Point(200, 150))
+    r.ended(A, at: Point(200, 150))
+
+    #expect(host.idleTaps == 1)
+    #expect(host.freePans == 0)
+  }
+
+  /// A finger resting on glass reports a point or two of travel, so measuring
+  /// this by "was there a move at all" would mean the tap almost never landed.
+  @Test("a little jitter is still a tap; a real drag is not")
+  func tapSlop() {
+    let host = FakeHost()
+    host.tool = nil
+    let r = PointerRouter(host: host)
+
+    r.began(A, at: Point(200, 150))
+    r.moved(A, to: Point(203, 152))
+    r.ended(A, at: Point(203, 152))
+    #expect(host.idleTaps == 1)
+
+    r.began(A, at: Point(200, 150))
+    r.moved(A, to: Point(260, 150))
+    r.ended(A, at: Point(260, 150))
+    #expect(host.idleTaps == 1)
+  }
+
+  /// The regression that would make the feature invisible: with a tool armed a
+  /// tap is a *stroke*, and treating it as idle would put the controls back
+  /// every time somebody dropped a block of pedestrians.
+  @Test("a tap with a tool armed is not an idle tap")
+  func armedTapIsNotIdle() {
+    let host = FakeHost()
+    let r = PointerRouter(host: host)
+
+    r.began(A, at: Point(200, 150))
+    r.ended(A, at: Point(200, 150))
+
+    #expect(host.idleTaps == 0)
+    #expect(host.recorder.events.contains(.up(host.viewport.screenToWorld(Point(200, 150)))))
+  }
+
+  /// `host.tool` is read before the lift is delivered, and this is why: the
+  /// goal tool steps off itself on a hit, so reading it afterwards would see
+  /// nil and report a deliberate assignment as an idle tap.
+  @Test("a tool that deactivates itself does not become an idle tap")
+  func selfDeactivatingToolIsNotIdle() {
+    let host = FakeHost()
+    let stepper = SelfDeactivating(host: host)
+    host.tool = stepper
+    let r = PointerRouter(host: host)
+
+    r.began(A, at: Point(200, 150))
+    r.ended(A, at: Point(200, 150))
+
+    #expect(host.tool == nil)
+    #expect(host.idleTaps == 0)
+  }
+
+  /// The leftover finger of a pinch must not read as a tap either -- it already
+  /// must not reach a tool, and `releasePointer` returns before either.
+  @Test("the last finger of a pinch is not an idle tap")
+  func pinchLeftoverIsNotATap() {
+    let host = FakeHost()
+    host.tool = nil
+    let r = PointerRouter(host: host)
+
+    r.began(A, at: Point(100, 100))
+    r.began(B, at: Point(200, 100))
+    r.ended(B, at: Point(200, 100))
+    r.ended(A, at: Point(100, 100))
+
+    #expect(host.idleTaps == 0)
+  }
+}
+
+/// A tool that steps off itself when the finger lifts, as `GoalTool` does after
+/// a successful assignment.
+@MainActor
+private final class SelfDeactivating: Tool {
+  let id = ToolId.goal
+  private unowned let host: FakeHost
+  init(host: FakeHost) { self.host = host }
+  func onPointerUp(_: PointerInfo, _: ToolContext) { host.tool = nil }
+  func preview() -> ToolPreview { .empty }
 }
