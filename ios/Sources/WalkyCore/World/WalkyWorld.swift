@@ -7,6 +7,7 @@ import WalkyGeo
 /// that is not the same as `walls.map { $0 }` in Swift.
 public struct MapSnapshot {
   public var walls: [Wall]
+  public var generators: [Generator]
   public var agents: AgentsSnapshot
 }
 
@@ -33,6 +34,9 @@ public let CROWD_WARN_AT = 2_000
 @MainActor
 public final class WalkyWorld: PointerHost {
   public var walls: [Wall] = []
+  /// The doors. Ordered by placement, which is the order they emit in and so
+  /// the order the crowd's indices come out in -- worth keeping stable.
+  public private(set) var generators: [Generator] = []
   public let agents = Agents()
   public let nav = Navigation()
   public let hash = SpatialHash()
@@ -111,6 +115,7 @@ public final class WalkyWorld: PointerHost {
     tools[.pedestrian] = PedestrianTool()
     tools[.goal] = GoalTool()
     tools[.measure] = MeasureTool()
+    tools[.generator] = GeneratorTool()
   }
 
   public var canUndo: Bool { !undoStack.isEmpty }
@@ -145,9 +150,11 @@ public final class WalkyWorld: PointerHost {
     pedestrianBlock: { [unowned self] at, cells in self.pedestrianBlock(at, cells) },
     addPedestrians: { [unowned self] at in self.addPedestrians(at) },
     setGoalAt: { [unowned self] at in self.setGoalAt(at) },
+    addGenerator: { [unowned self] at in self.addGenerator(at) },
     selectPedestriansIn: { [unowned self] lasso in self.selectPedestriansIn(lasso) },
     selectionCount: { [unowned self] in self.agents.selectionCount },
     clearSelection: { [unowned self] in self.clearSelection() },
+    standablePoint: { [unowned self] at in self.standable(at) },
     deactivateTool: { [unowned self] in self.setTool(nil) },
     notify: { [unowned self] message in self.onNotify?(message) },
     requestRender: { [unowned self] in self.requestRender() },
@@ -206,6 +213,10 @@ public final class WalkyWorld: PointerHost {
     // Now, not later: a measurement against a stale map is a wrong answer
     // rather than a late one.
     rebuildNavNow()
+    // Again here, and not only in the tool: the tool nudged against whatever
+    // graph existed when the finger went down, and the rebuild above may have
+    // just moved a wall under one of the two ends.
+    let a = standable(a), b = standable(b)
     guard let taken = measuring.measure(from: a, to: b, walls: walls,
                                         radius: settings.pedestrianRadius,
                                         revision: worldRevision,
@@ -292,6 +303,7 @@ public final class WalkyWorld: PointerHost {
   @discardableResult
   public func selectPedestriansIn(_ lasso: [Point]) -> Int {
     agents.clearSelection()
+    for g in generators { g.selected = false }
     var caught = 0
     for i in 0..<agents.count {
       let at = Point(Double(agents.x[i]), Double(agents.y[i]))
@@ -299,6 +311,12 @@ public final class WalkyWorld: PointerHost {
         agents.selected[i] = 1
         caught += 1
       }
+    }
+    // By its centre, not its corners: a lasso thrown round a door catches the
+    // door, and one drawn past the edge of one does not take it along.
+    for door in generators where pointInPolygon(lasso, door.at) {
+      door.selected = true
+      caught += 1
     }
     touch()
     return caught
@@ -308,9 +326,78 @@ public final class WalkyWorld: PointerHost {
   /// visible. `app.ts:433` reaches `touch()` the same way, through
   /// `afterSelectionChange`.
   public func clearSelection() {
-    guard agents.selectionCount > 0 else { return }
+    let anyDoor = generators.contains(where: \.selected)
+    guard agents.selectionCount > 0 || anyDoor else { return }
     agents.clearSelection()
+    for g in generators { g.selected = false }
     touch()
+  }
+
+  /// A door where the finger went, at the rate the slider says.
+  @discardableResult
+  public func addGenerator(_ at: Point) -> Bool {
+    // The same legality the brush block asks: a door needs room to let anybody
+    // out, and one placed inside a wall never would.
+    guard !pedestrianBlock(at, GENERATOR_CELLS).isEmpty else {
+      onNotify?("No room for a door there.")
+      return false
+    }
+    checkpoint()
+    generators.append(Generator(id: WallIds.mint(), at: at,
+                                rate: settings.generatorRate))
+    touch()
+    return true
+  }
+
+  public func clearGeneratorSelection() {
+    guard generators.contains(where: \.selected) else { return }
+    for g in generators { g.selected = false }
+    touch()
+  }
+
+  /// The door under a point, topmost first, or nil.
+  public func pickGenerator(_ at: Point) -> Generator? {
+    generators.last { generatorContains($0, at, settings.pedestrianRadius) }
+  }
+
+  /// Lets the doors out.
+  ///
+  /// Ports `app.ts:1669-1696`. Driven from `stepOnce`, so the doors and the
+  /// crowd share one clock: on a machine too slow for even the clamped substeps
+  /// they slow down together, rather than the doors running on ahead into a
+  /// room nobody can walk across.
+  ///
+  /// A door with no goal is skipped. It has nowhere to send anybody, and since
+  /// its pedestrians only leave the map by arriving, what it would make is a
+  /// pile that never goes away.
+  private func emit() {
+    for door in generators {
+      if door.goal < 0 { continue }
+
+      if door.wait <= 0 {
+        let burst = burstAt(door.at, door.beat, door.rate)
+        door.owed = jsMin(door.owed + burst.size, QUEUE_MAX)
+        door.wait = burst.gap
+        door.beat += 1
+      }
+      door.wait -= 1
+
+      // Nothing waiting, and nothing to ask: `pedestrianBlock` rebuilds the
+      // brush's spatial hash, which is not a thing to do once a frame per
+      // idle door.
+      if door.owed < 1 { continue }
+
+      // The brush's own legality test over the door's footprint: not inside a
+      // wall, and not on top of somebody already standing there -- and it
+      // already refuses two spots within a diameter of each other, so filling
+      // every one at once is legal by construction. Empty means the doorway is
+      // full, and the queue simply waits another frame.
+      for spot in pedestrianBlock(door.at, GENERATOR_CELLS) {
+        if door.owed < 1 { break }
+        _ = agents.addSpawned(spot, door.goal, door.color)
+        door.owed -= 1
+      }
+    }
   }
 
   /// Marks the wall under a point as a goal; false when there is no wall there.
@@ -321,10 +408,18 @@ public final class WalkyWorld: PointerHost {
     hit.isGoal = true
     // With a selection the goal applies to it alone; with nothing selected it
     // applies to everyone, as `Map.setGoalForSelectedPedestrians` did.
-    let onlySelected = agents.selectionCount > 0
+    let onlySelected = agents.selectionCount > 0 || generators.contains(where: \.selected)
     for i in 0..<agents.count {
       if onlySelected && agents.selected[i] == 0 { continue }
       agents.setGoal(i, hit.id, hit.color)
+    }
+    // A door is in "everyone" as squarely as a pedestrian is, and pinning one
+    // matters more: aiming a pedestrian sends one person, aiming a door sends
+    // everybody it will ever let out.
+    for door in generators {
+      if onlySelected && !door.selected { continue }
+      door.goal = hit.id
+      door.color = hit.color
     }
     pruneGoals(hit.id)
     markNavDirty()
@@ -346,6 +441,9 @@ public final class WalkyWorld: PointerHost {
   private func pruneGoals(_ justMarked: Int) {
     var wanted: Set<Int> = [justMarked]
     for i in 0..<agents.count where agents.goal[i] >= 0 { wanted.insert(Int(agents.goal[i])) }
+    // A door heading somewhere counts as somebody heading there, or its goal
+    // would be un-marked the moment the last of its people arrived.
+    for door in generators where door.goal >= 0 { wanted.insert(door.goal) }
     for w in walls { w.isGoal = wanted.contains(w.id) }
   }
 
@@ -366,6 +464,61 @@ public final class WalkyWorld: PointerHost {
       if pointInPolygon(ob.hull, p) { return true }
     }
     return false
+  }
+
+  /// The nearest place a pedestrian could stand.
+  ///
+  /// A tap on a roof is a reasonable thing to do -- you point at the building
+  /// you want the walk measured around -- and answering it with "No way through
+  /// from there" blames the user for the tool's literalism. So a point inside a
+  /// building is answered just outside it, on the same clearance ring the
+  /// visibility graph puts its own nodes on: `NODE_MARGIN` beyond the outline
+  /// already inflated by the pedestrian's radius. That is not an approximation
+  /// of where somebody could stand, it is exactly where the router expects to
+  /// find them.
+  ///
+  /// The point leaves by the nearest edge, and by the direction it travelled to
+  /// get there, so a tap a little way inside a wall comes out of the side it
+  /// went in.
+  ///
+  /// Repeated a bounded number of times, because obstacles overlap: stepping
+  /// out of one convex part can land inside its neighbour, and the answer to
+  /// that is to step out of that too. Bounded rather than looped -- a point
+  /// sealed inside a courtyard has no answer at all, and `measure` is the one
+  /// that gets to say so.
+  public func standable(_ p: Point) -> Point {
+    // The obstacle hulls come off the graph, so there has to be one.
+    ensureNav()
+    var at = p
+    for _ in 0..<8 {
+      guard let ob = nav.obstacles.first(where: { inside($0, at) }) else { return at }
+      at = justOutside(ob.hull, at)
+    }
+    return at
+  }
+
+  private func inside(_ ob: Obstacle, _ p: Point) -> Bool {
+    if p.x < ob.bbox.minX || p.x > ob.bbox.maxX
+      || p.y < ob.bbox.minY || p.y > ob.bbox.maxY { return false }
+    return pointInPolygon(ob.hull, p)
+  }
+
+  /// The nearest point on a ring, carried a margin past it.
+  private func justOutside(_ hull: [Point], _ p: Point) -> Point {
+    var best = p
+    var bestD = Double.infinity
+    for i in 0..<hull.count {
+      let q = closestPointOnSegment(hull[i], hull[(i + 1) % hull.count], p)
+      let d = distance(p, q)
+      if d < bestD { bestD = d; best = q }
+    }
+    let dx = best.x - p.x, dy = best.y - p.y
+    let len = jsHypot(dx, dy)
+    // Dead centre of a ring, or exactly on its boundary: there is no direction
+    // to travel in, so pick one. Any is as good as any other.
+    guard len > 0 else { return Point(jsRound(p.x + NODE_MARGIN), jsRound(p.y)) }
+    let out = (len + NODE_MARGIN) / len
+    return Point(jsRound(p.x + dx * out), jsRound(p.y + dy * out))
   }
 
   /// The legal spots in an n x n brush block centred on `at`.
@@ -504,6 +657,7 @@ public final class WalkyWorld: PointerHost {
   /// everyone back on an origin it never throws away and so undoes itself.
   public func checkpoint() {
     undoStack.append(MapSnapshot(walls: walls.map { $0.shallowCopy() },
+                                 generators: generators.map { $0.shallowCopy() },
                                  agents: agents.snapshot()))
     if undoStack.count > UNDO_DEPTH { undoStack.removeFirst() }
   }
@@ -515,6 +669,7 @@ public final class WalkyWorld: PointerHost {
   public func undo() {
     guard let previous = undoStack.popLast() else { return }
     walls = previous.walls
+    generators = previous.generators
     agents.restore(previous.agents)
     markNavDirty()
     // Whatever is half-drawn was drawn on a map that no longer exists.
@@ -532,6 +687,13 @@ public final class WalkyWorld: PointerHost {
 
   public func resetPedestrians() {
     agents.removeSpawned()
+    // Back to the top of each door's schedule, not just to an empty queue:
+    // Reset means the same demand again, and `Arrivals` is a hash of the beat.
+    for door in generators {
+      door.owed = 0
+      door.beat = 0
+      door.wait = 0
+    }
     var goalColors: [Int32: RGB] = [:]
     for w in walls where w.isGoal { goalColors[Int32(w.id)] = w.color }
     agents.resetPositions(goalColors, { randomBrightColor() })
@@ -541,6 +703,7 @@ public final class WalkyWorld: PointerHost {
 
   public func clearAll() {
     walls = []
+    generators = []
     agents.clear()
     undoStack = []
     markNavDirty()
@@ -610,6 +773,8 @@ public final class WalkyWorld: PointerHost {
   /// recost, which reads the hash `agents.step` just built.
   public func stepOnce() {
     ensureNav()
+    // Before the step, so somebody who arrives this tick walks this tick.
+    emit()
     agents.step(nav, hash, pxPerTickFromMps(settings.speed),
                 settings.pedestrianRadius, settings.personalSpace)
     metrics.sample(agents, settings.pedestrianRadius)

@@ -207,6 +207,7 @@ enum MapRenderer {
       drawMeasurement(measurement, into: &ctx, scale: scale, ink: ink)
     }
 
+    drawGenerators(world, into: &ctx, hairline: hairline, ink: ink)
     drawAgents(world, into: &ctx, hairline: hairline, ink: ink)
     drawPreview(world, into: &ctx, hairline: hairline, scale: scale, ink: ink)
 
@@ -217,6 +218,31 @@ enum MapRenderer {
 
     if world.settings.showDebug {
       drawDebug(debugLines(world, stats), into: &screen, size: size, ink: ink)
+    }
+  }
+
+  /// The doors, under the crowd they let out.
+  ///
+  /// Filled in the goal's colour, as the pedestrians it emits are, so a glance
+  /// says where its people are going. Rounded, because a map of walls is a map
+  /// of hard rectangles and one more of those is a block you work out rather
+  /// than recognise -- see `generatorRoundedSquare`.
+  private static func drawGenerators(_ world: WalkyWorld, into ctx: inout GraphicsContext,
+                                     hairline: Double, ink: RGB) {
+    guard !world.generators.isEmpty else { return }
+    let r = world.settings.pedestrianRadius
+    for door in world.generators {
+      var p = Path()
+      let ring = generatorRoundedSquare(door.at, r)
+      p.move(to: CGPoint(x: ring[0].x, y: ring[0].y))
+      for q in ring.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
+      p.closeSubpath()
+      // Unpinned doors are white, which is what `Generator` starts them at, and
+      // white on a pale ground is nothing at all -- so the fill is faded and the
+      // outline carries the shape.
+      ctx.fill(p, with: .color(color(door.goal >= 0 ? door.color : ink, 0.35)))
+      ctx.stroke(p, with: .color(color(door.selected ? YELLOW : ink)),
+                 lineWidth: hairline * (door.selected ? 2 : 1))
     }
   }
 
@@ -350,6 +376,12 @@ enum MapRenderer {
       ctx.stroke(p, with: .color(color(lines.color ?? ORANGE, 0.8)), lineWidth: hairline)
     }
 
+    // A point a two-tap tool has already placed. Before the marker existed the
+    // first tap of a measurement left nothing on the map at all.
+    if let anchor = preview.anchorPoint {
+      endpoint(anchor, into: &ctx, scale: scale, ink: ink)
+    }
+
     if let ghost = preview.cursorGhost {
       // Only ever drawn while a touch is down -- there is no hover on iOS, and
       // a ghost parked at the last touch point is exactly the artefact to avoid.
@@ -427,12 +459,22 @@ extension MapRenderer {
     ctx.stroke(path(m.walky), with: .color(color(ORANGE)),
                style: StrokeStyle(lineWidth: 2 / scale, lineCap: .round, lineJoin: .round))
 
-    let dot = 5 / scale
     for end in [m.a, m.b] {
-      let box = CGRect(x: end.x - dot, y: end.y - dot, width: dot * 2, height: dot * 2)
-      ctx.fill(Path(ellipseIn: box), with: .color(color(ink)))
-      ctx.stroke(Path(ellipseIn: box), with: .color(color(ORANGE)), lineWidth: 2 / scale)
+      endpoint(end, into: &ctx, scale: scale, ink: ink)
     }
+  }
+
+  /// One end of a measurement: a filled dot in the ink, ringed in orange.
+  ///
+  /// Shared with the preview on purpose. The first tap draws this and the
+  /// finished measurement draws the same thing in the same place, so committing
+  /// adds the route without moving the marks that were already there.
+  static func endpoint(_ at: Point, into ctx: inout GraphicsContext,
+                       scale: Double, ink: RGB) {
+    let dot = 5 / scale
+    let box = CGRect(x: at.x - dot, y: at.y - dot, width: dot * 2, height: dot * 2)
+    ctx.fill(Path(ellipseIn: box), with: .color(color(ink)))
+    ctx.stroke(Path(ellipseIn: box), with: .color(color(ORANGE)), lineWidth: 2 / scale)
   }
 
   private static func path(_ points: [Point]) -> Path {

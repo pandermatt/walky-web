@@ -141,3 +141,49 @@ struct MeasureIsClearGroundTests {
     #expect(polylineMetres(busyPath) == polylineMetres(quietPath))
   }
 }
+
+/// A tap is a finger on a map, not a survey point, so it lands on buildings.
+@MainActor
+@Suite("Measuring from a point inside a wall")
+struct StandablePointTests {
+  @Test("a point inside a building comes back just outside it")
+  func nudgedOut() {
+    let world = WalkyWorld()
+    world.addWalls([[square(0, 0, 400)]])
+
+    let inside = Point(100, 200)
+    let out = world.standable(inside)
+
+    #expect(out != inside)
+    #expect(!pointInPolygon(world.walls[0].polygons[0], out))
+    // Outside the *inflated* outline as well, which is the ring the graph's own
+    // nodes sit on -- being merely outside the wall is not enough to route from.
+    for ob in world.nav.obstacles { #expect(!pointInPolygon(ob.hull, out)) }
+    // It left by the near edge: x moved, y did not.
+    #expect(out.y == inside.y)
+    #expect(out.x < 0)
+  }
+
+  @Test("a point on open ground is returned untouched")
+  func openGroundUntouched() {
+    let world = WalkyWorld()
+    world.addWalls([[square(0, 0, 400)]])
+    let clear = Point(2000, 2000)
+    #expect(world.standable(clear) == clear)
+  }
+
+  @Test("measuring to a point on a wall answers rather than refuses")
+  func measuresAnyway() {
+    let world = WalkyWorld()
+    world.addWalls([[square(400, 400, 200)]])
+
+    // The second end is inside the building, which used to be "No way through
+    // from there" -- the tool's literalism reported as the map's fault.
+    world.measure(Point(0, 0), Point(500, 500))
+
+    let m = world.measurement
+    #expect(m != nil)
+    #expect(m?.b != Point(500, 500))
+    #expect(m?.walkyMetres ?? 0 > 0)
+  }
+}

@@ -3,7 +3,7 @@ import Foundation
 /// The tool vocabulary, ported from `src/tools/types.ts`.
 
 public enum ToolId: String, CaseIterable, Sendable {
-  case wall, rectangle, border, pedestrian, goal, measure
+  case wall, rectangle, border, pedestrian, goal, measure, generator
   // Present in the web app, not in v1: select, shift, erase, text, generator.
 }
 
@@ -51,6 +51,14 @@ public struct ToolPreview: Sendable {
   public var pendingPedestrians: [Point] = []
   public var cursorGhost: CursorGhost?
   public var targetLines: TargetLines?
+  /// A point a two-tap tool has already placed, drawn as the endpoint it is
+  /// about to become.
+  ///
+  /// Its own field rather than a one-point `pendingWallPoints`, which is what
+  /// the measure tool used to say and which drew nothing at all: a path of one
+  /// point strokes to nothing, so the first tap of a measurement landed with no
+  /// mark on the map and the tool looked as though it had missed.
+  public var anchorPoint: Point?
   /// The lasso being dragged, as a closed outline. Its own field rather than
   /// `pendingWallPoints` + `pendingWallTracing`: those two mean "a wall is being
   /// traced", and a lasso and a wall outline are the one pair of previews that
@@ -115,6 +123,8 @@ public struct ToolContext {
   public var addPedestrians: (Point) -> Void
   /// Marks the wall under a point as a goal; false when there is no wall there.
   public var setGoalAt: (Point) -> Bool
+  /// Puts a door down. False when the block has no room to let anybody out.
+  public var addGenerator: (Point) -> Bool
   /// Selects every pedestrian inside a lasso outline, replacing any current
   /// selection, and answers how many it caught. The count is the return value
   /// rather than a second query because "caught nobody" is the one case the
@@ -123,6 +133,9 @@ public struct ToolContext {
   public var selectPedestriansIn: ([Point]) -> Int
   public var selectionCount: () -> Int
   public var clearSelection: () -> Void
+  /// The nearest place a pedestrian could stand, for a point that may not be
+  /// one. Answers the point itself wherever it is already clear.
+  public var standablePoint: (Point) -> Point
   /// Put the toolbar back to no active tool, so a one-shot cannot repeat.
   public var deactivateTool: () -> Void
   /// Say something to the user, as the chip that shared maps and updates use.
@@ -142,9 +155,11 @@ public struct ToolContext {
     pedestrianBlock: @escaping (Point, Int?) -> [Point],
     addPedestrians: @escaping (Point) -> Void,
     setGoalAt: @escaping (Point) -> Bool,
+    addGenerator: @escaping (Point) -> Bool,
     selectPedestriansIn: @escaping ([Point]) -> Int,
     selectionCount: @escaping () -> Int,
     clearSelection: @escaping () -> Void,
+    standablePoint: @escaping (Point) -> Point,
     deactivateTool: @escaping () -> Void,
     notify: @escaping (String) -> Void,
     requestRender: @escaping () -> Void,
@@ -158,9 +173,11 @@ public struct ToolContext {
     self.pedestrianBlock = pedestrianBlock
     self.addPedestrians = addPedestrians
     self.setGoalAt = setGoalAt
+    self.addGenerator = addGenerator
     self.selectPedestriansIn = selectPedestriansIn
     self.selectionCount = selectionCount
     self.clearSelection = clearSelection
+    self.standablePoint = standablePoint
     self.deactivateTool = deactivateTool
     self.notify = notify
     self.requestRender = requestRender

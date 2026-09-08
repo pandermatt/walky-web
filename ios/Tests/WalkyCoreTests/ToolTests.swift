@@ -13,12 +13,25 @@ private final class Recorder {
   var deactivated = 0
   var selectionCleared = 0
   var goalHits = true
+  /// Doors placed, and whether the block had room for one.
+  var doorsAt: [Point] = []
+  var doorFits = true
   var perPixel: Double = 1
   /// Lassos handed to `selectPedestriansIn`, and what each caught.
   var lassos: [[Point]] = []
   var lassoCatches = 1
   var selected = 0
   var measured: [(Point, Point)] = []
+  /// A box that a point may not be inside, as a wall is. Nil means open ground.
+  var blocked: (minX: Double, minY: Double, maxX: Double, maxY: Double)?
+
+  /// Out through the left edge, which is enough to tell "it was moved" from
+  /// "it was taken as tapped".
+  func standable(_ at: Point) -> Point {
+    guard let b = blocked, at.x >= b.minX, at.x <= b.maxX,
+          at.y >= b.minY, at.y <= b.maxY else { return at }
+    return Point(b.minX - 2, at.y)
+  }
 
   lazy var ctx: ToolContext = ToolContext(
     addWall: { [unowned self] polygon, o in
@@ -30,10 +43,14 @@ private final class Recorder {
     pedestrianBlock: { at, _ in [at] },
     addPedestrians: { [unowned self] at in self.pedestriansAt.append(at) },
     setGoalAt: { [unowned self] at in self.goalsAt.append(at); return self.goalHits },
+    addGenerator: { [unowned self] at in self.doorsAt.append(at); return self.doorFits },
     selectPedestriansIn: { [unowned self] lasso in
       self.lassos.append(lasso); self.selected = self.lassoCatches; return self.lassoCatches },
     selectionCount: { [unowned self] in self.selected },
     clearSelection: { [unowned self] in self.selectionCleared += 1; self.selected = 0 },
+    // A fake wall to nudge out of: anything inside `blocked` comes back at its
+    // near edge, which is what `WalkyWorld.standable` does with a real one.
+    standablePoint: { [unowned self] at in self.standable(at) },
     deactivateTool: { [unowned self] in self.deactivated += 1 },
     notify: { [unowned self] m in self.notices.append(m) },
     requestRender: {},
@@ -442,6 +459,54 @@ struct MeasureToolTests {
     #expect(host.measured.isEmpty)          // that second tap is a new first tap
   }
 
+  @Test("the first tap leaves a mark on the map")
+  func firstTapIsVisible() {
+    // It used to leave none: a one-point path strokes to nothing, so between
+    // the two taps there was no sign the first had landed.
+    let host = Recorder()
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(10, 10)), host.ctx)
+    tool.onPointerUp(up(Point(10, 10)), host.ctx)
+
+    #expect(tool.preview().anchorPoint == Point(10, 10))
+  }
+
+  @Test("a tap on a wall is measured from just outside it")
+  func nudgedOutOfWalls() {
+    let host = Recorder()
+    host.blocked = (minX: 100, minY: 0, maxX: 300, maxY: 200)
+    let tool = MeasureTool()
+
+    // Both ends land in the wall, and neither is refused.
+    tool.onPointerDown(down(Point(150, 100)), host.ctx)
+    tool.onPointerUp(up(Point(150, 100)), host.ctx)
+    #expect(tool.preview().anchorPoint == Point(98, 100))
+
+    tool.onPointerDown(down(Point(250, 50)), host.ctx)
+    tool.onPointerUp(up(Point(250, 50)), host.ctx)
+
+    #expect(host.measured.count == 1)
+    #expect(host.measured[0].0 == Point(98, 100))
+    #expect(host.measured[0].1 == Point(98, 50))
+  }
+
+  @Test("a tap on open ground is measured where it landed")
+  func openGroundUntouched() {
+    let host = Recorder()
+    host.blocked = (minX: 100, minY: 0, maxX: 300, maxY: 200)
+    let tool = MeasureTool()
+
+    tool.onPointerDown(down(Point(10, 10)), host.ctx)
+    tool.onPointerUp(up(Point(10, 10)), host.ctx)
+    tool.onPointerDown(down(Point(600, 10)), host.ctx)
+    tool.onPointerUp(up(Point(600, 10)), host.ctx)
+
+    #expect(host.measured.count == 1)
+    #expect(host.measured[0].0 == Point(10, 10))
+    #expect(host.measured[0].1 == Point(600, 10))
+  }
+
   @Test("no ghost is left parked after the finger lifts")
   func noHover() {
     let host = Recorder()
@@ -453,6 +518,42 @@ struct MeasureToolTests {
 
     let p = tool.preview()
     #expect(p.cursorGhost == nil)
-    #expect(p.pendingWallPoints == [Point(10, 10)])   // the placed point only
+    // The placed point stays marked; the rubber band to the finger does not,
+    // because there is no finger and no hover to follow.
+    #expect(p.anchorPoint == Point(10, 10))
+    #expect(p.pendingWallPoints.isEmpty)
+  }
+}
+
+@Suite("GeneratorTool")
+@MainActor
+struct GeneratorToolTests {
+  @Test("one tap places a door and puts the tool away")
+  func placesAndDisarms() {
+    let host = Recorder()
+    let tool = GeneratorTool()
+
+    tool.onPointerDown(down(Point(40, 60)), host.ctx)
+    tool.onPointerUp(up(Point(40, 60)), host.ctx)
+
+    #expect(host.doorsAt == [Point(40, 60)])
+    // The same bargain MeasureTool strikes: a menu tool has no cell to show it
+    // is armed, so it may not stay armed under a finger that has moved on.
+    #expect(host.deactivated == 1)
+  }
+
+  @Test("a refused tap leaves the tool in hand")
+  func refusedStaysArmed() {
+    // No room for a block there, so nothing was placed -- and a tool that
+    // stepped off now would cost a trip to the menu to try one pixel over.
+    let host = Recorder()
+    host.doorFits = false
+    let tool = GeneratorTool()
+
+    tool.onPointerDown(down(Point(40, 60)), host.ctx)
+    tool.onPointerUp(up(Point(40, 60)), host.ctx)
+
+    #expect(host.doorsAt == [Point(40, 60)])   // it was offered, and declined
+    #expect(host.deactivated == 0)
   }
 }

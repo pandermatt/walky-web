@@ -134,6 +134,13 @@ struct ToolbarView: View {
       // checkmark, because without it this would be the only mode you cannot
       // see is armed. (A `Toggle` here draws nothing at all in a Menu on iOS 26,
       // which is how this started as one.)
+      // Beside Measure, and in the menu for the same reason: eight 44pt cells do
+      // not fit a 375pt phone. Like Measure it carries its armed state in the
+      // icon, since it has no cell to light up.
+      Button { onTool(.generator) } label: {
+        Label(state.selected == .generator ? "Placing doors" : "Add a door",
+              systemImage: state.selected == .generator ? "checkmark" : "door.left.hand.open")
+      }
       Button { onTool(.measure) } label: {
         Label(state.selected == .measure ? "Measuring" : "Measure detour",
               systemImage: state.selected == .measure ? "checkmark" : "ruler")

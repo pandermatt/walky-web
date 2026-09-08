@@ -119,8 +119,7 @@ final class AppModel {
     world.onNotify = { [weak self] message in self?.show(message) }
     world.onToolChanged = { [weak self] id in
       self?.toolbar.selected = id
-      // The measure tool has no toolbar cell to light up, so it says so instead.
-      if id == .measure { self?.show("Tap two points to measure.") }
+      if let hint = Self.armedHint(id) { self?.show(hint) }
     }
     world.onDetourRequested = { [weak self] a, b in
       guard let self else { return }
@@ -241,6 +240,25 @@ final class AppModel {
     toolbar.canUndo = world.canUndo
     toolbar.hasMeasurement = world.measurement != nil
     needsFrame()
+  }
+
+  /// What to say when a tool is armed, for the two that live in the menu.
+  ///
+  /// The five tools in the bar need nothing: arming one lights its cell, and
+  /// the pill travelling there is the whole answer to "did that work?". Measure
+  /// and the door have no cell -- eight 44pt cells do not fit a 375pt phone --
+  /// so arming either from the menu closes the menu and changes nothing you can
+  /// see, and the next tap on the map then does something unasked for. A line
+  /// of text is what the cell would have been.
+  ///
+  /// Both sentences name the gesture rather than the mode, because the mode is
+  /// the part that was already invisible.
+  private static func armedHint(_ id: ToolId?) -> String? {
+    switch id {
+    case .measure: "Tap two points to measure the walk between them."
+    case .generator: "Tap where people should come out."
+    default: nil
+    }
   }
 
   private func show(_ message: String) {
