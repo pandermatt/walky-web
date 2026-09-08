@@ -70,6 +70,36 @@ packages:
 # What did help: ENABLE_DEBUG_DYLIB below, which takes the bundle from three
 # Mach-Os to one.
 
+# Shared schemes, so a release run is a dropdown rather than a remembered chore.
+#
+# Without a `schemes:` block XcodeGen emits none, and Xcode autocreates one in
+# `xcuserdata` -- which is gitignored, is recreated on every `xcodegen generate`,
+# and whose Run action is **Debug**. Every device run anyone had ever done on
+# this project was therefore a debug build, and debug is about seventeen times
+# slower here: 4,000 walking agents cost 187 ms/tick debug against 10.8 ms
+# release. Twice now, "the app is slow" has turned out to mean that.
+#
+# These live in `xcshareddata`, so they survive regeneration and are the same
+# for anyone who clones.
+schemes:
+  Walky:
+    build:
+      targets: { Walky: all }
+    run: { config: Debug }
+    test: { config: Debug }
+    profile: { config: Release }
+    analyze: { config: Debug }
+    archive: { config: Release }
+
+  # The one to pick when measuring anything. Debugging is worse in it -- that is
+  # the trade, and it is the right one for a stopwatch.
+  Walky (Release):
+    build:
+      targets: { Walky: all }
+    run: { config: Release }
+    profile: { config: Release }
+    archive: { config: Release }
+
 targets:
   Walky:
     type: application
