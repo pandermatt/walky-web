@@ -51,6 +51,12 @@ public struct ToolPreview: Sendable {
   public var pendingPedestrians: [Point] = []
   public var cursorGhost: CursorGhost?
   public var targetLines: TargetLines?
+  /// The lasso being dragged, as a closed outline. Its own field rather than
+  /// `pendingWallPoints` + `pendingWallTracing`: those two mean "a wall is being
+  /// traced", and a lasso and a wall outline are the one pair of previews that
+  /// must never be mistaken for each other -- both are freehand rings drawn with
+  /// the same finger, and only the colour says which shape you are about to get.
+  public var selectionPolygon: [Point]?
 
   public init() {}
   public static let empty = ToolPreview()
@@ -88,9 +94,14 @@ public struct PointerInfo: Sendable {
 
 /// What a tool is allowed to do to the world, kept narrow on purpose.
 ///
-/// A struct of closures, as `app.ts:344` builds it. Twelve members rather than
-/// the web's twenty-two: the other ten belong to tools outside v1, and each
-/// should arrive with the tool that needs it. Built once in a `lazy var` with
+/// A struct of closures, as `app.ts:344` builds it. Fourteen members rather than
+/// the web's twenty-two: the rest belong to tools outside v1, and each should
+/// arrive with the tool that needs it -- the two selection members below did,
+/// with the lasso that the goal tool grew. `selectPedestriansIn` has no
+/// `extend:` parameter and there is no `selectPedestrianAt`: `PointerInfo`'s
+/// own comment says `shiftKey` is always false on a touchscreen, so extend mode
+/// has no gesture, and a tap already means "assign", so single-pedestrian
+/// picking has none either -- lasso a small circle instead. Built once in a `lazy var` with
 /// `[unowned self]` -- a computed property would reallocate twelve closures on
 /// every pointer event, and a strong capture would be a retain cycle.
 public struct ToolContext {
@@ -104,6 +115,13 @@ public struct ToolContext {
   public var addPedestrians: (Point) -> Void
   /// Marks the wall under a point as a goal; false when there is no wall there.
   public var setGoalAt: (Point) -> Bool
+  /// Selects every pedestrian inside a lasso outline, replacing any current
+  /// selection, and answers how many it caught. The count is the return value
+  /// rather than a second query because "caught nobody" is the one case the
+  /// tool has to say something about, and asking afterwards cannot distinguish
+  /// it from a selection that was already empty.
+  public var selectPedestriansIn: ([Point]) -> Int
+  public var selectionCount: () -> Int
   public var clearSelection: () -> Void
   /// Put the toolbar back to no active tool, so a one-shot cannot repeat.
   public var deactivateTool: () -> Void
@@ -122,6 +140,8 @@ public struct ToolContext {
     pedestrianBlock: @escaping (Point, Int?) -> [Point],
     addPedestrians: @escaping (Point) -> Void,
     setGoalAt: @escaping (Point) -> Bool,
+    selectPedestriansIn: @escaping ([Point]) -> Int,
+    selectionCount: @escaping () -> Int,
     clearSelection: @escaping () -> Void,
     deactivateTool: @escaping () -> Void,
     notify: @escaping (String) -> Void,
@@ -135,6 +155,8 @@ public struct ToolContext {
     self.pedestrianBlock = pedestrianBlock
     self.addPedestrians = addPedestrians
     self.setGoalAt = setGoalAt
+    self.selectPedestriansIn = selectPedestriansIn
+    self.selectionCount = selectionCount
     self.clearSelection = clearSelection
     self.deactivateTool = deactivateTool
     self.notify = notify

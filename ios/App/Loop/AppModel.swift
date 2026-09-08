@@ -48,6 +48,14 @@ final class Crowd {
   var count = 0
 }
 
+/// How many pedestrians the next goal would apply to. Its own shell, for the
+/// same reason `Crowd` is: it changes on a gesture, and anything reading it in
+/// `RootView.body` would rebuild the toolbar underneath the finger.
+@Observable
+final class Selection {
+  var count = 0
+}
+
 /// Owns the world, the loop and the observable shells around them.
 @MainActor
 final class AppModel {
@@ -56,6 +64,7 @@ final class AppModel {
   let toolbar = ToolbarState()
   let notice = Notice()
   let crowd = Crowd()
+  let selection = Selection()
 
   /// A sheet is over the map.
   ///
@@ -155,6 +164,11 @@ final class AppModel {
     // follows a change within a frame, including the ones that make the crowd
     // *smaller*: a wall drawn over people, an undo, a clear.
     if crowd.count != world.agents.count { crowd.count = world.agents.count }
+    // `Agents.selectionCount` is a scan, so this is one pass over a `[UInt8]`
+    // per tick -- about 4 us at 4,000 agents against a 10.75 ms tick. A stored
+    // counter would be five writers that must never disagree, to save 0.04%.
+    let picked = world.agents.selectionCount
+    if selection.count != picked { selection.count = picked }
   }
 
   private func needsFrame() {

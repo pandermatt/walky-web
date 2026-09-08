@@ -223,6 +223,18 @@ enum MapRenderer {
     }
     ctx.stroke(all, with: .color(color(ink)), lineWidth: hairline)
 
+    // Who the next goal would apply to. A second ring outside the ink one
+    // rather than a recoloured one: agents are batched into a single `Path` per
+    // packed colour and stroked once, so per-agent line colour -- which is what
+    // `scene.ts:283-285` does, deck.gl giving it away free -- would undo the
+    // batching this method exists for. One extra pass, one extra stroke.
+    var picked = Path()
+    for i in 0..<a.count where a.selected[i] != 0 {
+      let x = Double(a.x[i]), y = Double(a.y[i]), rr = r + hairline
+      picked.addEllipse(in: CGRect(x: x - rr, y: y - rr, width: rr * 2, height: rr * 2))
+    }
+    ctx.stroke(picked, with: .color(color(YELLOW)), lineWidth: hairline * 2)
+
     if world.settings.showPersonalSpace {
       var rings = Path()
       for i in 0..<a.count {
@@ -265,6 +277,17 @@ enum MapRenderer {
       ctx.stroke(Path(r), with: .color(color(ink)), style: dash)
     }
 
+    // The lasso, in yellow so it cannot be read as a wall being traced -- both
+    // are freehand dashed rings drawn with the same finger, and the colour is
+    // the only thing that says which shape you are about to get.
+    if let lasso = preview.selectionPolygon, lasso.count >= 2 {
+      var p = Path()
+      p.move(to: CGPoint(x: lasso[0].x, y: lasso[0].y))
+      for q in lasso.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
+      p.closeSubpath()
+      ctx.stroke(p, with: .color(color(YELLOW)), style: dash)
+    }
+
     if !preview.pendingPolygons.isEmpty {
       // Red says the shape would be unusable -- a frame with no room inside.
       let tint = preview.pendingPolygonsInvalid ? RED : ink
@@ -292,8 +315,15 @@ enum MapRenderer {
     // is about to become. Ports drawMarkTargetLine.
     if let lines = preview.targetLines {
       let a = world.agents
+      // The same condition `setGoalAt` commits with. Without it the preview
+      // promises to retarget the whole crowd while the tap retargets only the
+      // lassoed ones -- the one thing a preview may not do. The web has always
+      // had this branch (`app.ts:2056` `targetableIndices`); the port dropped it
+      // along with the selection it had no way to make.
+      let onlySelected = a.selectionCount > 0
       var p = Path()
-      for i in 0..<a.count where a.arrived[i] == 0 {
+      for i in 0..<a.count
+      where a.arrived[i] == 0 && (!onlySelected || a.selected[i] != 0) {
         p.move(to: CGPoint(x: Double(a.x[i]), y: Double(a.y[i])))
         p.addLine(to: CGPoint(x: lines.to.x, y: lines.to.y))
       }

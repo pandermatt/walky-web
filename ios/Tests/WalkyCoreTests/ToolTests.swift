@@ -14,6 +14,10 @@ private final class Recorder {
   var selectionCleared = 0
   var goalHits = true
   var perPixel: Double = 1
+  /// Lassos handed to `selectPedestriansIn`, and what each caught.
+  var lassos: [[Point]] = []
+  var lassoCatches = 1
+  var selected = 0
 
   lazy var ctx: ToolContext = ToolContext(
     addWall: { [unowned self] polygon, o in
@@ -25,7 +29,10 @@ private final class Recorder {
     pedestrianBlock: { at, _ in [at] },
     addPedestrians: { [unowned self] at in self.pedestriansAt.append(at) },
     setGoalAt: { [unowned self] at in self.goalsAt.append(at); return self.goalHits },
-    clearSelection: { [unowned self] in self.selectionCleared += 1 },
+    selectPedestriansIn: { [unowned self] lasso in
+      self.lassos.append(lasso); self.selected = self.lassoCatches; return self.lassoCatches },
+    selectionCount: { [unowned self] in self.selected },
+    clearSelection: { [unowned self] in self.selectionCleared += 1; self.selected = 0 },
     deactivateTool: { [unowned self] in self.deactivated += 1 },
     notify: { [unowned self] m in self.notices.append(m) },
     requestRender: {},
@@ -152,7 +159,11 @@ struct GoalToolTests {
   @Test("a hit clears the selection and steps off the tool")
   func hitCompletes() {
     let r = Recorder(); let t = GoalTool()
+    // At the lift, not the touch: that is what leaves room to tell a tap from
+    // the lasso drag, and it is where RectangleTool and BorderTool decide too.
     t.onPointerDown(down(Point(50, 50)), r.ctx)
+    #expect(r.goalsAt.isEmpty)
+    t.onPointerUp(up(Point(50, 50)), r.ctx)
     #expect(r.goalsAt == [Point(50, 50)])
     #expect(r.selectionCleared == 1)
     #expect(r.deactivated == 1)
@@ -165,9 +176,65 @@ struct GoalToolTests {
     let r = Recorder(); r.goalHits = false
     let t = GoalTool()
     t.onPointerDown(down(Point(5, 5)), r.ctx)
+    t.onPointerUp(up(Point(5, 5)), r.ctx)
     #expect(r.notices.count == 1)
     #expect(r.selectionCleared == 0)
     #expect(r.deactivated == 0)
+  }
+
+  @Test("a drag lassos instead of assigning, and keeps the tool")
+  func dragLassos() {
+    let r = Recorder(); let t = GoalTool()
+    t.onPointerDown(down(Point(0, 0)), r.ctx)
+    // A curved stroke enclosing real area, so `outline` uses it rather than
+    // falling back to the bounding rectangle.
+    for p in [Point(0, 40), Point(40, 60), Point(70, 30), Point(40, -10)] {
+      t.onPointerMove(move(p), r.ctx)
+    }
+    t.onPointerUp(up(Point(0, 0)), r.ctx)
+    #expect(r.lassos.count == 1)
+    #expect(r.lassos[0].count >= 3)
+    // Not a goal, and the tool stays in hand for the tap that follows.
+    #expect(r.goalsAt.isEmpty)
+    #expect(r.deactivated == 0)
+    #expect(r.notices.isEmpty)
+  }
+
+  @Test("a lasso that catches nobody says so and stays armed")
+  func emptyLasso() {
+    let r = Recorder(); r.lassoCatches = 0
+    let t = GoalTool()
+    t.onPointerDown(down(Point(0, 0)), r.ctx)
+    t.onPointerMove(move(Point(60, 60)), r.ctx)
+    t.onPointerUp(up(Point(60, 60)), r.ctx)
+    #expect(r.notices.count == 1)
+    #expect(r.deactivated == 0)
+  }
+
+  @Test("a fast straight drag still selects, by falling back to a rectangle")
+  func straightDragSelects() {
+    // Three collinear points enclose no area at all. Without the fallback a
+    // quick drag would select nobody, which just reads as the tool being broken.
+    let r = Recorder(); let t = GoalTool()
+    t.onPointerDown(down(Point(0, 0)), r.ctx)
+    t.onPointerMove(move(Point(50, 50)), r.ctx)
+    t.onPointerMove(move(Point(100, 100)), r.ctx)
+    t.onPointerUp(up(Point(100, 100)), r.ctx)
+    #expect(r.lassos.count == 1)
+    #expect(r.lassos[0] == [Point(0, 0), Point(100, 0), Point(100, 100), Point(0, 100)])
+  }
+
+  @Test("the threshold is in screen points, so a zoomed-out drag is a tap")
+  func thresholdScales() {
+    // 6 world units is a drag at zoom 0 and well under a finger's width when
+    // zoomed out -- the divergence DRAG_THRESHOLD's comment exists for.
+    let r = Recorder(); r.perPixel = 8
+    let t = GoalTool()
+    t.onPointerDown(down(Point(0, 0)), r.ctx)
+    t.onPointerMove(move(Point(6, 0)), r.ctx)
+    t.onPointerUp(up(Point(6, 0)), r.ctx)
+    #expect(r.lassos.isEmpty)
+    #expect(r.goalsAt == [Point(6, 0)])
   }
 }
 

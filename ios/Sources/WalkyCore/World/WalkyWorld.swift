@@ -108,7 +108,9 @@ public final class WalkyWorld: PointerHost {
     pedestrianBlock: { [unowned self] at, cells in self.pedestrianBlock(at, cells) },
     addPedestrians: { [unowned self] at in self.addPedestrians(at) },
     setGoalAt: { [unowned self] at in self.setGoalAt(at) },
-    clearSelection: { [unowned self] in self.agents.clearSelection() },
+    selectPedestriansIn: { [unowned self] lasso in self.selectPedestriansIn(lasso) },
+    selectionCount: { [unowned self] in self.agents.selectionCount },
+    clearSelection: { [unowned self] in self.clearSelection() },
     deactivateTool: { [unowned self] in self.setTool(nil) },
     notify: { [unowned self] message in self.onNotify?(message) },
     requestRender: { [unowned self] in self.requestRender() },
@@ -162,6 +164,40 @@ public final class WalkyWorld: PointerHost {
     guard isEmpty, !suggestedATool else { return }
     suggestedATool = true
     onNotify?("Nothing here yet — pick a tool below to start drawing.")
+  }
+
+  /// Selects every pedestrian inside a lasso outline, and answers how many.
+  ///
+  /// Ports `app.ts:419-433` minus its generator half, which has no counterpart:
+  /// `ToolId` has no `generator` in v1. Replaces the selection rather than
+  /// extending it -- extend mode is keyed on `shiftKey`, which `PointerInfo`
+  /// says is always false on a touchscreen.
+  ///
+  /// Not a checkpoint. Selecting decides *who*, and the edit that follows --
+  /// `setGoalAt` -- takes the checkpoint, so undo steps back over the whole
+  /// gesture rather than over the half of it that changed nothing.
+  @discardableResult
+  public func selectPedestriansIn(_ lasso: [Point]) -> Int {
+    agents.clearSelection()
+    var caught = 0
+    for i in 0..<agents.count {
+      let at = Point(Double(agents.x[i]), Double(agents.y[i]))
+      if pointInPolygon(lasso, at) {
+        agents.selected[i] = 1
+        caught += 1
+      }
+    }
+    touch()
+    return caught
+  }
+
+  /// Drops the selection, and redraws -- the rings are on screen, so this is
+  /// visible. `app.ts:433` reaches `touch()` the same way, through
+  /// `afterSelectionChange`.
+  public func clearSelection() {
+    guard agents.selectionCount > 0 else { return }
+    agents.clearSelection()
+    touch()
   }
 
   /// Marks the wall under a point as a goal; false when there is no wall there.
