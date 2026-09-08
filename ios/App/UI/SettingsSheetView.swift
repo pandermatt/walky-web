@@ -17,7 +17,7 @@ struct SettingsSheetView: View {
           slider(.speed, format: "%.2f m/s")
           slider(.pedestrianRadius)
           slider(.personalSpace)
-          slider(.brushSize)
+          slider(.brushSize, warning: brushWarning)
         }
         Section("Drawing") {
           slider(.borderThickness)
@@ -230,7 +230,8 @@ struct SettingsSheetView: View {
     "A pedestrian simulator. Draw walls, mark a goal, paint a crowd, and "
     + "watch it find its way."
 
-  private func slider(_ setting: NumericSetting, format: String = "%.0f") -> some View {
+  private func slider(_ setting: NumericSetting, format: String = "%.0f",
+                      warning: String? = nil) -> some View {
     let r = setting.range
     return VStack(alignment: .leading, spacing: 2) {
       HStack {
@@ -242,6 +243,26 @@ struct SettingsSheetView: View {
       Slider(value: Binding(get: { settings[keyPath: setting.keyPath] },
                             set: { settings[keyPath: setting.keyPath] = $0 }),
              in: r.min...r.max, step: r.step)
+      if let warning {
+        Label(warning, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.orange)
+          .fixedSize(horizontal: false, vertical: true)
+      }
     }
+  }
+
+  /// What the brush actually costs at its current size.
+  ///
+  /// A number rather than a caution, because the number is the surprising part:
+  /// the brush is n across, so a *tap* drops n x n pedestrians, and a drag
+  /// paints continuously. At 14 that is 196 a tap, and a crowd big enough to
+  /// slow the tick arrives in about a second of dragging without it ever looking
+  /// like a lot of taps.
+  private var brushWarning: String? {
+    let n = Int(settings.brushSize)
+    guard n > 9 else { return nil }
+    return "\(n) x \(n) — each tap drops \(n * n) pedestrians, and dragging paints "
+      + "them continuously."
   }
 }

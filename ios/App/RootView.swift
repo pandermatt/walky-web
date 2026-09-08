@@ -49,7 +49,7 @@ struct RootView: View {
       }
 
       VStack {
-        if let notice = model.notice {
+        if let notice = model.notice.message {
           Text(notice)
             .font(.footnote)
             .padding(.horizontal, 14).padding(.vertical, 8)
@@ -69,7 +69,7 @@ struct RootView: View {
                       }
                     })
       }
-      .animation(.snappy(duration: 0.2), value: model.notice)
+      .animation(.snappy(duration: 0.2), value: model.notice.message)
     }
     .background(MapRenderer.color(model.world.settings.ground.background))
     .preferredColorScheme(windowScheme)

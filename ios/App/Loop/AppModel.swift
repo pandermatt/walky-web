@@ -23,13 +23,28 @@ final class ToolbarState {
   var canUndo = false
 }
 
+/// The transient line above the map.
+///
+/// Its own observable shell, for the same reason `Redraw` and `ToolbarState`
+/// are: `AppModel` is deliberately *not* `@Observable` -- it carries `fps` and
+/// `tps`, which change every second, and `tick` already documents what happens
+/// when a view is invalidated underneath a finger that is still down.
+///
+/// `notice` used to be a plain property on `AppModel`, so nothing observed it
+/// and the capsule never appeared at all. `GoalTool`'s "tap a wall to make it
+/// the goal" had been unreachable since it was written.
+@Observable
+final class Notice {
+  var message: String?
+}
+
 /// Owns the world, the loop and the observable shells around them.
 @MainActor
 final class AppModel {
   let world = WalkyWorld()
   let redraw = Redraw()
   let toolbar = ToolbarState()
-  var notice: String?
+  let notice = Notice()
 
   /// A sheet is over the map.
   ///
@@ -151,10 +166,10 @@ final class AppModel {
   }
 
   private func show(_ message: String) {
-    notice = message
+    notice.message = message
     Task { [weak self] in
       try? await Task.sleep(for: .seconds(3))
-      if self?.notice == message { self?.notice = nil }
+      if self?.notice.message == message { self?.notice.message = nil }
     }
   }
 }
