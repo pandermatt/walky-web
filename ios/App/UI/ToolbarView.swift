@@ -119,6 +119,15 @@ struct ToolbarView: View {
       Button { onAction(.resetZoom) } label: {
         Label("Reset zoom", systemImage: "scope")
       }
+      // With the other immediate actions rather than beside Settings, which is
+      // where the switch that shares this flag lives. The grouping is about
+      // what an item *does*: these three change the view now, the next two
+      // raise a sheet. Reaching it here is two taps against Settings' four,
+      // which for something you flip before a screenshot and back after is the
+      // difference between using it and not.
+      Button { onAction(.hideControls) } label: {
+        Label("Hide controls", systemImage: "eye.slash")
+      }
       Divider()
       // Above Settings, in the group that is about the app rather than about
       // the map, and well clear of the destructive item at the bottom.

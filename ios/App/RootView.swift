@@ -94,6 +94,16 @@ struct RootView: View {
       // once per sheet, which is the second dividend of `.sheet(item:)`.
       content(of: which).preferredColorScheme(chromeScheme)
     }
+    // Hiding the chrome puts the app in a viewing mode, and disarming is what
+    // makes that true rather than merely tidy. It is also the only thing
+    // guaranteeing a way back: the tap that restores the controls is delivered
+    // to the *tool* when one is armed, so hiding with the brush in hand would
+    // paint pedestrians instead of bringing the bar back, and nothing else on
+    // screen could undo it. Keyed on the flag rather than done at the two call
+    // sites, so the menu item and the Settings switch cannot drift apart.
+    .onChange(of: model.chrome.hidden) { _, hidden in
+      if hidden { model.world.setTool(nil) }
+    }
     .onChange(of: sheet) { was, now in
       // One handler, because the map does not care which sheet is over it.
       model.isCovered = now != nil

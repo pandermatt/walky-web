@@ -213,6 +213,10 @@ final class AppModel {
     case .undo: world.undo()
     case .clear: world.clearAll()
     case .resetZoom: world.resetZoom()
+    // The same flag the Recording switch in Settings writes; the menu is just
+    // the short way to it. Disarming is `RootView`'s, keyed on the flag, so
+    // both routes get it.
+    case .hideControls: chrome.hidden = true
     // Both raise a sheet, and the view owns the sheet.
     case .settings, .welcome: break
     }
@@ -237,5 +241,7 @@ private final class DisplayLinkProxy: NSObject {
   @objc func fire(_ link: CADisplayLink) { onFire(link) }
 }
 
-enum ToolbarAction { case start, resetPedestrians, undo, clear, resetZoom, settings, welcome }
+enum ToolbarAction {
+  case start, resetPedestrians, undo, clear, resetZoom, settings, welcome, hideControls
+}
 
