@@ -1,0 +1,10 @@
+{
+  "info": {
+    "version": 1,
+    "author": "xcode"
+  },
+  "properties": {
+    "filename": "walky-time.png",
+    "accessibility-label": "Walky time! A pedestrian bouncing on the spot, delighted"
+  }
+}

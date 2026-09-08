@@ -8,31 +8,58 @@
   },
   "stickers": [
     {
-      "filename": "crowd.sticker"
+      "filename": "walky-time.sticker"
     },
     {
-      "filename": "counterflow.sticker"
+      "filename": "on-my-way.sticker"
     },
     {
-      "filename": "goal.sticker"
+      "filename": "where-are-we-going.sticker"
     },
     {
-      "filename": "bottleneck.sticker"
+      "filename": "exploring-new-routes.sticker"
     },
     {
-      "filename": "detour.sticker"
+      "filename": "pathfinding-intensifies.sticker"
     },
     {
-      "filename": "route.sticker"
+      "filename": "nope-wall.sticker"
     },
     {
-      "filename": "paint-square.sticker"
+      "filename": "lost-in-the-maze.sticker"
     },
     {
-      "filename": "paint-freeform.sticker"
+      "filename": "so-crowded.sticker"
     },
     {
-      "filename": "select.sticker"
+      "filename": "excuse-me.sticker"
+    },
+    {
+      "filename": "one-more-stop.sticker"
+    },
+    {
+      "filename": "no-energy-left.sticker"
+    },
+    {
+      "filename": "one-more-simulation.sticker"
+    },
+    {
+      "filename": "coffee-first.sticker"
+    },
+    {
+      "filename": "better-at-home.sticker"
+    },
+    {
+      "filename": "same-place-different-day.sticker"
+    },
+    {
+      "filename": "follow-my-path.sticker"
+    },
+    {
+      "filename": "progress-not-perfection.sticker"
+    },
+    {
+      "filename": "goal-reached.sticker"
     }
   ]
 }

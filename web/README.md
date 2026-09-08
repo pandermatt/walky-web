@@ -779,46 +779,72 @@ squircle and a launcher applies its own shape, so rounding them here would round
 an already-rounded corner and leave the ground showing outside it. The maskable
 art stays well inside the inner 80%, so a circular crop cannot clip the rings.
 
-### The same primitives again, as an iMessage sticker pack
+### An iMessage sticker pack, and the one place the brand is not derived
 
 `tools/stickers.ts` writes `../ios/Stickers/Stickers.xcstickers`, the pack the
-iOS app embeds. Nine stickers, and not one of them is artwork: a pedestrian is
-a circle in a goal colour inside a white ring, a wall is a block over the
-`shadowOf` shadow palette.ts still carries from 2016, a route is a bent line in
-the orange of the `goal-paths` layer. Same argument as the icons — change the
-palette rule and the pack changes with it.
+iOS app embeds: eighteen characters, cut out of the three contact sheets in
+`tools/sheets/`.
 
 ```bash
 npx vite-node tools/stickers.ts
 ```
 
-**The ground is transparent, and the ring is re-tuned for it.** The favicon gets
-away with an opaque tile; a sticker cannot, because it is dropped onto somebody
-else's bubble or somebody else's photo, and a tile there reads as a screenshot
-of the app rather than as a sticker of it. So the ground goes away and comes back
-as an edge: every mark is drawn over a silhouette of itself in `#1E1E1E`, grown
-by 2% of the tile. That is what keeps a white ring on a white bubble and a dark
-dot on a dark one, and it does a second job for free — a crowd lays its own
-ground down dot by dot, so the one in front cuts a dark edge into the ring of the
-one behind, which is what they look like on the map anyway.
+**These are the exception, and it is worth saying so plainly.** Everywhere else
+above, a mark is derived — a pedestrian is a circle in a goal colour inside a
+white ring because that is what `PedestrianPanel.drawPedestrian` has drawn since
+2016, and change the palette rule and the icons change with it. The sheets were
+drawn by ChatGPT. Nobody can point at a rule in `palette.ts` and derive the green
+of the character on the first sticker, and a paragraph claiming otherwise would
+be the only dishonest one in this file.
 
-It is the one place the pack departs from what the app draws, and it is the same
-kind of departure as `STROKE_BOOST` on the share card below: a decision about
-being looked at somewhere else, at a size nobody chose.
+What *is* generated is the cut, the frame, the order and the catalogue — and the
+sheets are committed next to the tool, so that reproducible is something the
+repository can demonstrate rather than assert: run it and the eighteen PNGs come
+back byte for byte.
 
-Six of the nine are drawn — the crowd, counterflow, a crowd arriving at a goal,
-a bottleneck, an L-shaped detour, a route. The other three are 2016 toolbar icons
-dropped in whole: `addWall`, `addWallSquare` and `select`, which are the ones
-that are *about* something rather than being a control.
+**The cut is measured off the art, not off a grid.** A sheet is 1254px square and
+holds nine drawings, but they do not sit inside nine equal tiles: a speech bubble
+leans into the row above it, a wall runs off the right-hand side, a crowd spreads
+wider than its share of the width. So `sheetSlice.ts` reads the sheet instead of
+dividing it. Every run of opaque pixels is labelled, runs that touch are merged
+into shapes, each shape is filed under whichever cell its centroid lands in, and
+a sticker is the cluster grown outwards from the largest shape in that cell —
+which is what collects a heart, a sparkle or a motion mark floating free of its
+body, and what stops before it reaches the sticker next door.
 
-Those three needed the one thing the drawn marks did not. Most of the original
-set is black line art made for Swing's light toolbar — it is why the strip in
-this app is light and not dark, and on a message bubble it would have the same
-problem with no strip to fix it. `clear.png` is the one icon in the set that
-already solved it, by carrying a white outline in the file, so the others are
-given the same one here, dilated off their own alpha with `feMorphology`. Black
-art on a light bubble, a white edge on a dark one, and nothing invented that the
-set had not already done to itself.
+Everything outside the cluster is erased *before* the crop, and that is the step
+that matters. The frame is square and the art usually is not, so without the
+erase a square drawn around a wide sticker takes a slice of its neighbour along
+with it.
+
+**The ground is transparent.** A sticker lands on somebody else's bubble or
+somebody else's photo, so it cannot take the way out the favicon and the
+home-screen icon take and sit on an opaque `#1E1E1E` tile — a tile there reads as
+a screenshot of the app rather than as a sticker of it. These drawings arrive
+with a white keyline already around them, which is the same job the `#1E1E1E`
+silhouette does for the drawer icon, solved from the other side.
+
+The drawer icon *is* still derived, and still the crowd: three pedestrians in a
+triangle, on the app's ground, in the app's colours, at the twelve sizes `actool`
+demands and will not tell you about when one is missing. What Messages shows in
+its app strip is the app's own mark; what it shows in the drawer is the
+characters.
+
+**The sheets held twenty-seven.** Nine of them said a line another sheet had
+already said — three "AH SO CROWDED HERE!", three "ON MY WAY!", three "WHERE ARE
+WE GOING?" — in a different drawing each time. A drawer where three stickers
+carry identical words is a drawer you have to read to use, so one drawing of each
+line is in the catalogue and the rest are left on the sheet. They are still in
+`tools/sheets/`: bringing one back is an edit to a list, not a hunt.
+
+Two smaller things the pack is careful about. Every sticker carries an
+`accessibility-label` that leads with its words rather than its picture, because
+the words are the sticker — a label opening "a pedestrian wincing" would make
+somebody listen through it to find out which of the tired ones they had landed
+on. And the PNGs are written with `png:exclude-chunk=time`, without which each
+one carries the moment it was generated: eighteen changed files on every run, a
+diff nobody can read, in a directory whose whole claim is that regenerating it
+changes nothing unless the art did.
 
 ### Installed on a phone, the toolbar moves to the thumb
 
