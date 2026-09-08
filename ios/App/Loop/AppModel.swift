@@ -122,6 +122,13 @@ final class AppModel {
       self?.toolbar.selected = id
       if let hint = Self.armedHint(id) { self?.show(hint) }
     }
+    // A scan ends with every sheet closed, so the room goes on the map by
+    // itself and says what it was. See `RoomScanner.onScanned`.
+    scanner.onScanned = { [weak self] in
+      guard let self else { return }
+      self.scanner.place(into: self.world)
+    }
+    scanner.onNotice = { [weak self] line in self?.show(line) }
     world.onDetourRequested = { [weak self] a, b in
       guard let self else { return }
       self.detours.route(from: a, to: b, world: self.world)

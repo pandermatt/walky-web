@@ -71,6 +71,21 @@ final class RoomScanner {
 
   private var room: ScannedRoom?
 
+  /// A scan landed. The capture sheet is closing at this moment and there is no
+  /// settings sheet behind it -- swapping the one sheet is what put the capture
+  /// view up -- so without this, finishing a scan drops you on the map with
+  /// nothing to show for the walk you just took. It happened on the first real
+  /// device run: Done appeared to do nothing, and the room had to be fetched
+  /// afterwards through "Load the last scan".
+  var onScanned: (() -> Void)?
+  /// The summary line, for the notice capsule, since the sheet that would have
+  /// shown it is gone by the time a scan is placed.
+  var onNotice: ((String) -> Void)?
+
+  /// Whether there is a room in hand to place, or place again with different
+  /// doorway roles.
+  var hasRoom: Bool { room != nil }
+
   var isBusy: Bool {
     switch phase {
     case .scanning, .processing, .placing, .routing: true
@@ -104,10 +119,17 @@ final class RoomScanner {
     phase = .failed(why)
   }
 
-  /// RoomPlan's answer, converted and held for review.
+  /// RoomPlan's answer, converted, kept, and put straight on the map.
+  ///
+  /// Placed rather than merely offered, which is the asymmetry with the sample
+  /// and the saved scan: those are pressed *inside* Settings, where the doorway
+  /// roles and the Place button are already on screen, and a scan ends with
+  /// every sheet closed. The roles stay editable afterwards -- see `hasRoom` --
+  /// so this is a default rather than a decision taken away.
   func captured(_ captured: CapturedRoom) {
     accept(ScannedRoom(captured))
     save()
+    onScanned?()
   }
 
   /// The room to develop and demonstrate against on a device with no LiDAR --
@@ -239,7 +261,9 @@ final class RoomScanner {
       await world.navReady()
 
       progress = nil
-      phase = .done(summary(plan, hasExit: exit != nil))
+      let line = summary(plan, hasExit: exit != nil)
+      phase = .done(line)
+      onNotice?(line)
     }
   }
 

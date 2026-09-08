@@ -51,7 +51,10 @@ struct RoomScanSection: View {
         .onChange(of: scanner.includeFurniture) { scanner.furnitureChanged() }
         .disabled(scanner.isBusy)
 
-      if case .ready = scanner.phase {
+      // Keyed on there being a room rather than on the phase: a scan places
+      // itself, so by the time anybody opens this sheet the phase is `.done`,
+      // and the roles have to still be here to be worth offering at all.
+      if scanner.hasRoom {
         doorwayRoles
         Button("Place this room") { scanner.place(into: world) }
       }
@@ -135,8 +138,8 @@ struct RoomScanSection: View {
 
   // Two lines each on the narrowest phone, as every other footer in this sheet.
   private static let footer =
-    "Scanning needs a LiDAR camera. Placed at life size, so a door takes one "
-    + "person at a time. Importing replaces your map."
+    "Scanning needs a LiDAR camera. Placed at life size, so a doorway takes "
+    + "one person at a time."
   private static let noLidar =
     "This device has no LiDAR camera, so it cannot scan. The sample room works "
     + "everywhere."
