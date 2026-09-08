@@ -1,0 +1,10 @@
+{
+  "info": {
+    "version": 1,
+    "author": "xcode"
+  },
+  "properties": {
+    "filename": "goal-reached.png",
+    "accessibility-label": "Goal reached! A pedestrian cheering on a target, a flag planted beside it"
+  }
+}

@@ -30,23 +30,25 @@ Without a runtime the app can still be *compiled*; see the comment at the top of
 
 ## The sticker pack
 
-`Walky.app` embeds `WalkyStickers.appex`, an iMessage pack of nine stickers.
+`Walky.app` embeds `WalkyStickers.appex`, an iMessage pack of eighteen stickers.
 It has no code: its only build phase is Resources, the executable in the `.appex`
 is a stub Xcode links for it, and everything it ships is one compiled asset
 catalogue.
 
-Nothing in `Stickers/` is drawn by hand. `../web/tools/stickers.ts` writes the
+Nothing in `Stickers/` is edited by hand. `../web/tools/stickers.ts` writes the
 whole `.xcstickers` — the PNGs, every `Contents.json`, and the twelve sizes of
-the Messages drawer icon — out of the same primitives as the app icon, and the
-output is committed. Regenerating is a decision, the way regenerating the icons
-is:
+the Messages drawer icon — and the output is committed. Regenerating is a
+decision, the way regenerating the icons is:
 
 ```bash
 cd ../web && npx vite-node tools/stickers.ts
 ```
 
-`web/README.md` has what is in the pack and why the marks are drawn the way they
-are. Two things about the target are worth knowing here:
+The stickers themselves are characters, cut out of three drawn contact sheets in
+`web/tools/sheets/`, and they are the one place the brand is not derived from the
+model — the drawer icon over them still is. `web/README.md` has that argument in
+full, and what is in the pack. Two things about the target are worth knowing
+here:
 
 - **Its Info.plist is generated like the app's**, from `info:` in `project.yml`.
   iOS refuses to install an app whose embedded extension carries a different
