@@ -101,6 +101,8 @@ final class AppModel {
     tickCount += world.simTicks - before
     if renderPending && !isCovered {
       renderPending = false
+      // Before the frame, not inside it: the navigation rebuild is model work.
+      world.prepareForRender()
       frameCount += 1
       redraw.version &+= 1
     }

@@ -26,6 +26,8 @@ public final class WalkyWorld: PointerHost {
   public let agents = Agents()
   public let nav = Navigation()
   public let hash = SpatialHash()
+  /// The brush's own, so a drag never touches the crowd's. See `pedestrianBlock`.
+  private let brushHash = SpatialHash()
   public let metrics = Metrics()
   public let clock = Clock()
   public let settings = Settings()
@@ -198,7 +200,13 @@ public final class WalkyWorld: PointerHost {
   /// and to draw the ghost, so what you see is what you get.
   ///
   /// Not a pure query despite reading like one: it rebuilds the navigation if
-  /// the map has changed, and rebuilds the spatial hash every call.
+  /// the map has changed, and rebuilds `brushHash` every call.
+  ///
+  /// `brushHash`, and not the simulation's `hash`, since a brush drag runs
+  /// between ticks: sharing one meant a stroke rebuilt the crowd's hash at the
+  /// brush's cell size, which the next tick then rebuilt again at its own.
+  /// Two rebuilds a frame for one answer, and the two would have been on
+  /// different threads the moment the tick moved off the main one.
   public func pedestrianBlock(_ at: Point, _ cells: Int?) -> [Point] {
     rebuildNavIfNeeded()
     let r = settings.pedestrianRadius
@@ -212,7 +220,7 @@ public final class WalkyWorld: PointerHost {
 
     // Existing agents are found through the hash; agents chosen earlier in this
     // same block are checked directly, since the hash predates them.
-    hash.build(agents.x, agents.y, agents.count, jsMax(1, minGap))
+    brushHash.build(agents.x, agents.y, agents.count, jsMax(1, minGap))
 
     var chosen: [Point] = []
     for i in 0..<n {
@@ -220,7 +228,7 @@ public final class WalkyWorld: PointerHost {
         let p = Point(jsRound(at.x - half + Double(i) * pitch),
                       jsRound(at.y - half + Double(j) * pitch))
         if isBlocked(p) { continue }
-        if hash.query(p.x, p.y, minGap, -1, agents.x, agents.y) > 0 { continue }
+        if brushHash.query(p.x, p.y, minGap, -1, agents.x, agents.y) > 0 { continue }
         if chosen.contains(where: { jsHypot($0.x - p.x, $0.y - p.y) < minGap }) { continue }
         chosen.append(p)
       }
@@ -352,5 +360,17 @@ public final class WalkyWorld: PointerHost {
 
   /// Makes the navigation current. The renderer needs it for the dashed hulls
   /// and the goal routes, and `nav` is only rebuilt lazily.
+  /// Brings the navigation up to date before a frame is drawn.
+  ///
+  /// Called from the display link, *not* from the renderer. It used to be the
+  /// first line of `MapRenderer.draw`, which meant a draw could rebuild the
+  /// visibility graph and run a Dijkstra per goal -- the render path mutating
+  /// the model, inside a `Canvas` closure. It also ran on every frame whether
+  /// or not anything read the navigation, and route lines are off by default.
+  ///
+  /// The invariant is unchanged because `AppModel.tick` is the only thing that
+  /// bumps `redraw.version`: the navigation is still fresh whenever a frame is
+  /// drawn, it is simply made fresh a moment earlier and by the model's own
+  /// update rather than by the drawing of it.
   public func prepareForRender() { rebuildNavIfNeeded() }
 }

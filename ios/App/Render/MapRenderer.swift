@@ -136,7 +136,6 @@ enum MapRenderer {
 
   static func draw(_ world: WalkyWorld, _ cache: RenderCache, _ stats: DebugStats,
                    into ctx: inout GraphicsContext, size: CGSize) {
-    world.prepareForRender()
     cache.refresh(world)
     if world.settings.showLineToTarget { cache.refreshGoalPaths(world) }
 
