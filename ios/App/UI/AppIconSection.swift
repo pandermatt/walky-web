@@ -110,7 +110,6 @@ struct AppIconSection: View {
   }
 
   private static let footer: String =
-    "Crossing puts the app's own pedestrians on the 2016 icon's crosswalk. "
-    + "Ground and Walker are that icon's walking figure, in colours this app "
-    + "already uses. iOS says so itself when you switch."
+    "Crossing uses the 2016 icon's crosswalk; Ground and Walker, its walking "
+    + "figure."
 }

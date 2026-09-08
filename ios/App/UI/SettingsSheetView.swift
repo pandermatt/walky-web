@@ -224,38 +224,36 @@ struct SettingsSheetView: View {
     return image.withRenderingMode(.alwaysOriginal)
   }
 
+  // Two lines each, on the narrowest phone this runs on -- so about ninety
+  // characters, and every one of these used to be three or four times that.
+  // A settings sheet is scanned, not read: what survives the cut is the thing
+  // the control cannot say for itself, and the provenance line, which is the
+  // one reason this app exists. What went was everything a reader would learn
+  // faster by flipping the switch.
+
   private static let groundFooter: String =
-    "What the crowd walks on. Automatic takes it from Appearance -- Light is "
-    + "Paper, Dark is Classic -- and picking one here overrides that until you "
-    + "come back. Classic is the 2016 original's own background, and the "
-    + "pedestrians' rings follow the ground so they stay visible on a pale one."
+    "What the crowd walks on. Automatic follows Appearance; Classic is the "
+    + "2016 one."
 
-  // Careful with this one: it used to argue for Orange by calling it the colour
-  // the route to a goal is drawn in, which stopped being visible the moment
-  // Route to goal defaulted off. A footer may not point at something the reader
-  // cannot see.
+  // It used to argue for Orange by calling it the colour a route to a goal is
+  // drawn in, which stopped being visible the moment Route to goal defaulted
+  // off. A footer may not point at something the reader cannot see -- and the
+  // shorter it is, the less chance it gets to.
   private static let accentFooter: String =
-    "The colour behind the tool you are holding, and the tick beside the "
-    + "ground above. The bar itself stays untinted so its glass keeps taking "
-    + "colour from the map behind it. Orange is the 2016 original's own accent, "
-    + "and still what a route to a goal is drawn in when you switch that on "
-    + "below."
+    "The colour behind the tool you are holding. Orange is the 2016 original's "
+    + "own."
 
-  // Says what the switch does *and* how to undo it, because the switch hides
-  // the very bar you would look for to undo it with. It also states plainly
-  // that Walky has no recorder: iOS already has one that captures the whole
-  // screen and saves to Photos, and a button here would do the same job with
-  // less of the system's polish.
+  // Both halves are load-bearing and neither is obvious. The escape route,
+  // because the switch hides the very bar you would look for to undo it with;
+  // and Control Centre, because the absence of a record button in a section
+  // called Recording is otherwise just a gap.
   private static let recordingFooter: String =
-    "Hides the toolbar and the status bar so a capture shows nothing but the "
-    + "map. Pinch and drag still work, so you can frame the shot -- tap the map "
-    + "to bring the controls back.\n\nWalky has no recorder of its own. Swipe "
-    + "down from the top-right corner and use Screen Recording in Control "
-    + "Centre, which captures the screen and saves straight to Photos."
+    "Hides the bar and status bar. Tap the map to restore; record from Control "
+    + "Centre."
 
   private static let about: String =
-    "A pedestrian simulator. Draw walls, mark a goal, paint a crowd, and "
-    + "watch it find its way."
+    "A pedestrian simulator. Draw walls, mark a goal, paint a crowd, and watch "
+    + "them go."
 
   private func slider(_ setting: NumericSetting, format: String = "%.0f",
                       warning: String? = nil) -> some View {
@@ -289,7 +287,6 @@ struct SettingsSheetView: View {
   private var brushWarning: String? {
     let n = Int(settings.brushSize)
     guard n > 9 else { return nil }
-    return "\(n) x \(n) — each tap drops \(n * n) pedestrians, and dragging paints "
-      + "them continuously."
+    return "\(n) x \(n) — that is \(n * n) pedestrians a tap, more while you drag."
   }
 }

@@ -55,8 +55,13 @@ struct RealMapSection: View {
       // Say where each half comes from. Apple has no building outline to give
       // -- no MapKit or Maps Server API returns one -- so the ground is
       // Apple's and the walls are OpenStreetMap's, and both want crediting.
-      Text("Buildings from OpenStreetMap contributors, ODbL. Ground map by Apple. "
-         + "Importing replaces the current map.")
+      //
+      // Two lines like every other footer in this sheet, but shortened around
+      // the credit rather than through it: "© OpenStreetMap contributors" is
+      // the wording the ODbL guidelines ask for, so it got more canonical on
+      // the way down, not less.
+      Text("© OpenStreetMap contributors (ODbL); ground by Apple. Importing "
+         + "replaces your map.")
     }
   }
 
