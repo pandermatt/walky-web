@@ -58,14 +58,27 @@ struct StepCostBench {
     }
   }
 
-  private static func msPerTick(_ world: WalkyWorld) -> Double {
-    // Warm the navigation graph first: the first tick after a goal is marked
-    // pays for a Dijkstra the rest do not.
-    for _ in 0..<10 { world.stepOnce() }
-    let started = Date()
-    let ticks = 60
-    for _ in 0..<ticks { world.stepOnce() }
-    return Date().timeIntervalSince(started) * 1000 / Double(ticks)
+  /// Best of several runs, not the mean.
+  ///
+  /// One run of sixty ticks varies by about 20% here -- 4,000 agents measured
+  /// 11.36, 13.70 and 12.84 ms on three consecutive runs of the same binary --
+  /// which is far too loose to see the small wins this bench exists to guide.
+  /// Timing noise is one-sided: the scheduler can only ever add time, so the
+  /// fastest run is the closest to the code's own cost, while a mean mostly
+  /// reports what else the machine was doing.
+  private static func msPerTick(_ build: () -> WalkyWorld) -> Double {
+    var best = Double.infinity
+    for _ in 0..<5 {
+      let world = build()
+      // Warm the navigation graph first: the first tick after a goal is marked
+      // pays for a Dijkstra the rest do not.
+      for _ in 0..<10 { world.stepOnce() }
+      let started = Date()
+      let ticks = 60
+      for _ in 0..<ticks { world.stepOnce() }
+      best = min(best, Date().timeIntervalSince(started) * 1000 / Double(ticks))
+    }
+    return best
   }
 
   @Test("one tick, by crowd size and map")
@@ -74,14 +87,16 @@ struct StepCostBench {
     for count in [500, 1000, 2000, 4000] {
       var results: [Double] = []
       for maze in [false, true] {
-        let world = WalkyWorld()
-        world.settings.defaults = nil
-        Self.addGoal(world)
-        if maze { Self.addMaze(world) }
-        Self.crowd(world, count)
-        _ = world.setGoalAt(Point(180, 630))
-        world.play(true)
-        results.append(Self.msPerTick(world))
+        results.append(Self.msPerTick {
+          let world = WalkyWorld()
+          world.settings.defaults = nil
+          Self.addGoal(world)
+          if maze { Self.addMaze(world) }
+          Self.crowd(world, count)
+          _ = world.setGoalAt(Point(180, 630))
+          world.play(true)
+          return world
+        })
       }
       let open = results[0]
       let maze = results[1]

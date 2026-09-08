@@ -134,18 +134,25 @@ public final class Navigation {
   /// `setDirectPathIfPossible()`. Otherwise pick the visible graph node with the
   /// lowest "distance to it plus its cost-to-goal".
   public func nextWaypoint(_ from: Point, _ goalWallId: Int) -> Waypoint? {
-    let parts = graph.blockers.obstacles.filter { $0.wallId == goalWallId }
-    if parts.isEmpty { return nil }
+    // Filtered by skipping rather than by `filter`, which allocated an array
+    // here on every call -- and this runs once per *walking agent per tick*,
+    // because every successful step sets `replan` and clears the waypoint. Same
+    // obstacles in the same order, so the answer is unchanged; `hasArrived`
+    // below has always done it this way.
+    var anyPart = false
 
     // A concave goal is several convex parts; take the nearest visible point on
     // any of them.
     var direct: Point?
     var directDist = Double.infinity
-    for part in parts {
+    for part in graph.blockers.obstacles {
+      if part.wallId != goalWallId { continue }
+      anyPart = true
       guard let p = closestVisiblePointOnHull(from, part) else { continue }
       let d = distance(from, p)
       if d < directDist { directDist = d; direct = p }
     }
+    if !anyPart { return nil }
     if let direct { return Waypoint(point: direct, cost: directDist, node: -1) }
 
     guard let result = fieldByWall[goalWallId] else { return nil }
