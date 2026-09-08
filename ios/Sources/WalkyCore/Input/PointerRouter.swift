@@ -23,6 +23,10 @@ public protocol PointerHost: AnyObject {
   /// exactly the artefact to avoid.
   var mouseWorld: Point? { get set }
   func requestRender()
+  /// A one-finger drag with no tool armed. Whether that is worth saying
+  /// anything about is the host's business, not the router's -- the router
+  /// knows the gesture happened; only the world knows whether the map is empty.
+  func pannedWithoutTool()
 }
 
 /// The pointer and gesture state machine, ported from `app.ts:457–720`.
@@ -112,8 +116,25 @@ public final class PointerRouter {
     if pendingTouch?.id == id { flushPendingTouch() }
 
     let e = info(screen, buttons: 1)
+    // Computed before the pan, which is the honest answer to "what was under the
+    // finger" at this instant, and keeps the debug readout's X/Y live.
     host.mouseWorld = e.world
-    host.tool?.onPointerMove(e, host.toolContext)
+    if host.tool == nil {
+      // With nothing armed, one finger drags the map. It used to do nothing at
+      // all: this line was `host.tool?.onPointerMove`, and with no tool that
+      // optional chain is a no-op, so panning was two-fingers-only and the
+      // obvious one-handed gesture was silently dead.
+      //
+      // `dxScreen`/`dyScreen` are already the right delta -- `flushPendingTouch`
+      // sets `lastScreen` to the landing point precisely so the move delivered
+      // next measures from it -- and the sign matches the two-finger branch
+      // above, which pans by the midpoint's travel.
+      host.viewport.panBy(e.dxScreen, e.dyScreen)
+      host.pannedWithoutTool()
+      host.requestRender()
+    } else {
+      host.tool?.onPointerMove(e, host.toolContext)
+    }
     lastScreen = screen
   }
 

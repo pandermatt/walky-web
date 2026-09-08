@@ -30,6 +30,7 @@ private final class FakeHost: PointerHost {
   var tool: Tool?
   var mouseWorld: Point?
   var renders = 0
+  var freePans = 0
   let recorder = RecordingTool()
 
   init() {
@@ -39,6 +40,7 @@ private final class FakeHost: PointerHost {
   }
 
   func requestRender() { renders += 1 }
+  func pannedWithoutTool() { freePans += 1 }
 
   lazy var toolContext: ToolContext = ToolContext(
     addWall: { _, _ in true }, addWallShape: { _, _ in true },
@@ -202,5 +204,79 @@ struct PointerRouterTests {
     r.moved(A, to: Point(137, 100))
     // 37, not 0: flushing the held press sets lastScreen to the landing point.
     #expect(seen == 37)
+  }
+
+  // MARK: - Panning with one finger
+
+  /// Dragging with nothing armed used to do nothing whatsoever: `moved` ended
+  /// in `host.tool?.onPointerMove`, and with no tool that optional chain is a
+  /// no-op. Panning was two-fingers-only and the obvious gesture was dead.
+  @Test("with no tool armed, one finger pans the map")
+  func oneFingerPans() {
+    let host = FakeHost()
+    host.tool = nil
+    let r = PointerRouter(host: host)
+    let before = (host.viewport.targetX, host.viewport.targetY)
+
+    r.began(A, at: Point(200, 150))
+    r.moved(A, to: Point(240, 130))
+    r.ended(A, at: Point(240, 130))
+
+    // panBy subtracts the screen delta over the scale, so dragging right and up
+    // moves the camera left and down -- the map follows the finger.
+    let s = host.viewport.scale
+    #expect(host.viewport.targetX == before.0 - 40 / s)
+    #expect(host.viewport.targetY == before.1 - (-20) / s)
+  }
+
+  /// The regression that matters more than the feature: a tool armed must still
+  /// draw, and must not drag the map out from under the stroke.
+  @Test("with a tool armed, one finger draws and does not pan")
+  func armedToolStillDraws() {
+    let host = FakeHost()   // init arms the recorder
+    let r = PointerRouter(host: host)
+    let before = (host.viewport.targetX, host.viewport.targetY)
+
+    r.began(A, at: Point(200, 150))
+    r.moved(A, to: Point(240, 130))
+    r.ended(A, at: Point(240, 130))
+
+    #expect(host.viewport.targetX == before.0)
+    #expect(host.viewport.targetY == before.1)
+    #expect(host.recorder.events.contains(.move(host.viewport.screenToWorld(Point(240, 130)))))
+    #expect(host.freePans == 0)
+  }
+
+  @Test("the host hears about a free pan only when nothing is armed")
+  func tellsTheHost() {
+    let host = FakeHost()
+    host.tool = nil
+    let r = PointerRouter(host: host)
+
+    r.began(A, at: Point(200, 150))
+    r.moved(A, to: Point(210, 150))
+    r.moved(A, to: Point(220, 150))
+    r.ended(A, at: Point(220, 150))
+    // Once per move, which is exactly why the world guards it with a flag.
+    #expect(host.freePans == 2)
+  }
+
+  /// The new branch sits after the pinch guard, so two fingers must be
+  /// untouched by it -- including the tool-less case, which now has two ways to
+  /// pan and must not apply both at once.
+  @Test("two fingers still pinch, and do not also free-pan")
+  func pinchUnaffected() {
+    let host = FakeHost()
+    host.tool = nil
+    let r = PointerRouter(host: host)
+
+    r.began(A, at: Point(100, 100))
+    r.began(B, at: Point(200, 100))
+    #expect(r.isPinching)
+    r.moved(A, to: Point(90, 100))
+    r.moved(B, to: Point(210, 100))
+
+    // The pinch branch returns before the free-pan branch is reached.
+    #expect(host.freePans == 0)
   }
 }

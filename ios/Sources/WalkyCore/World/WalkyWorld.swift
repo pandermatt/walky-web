@@ -52,6 +52,8 @@ public final class WalkyWorld: PointerHost {
 
   private var undoStack: [MapSnapshot] = []
   private var navDirty = true
+  /// So the "pick a tool" nudge is a nudge and not a drumbeat.
+  private var suggestedATool = false
   /// Ticks stepped since launch, so a frame can report how many it just ran.
   public private(set) var simTicks = 0
   private var renderPending = false
@@ -146,6 +148,20 @@ public final class WalkyWorld: PointerHost {
     checkpoint()
     for p in spots { agents.add(p, randomBrightColor()) }
     touch()
+  }
+
+  /// Says, once, that a tool has to be picked.
+  ///
+  /// Only on a map with nothing on it: dragging across a large map you have
+  /// already drawn is ordinary navigation, and saying anything then would be
+  /// nagging. This is `isEmpty`'s first reader.
+  ///
+  /// The flag is not politeness. `PointerRouter.moved` fires dozens of times in
+  /// one drag, so without it a single pan would push dozens of notices.
+  public func pannedWithoutTool() {
+    guard isEmpty, !suggestedATool else { return }
+    suggestedATool = true
+    onNotify?("Nothing here yet — pick a tool below to start drawing.")
   }
 
   /// Marks the wall under a point as a goal; false when there is no wall there.
